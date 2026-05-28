@@ -26,10 +26,6 @@ on:
   pull_request:
     branches:
       - main
-      - 'feature/**'
-      - 'feat/**'
-      - 'chore/**'
-      - 'hotfix/**'
     paths-ignore:
       - '**.md'
       - '**.txt'
