@@ -9,7 +9,7 @@ Professional Git hooks for enforcing code standards and workflow policies.
 .githooks\setup.bat
 ```
 
-**Unix/Linux/Mac:**
+**Unix/Linux/Mac/git bash terminal:**
 ```bash
 chmod +x .githooks/setup.sh
 ./.githooks/setup.sh
