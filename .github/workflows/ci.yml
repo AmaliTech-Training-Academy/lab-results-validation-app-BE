@@ -8,6 +8,21 @@ on:
       - 'feat/**'
       - 'chore/**'
       - 'hotfix/**'
+    paths-ignore:
+      - '**.md'
+      - '**.txt'
+      - 'docs/**'
+      - '**.pdf'
+      - '**.png'
+      - '**.jpg'
+      - '**.jpeg'
+      - '**.gif'
+      - '**.svg'
+      - '**.drawio'
+      - '**.puml'
+      - 'diagrams/**'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches:
       - main
@@ -15,6 +30,21 @@ on:
       - 'feat/**'
       - 'chore/**'
       - 'hotfix/**'
+    paths-ignore:
+      - '**.md'
+      - '**.txt'
+      - 'docs/**'
+      - '**.pdf'
+      - '**.png'
+      - '**.jpg'
+      - '**.jpeg'
+      - '**.gif'
+      - '**.svg'
+      - '**.drawio'
+      - '**.puml'
+      - 'diagrams/**'
+      - 'LICENSE'
+      - '.gitignore'
 
 jobs:
   build:
