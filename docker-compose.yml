@@ -1,0 +1,42 @@
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: labresultsvalidator-db
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ./labresultsvalidator
+      dockerfile: Dockerfile
+    container_name: labresultsvalidator-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=postgres
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  db_data:
+    name: labresultsvalidator-db-data
+
