@@ -45,32 +45,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up JDK 21
-      uses: actions/setup-java@v3
-      with:
-        java-version: '21'
-        distribution: 'temurin'
-    
-    - name: Cache Maven packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-m2
-    
-    - name: Lint
-      run: mvn checkstyle:check
-    
-    - name: Run tests
-      run: mvn test
-    
-    - name: Build
-      run: mvn clean package -DskipTests
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
 
-      
-      
+      - name: Lint
+        run: mvn checkstyle:check
+
+      - name: Run tests
+        run: mvn test
+
+      - name: Build
+        run: mvn clean package -DskipTests
