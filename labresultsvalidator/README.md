@@ -17,33 +17,33 @@ Quick start (PowerShell)
 
 2. Start Postgres in the background:
 
-    docker compose up -d
+    `docker compose up -d`
 
 3. Check service status:
 
-    docker compose ps
+    `docker compose ps`
 
 4. View recent logs (200 lines):
 
-    docker compose logs --no-log-prefix --tail=200 postgres
+    `docker compose logs --no-log-prefix --tail=200 postgres`
 
 5. To follow logs live:
 
-    docker compose logs --no-log-prefix -f postgres
+    `docker compose logs --no-log-prefix -f postgres`
 
 Stopping and cleaning up
 - Stop containers but keep the database volume (preserves data):
 
-    docker compose down
+    `docker compose down`
 
 - Stop and remove containers and the named volume (deletes data):
 
-    docker compose down -v
+    `docker compose down -v`
 
 Database access examples
 - Exec a `psql` shell inside the container (requires container running):
 
-    docker compose exec postgres psql -U $env:DB_USER -d $env:DB_NAME
+    `docker compose exec postgres psql -U $env:DB_USER -d $env:DB_NAME`
 
   If you prefer a direct psql command from the host (requires `psql` client installed):
 
