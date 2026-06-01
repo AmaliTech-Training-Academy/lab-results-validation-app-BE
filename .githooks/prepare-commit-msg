@@ -1,0 +1,23 @@
+#!/bin/sh
+# Prepare commit message hook
+# Automatically adds branch name to commit message for tracking
+
+commit_msg_file=$1
+commit_source=$2
+
+# Only add branch name for regular commits (not merge, squash, etc.)
+if [ -z "$commit_source" ]; then
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    
+    # Skip for main/master/develop branches
+    if ! echo "$branch" | grep -qE "^(main|master|develop)$"; then
+        # Extract ticket/issue number if present in branch name
+        # Example: feature/PROJ-123-add-login -> [PROJ-123]
+        ticket=$(echo "$branch" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+        
+        if [ -n "$ticket" ]; then
+            # Prepend ticket number to commit message
+            sed -i.bak -e "1s/^/[$ticket] /" "$commit_msg_file"
+        fi
+    fi
+fi
