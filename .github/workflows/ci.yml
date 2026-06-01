@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
       - 'feature/**'
       - 'feat/**'
       - 'chore/**'
@@ -25,7 +26,7 @@ on:
       - '.gitignore'
   pull_request:
     branches:
-      - main
+      - dev
     paths-ignore:
       - '**.md'
       - '**.txt'
@@ -42,8 +43,20 @@ on:
       - 'LICENSE'
       - '.gitignore'
 
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKDIR: labresultsvalidator
+
 jobs:
+  # ---------------------------------------------------------------------------
+  # Build: lint, test, package (fast feedback)
+  # ---------------------------------------------------------------------------
   build:
+    name: Build & Test
     runs-on: ubuntu-latest
 
     steps:
@@ -59,12 +72,128 @@ jobs:
 
       - name: Lint
         run: mvn checkstyle:check
-        working-directory: labresultsvalidator
+        working-directory: ${{ env.WORKDIR }}
 
       - name: Run tests
         run: mvn test
-        working-directory: labresultsvalidator
+        working-directory: ${{ env.WORKDIR }}
 
       - name: Build
         run: mvn clean package -DskipTests
-        working-directory: labresultsvalidator
+        working-directory: ${{ env.WORKDIR }}
+
+  sonarqube:
+    name: SonarQube Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history gives SonarQube accurate SCM/blame data.
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Raise vm.max_map_count (required by SonarQube's Elasticsearch)
+        run: sudo sysctl -w vm.max_map_count=262144
+
+      - name: Start ephemeral SonarQube
+        run: |
+          docker run -d --name sonarqube \
+            -p 9000:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+            sonarqube:community
+
+      - name: Wait for SonarQube to be UP
+        run: |
+          for i in $(seq 1 40); do
+            status=$(curl -s -u admin:admin http://localhost:9000/api/system/status | jq -r .status 2>/dev/null || true)
+            echo "Attempt $i — SonarQube status: ${status:-unreachable}"
+            if [ "$status" = "UP" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::SonarQube did not become ready in time"
+          docker logs sonarqube || true
+          exit 1
+
+      - name: Generate analysis token
+        id: sonar
+        run: |
+          # A fresh container starts with admin/admin; rotate it so we can mint a token.
+          curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
+            -d "login=admin&previousPassword=admin&password=Adm1n-${GITHUB_RUN_ID}!" >/dev/null || true
+          token=$(curl -s -u "admin:Adm1n-${GITHUB_RUN_ID}!" -X POST \
+            "http://localhost:9000/api/user_tokens/generate?name=ci-${GITHUB_RUN_ID}" | jq -r .token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "::error::Failed to generate SonarQube token"; exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Build, test & analyze (fails if quality gate is not met)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.token=${{ steps.sonar.outputs.token }} \
+            -Dsonar.projectKey=labresultsvalidator \
+            -Dsonar.projectName=labresultsvalidator \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300
+
+  # ---------------------------------------------------------------------------
+  # Trivy container scan (AC2, AC4)
+  # Builds the Docker image and fails the job on any CRITICAL/HIGH vulnerability.
+  # ---------------------------------------------------------------------------
+  trivy:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # for the optional SARIF upload below
+    env:
+      IMAGE: labresultsvalidator:ci-${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t "$IMAGE" .
+        working-directory: ${{ env.WORKDIR }}
+
+      # Generate a SARIF report (does NOT fail the job) so findings can appear
+      # in the GitHub Security tab. NOTE: SARIF/code-scanning upload requires a
+      # public repo or GitHub Advanced Security — hence continue-on-error.
+      - name: Trivy scan (SARIF report)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF to Security tab
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      # The gate: human-readable table in the logs AND a non-zero exit on any
+      # CRITICAL/HIGH finding, which fails the job (and thus the PR check).
+      - name: Trivy scan (gate — fail on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: false
