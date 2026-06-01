@@ -13,7 +13,7 @@ INSERT INTO users (
 ) VALUES
       (
           '8fe168a4-a3ae-4b08-b631-4d1c9beb77c8',
-          'superadmin@labgate.com',
+          'superadmin@amalitech.com',
           '$2b$12$5uaYVku4G9BGz9CeEpv7FO3B7c9T9AGoYytMuahKng5xTnVsyg7Um',
           'admin',
           true, true, NOW(), NOW()
@@ -27,7 +27,7 @@ INSERT INTO users (
       ),
       (
           'eefd8bd3-3dad-4d78-b250-94dbecc418a2',
-          'instructor.swe@labgate.com',
+          'instructor.swe@amalitech.com',
           '$2b$12$z4dJ6747FPM4fElMORnVWOSRwKGU2efbJj/49G9iWmJ8Ecdf0cz0.',
           'instructor',
           true, true, NOW(), NOW()
