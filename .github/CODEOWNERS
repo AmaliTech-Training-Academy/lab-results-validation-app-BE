@@ -1,0 +1,42 @@
+# CODEOWNERS
+#
+# Defines review ownership for this repository. When a pull request touches
+# files matching a pattern below, the listed owners are automatically requested
+# for review. Pair this with a branch protection rule that requires review from
+# Code Owners to enforce it.
+#
+# Rules are evaluated top to bottom; the LAST matching pattern wins. Keep the
+# general default first and more specific overrides below it.
+#
+# Note: CODEOWNERS does not support line continuations — all owners for a
+# pattern must sit on a single line.
+#
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# -----------------------------------------------------------------------------
+# Default owners — the backend engineering team
+# Applies to everything unless a more specific rule below overrides it.
+# -----------------------------------------------------------------------------
+*                               @nabbi007 @Adamsmiracle @AndyDebrah @EkowSackey @peprah12git @Silas003 @YawsonFiifi
+
+# -----------------------------------------------------------------------------
+# Infrastructure, CI/CD & repository automation 
+# -----------------------------------------------------------------------------
+/.github/                       @nabbi007
+/.githooks/                     @nabbi007
+
+# -----------------------------------------------------------------------------
+# Containerization & deployment 
+# -----------------------------------------------------------------------------
+/docker-compose.yml             @nabbi007 @Adamsmiracle @AndyDebrah @EkowSackey @peprah12git @Silas003 @YawsonFiifi
+/labresultsvalidator/Dockerfile @nabbi007 @Adamsmiracle @AndyDebrah @EkowSackey @peprah12git @Silas003 @YawsonFiifi
+
+# -----------------------------------------------------------------------------
+# Build & dependency configuration
+# -----------------------------------------------------------------------------
+/labresultsvalidator/pom.xml    @nabbi007 @Adamsmiracle @AndyDebrah @EkowSackey @peprah12git @Silas003 @YawsonFiifi
+
+# -----------------------------------------------------------------------------
+# Application source & tests — owned by the whole backend team
+# -----------------------------------------------------------------------------
+/labresultsvalidator/src/       @nabbi007 @Adamsmiracle @AndyDebrah @EkowSackey @peprah12git @Silas003 @YawsonFiifi
