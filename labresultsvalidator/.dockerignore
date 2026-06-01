@@ -1,4 +1,6 @@
-target/
+target/*
+# Keep the packaged jar so the CI `runtime-prebuilt` stage can COPY it.
+!target/*.jar
 .mvn/wrapper/maven-wrapper.jar
 *.md
 .git/
