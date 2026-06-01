@@ -147,6 +147,42 @@ jobs:
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
 
+      # Pull the gate result + key measures from the local server BEFORE it is
+      # torn down. Runs even when the gate failed (if: always) so the report and
+      # the failed-condition list are always captured.
+      - name: Collect SonarQube report
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+        run: |
+          set +e
+          PROJECT=labresultsvalidator
+          BASE=http://localhost:9000
+          mkdir -p sonar-report
+          curl -s -u "$SONAR_TOKEN:" "$BASE/api/qualitygates/project_status?projectKey=$PROJECT" -o sonar-report/quality-gate.json
+          curl -s -u "$SONAR_TOKEN:" "$BASE/api/measures/component?component=$PROJECT&metricKeys=alert_status,bugs,vulnerabilities,security_hotspots,code_smells,coverage,duplicated_lines_density,ncloc" -o sonar-report/measures.json
+
+          status=$(jq -r '.projectStatus.status // "UNKNOWN"' sonar-report/quality-gate.json)
+          {
+            echo "## SonarQube Quality Gate: ${status}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            jq -r '.component.measures[]? | "| \(.metric) | \(.value) |"' sonar-report/measures.json
+            echo ""
+            echo "### Failed conditions"
+            failed=$(jq -r '.projectStatus.conditions[]? | select(.status=="ERROR") | "- **\(.metricKey)**: actual \(.actualValue) (threshold \(.comparator) \(.errorThreshold))"' sonar-report/quality-gate.json)
+            if [ -n "$failed" ]; then echo "$failed"; else echo "_None — gate passed._"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SonarQube report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonarqube-report
+          path: sonar-report/
+          if-no-files-found: warn
+
   # ---------------------------------------------------------------------------
   # Trivy container scan (AC2, AC4)
   # Builds the Docker image and fails the job on any CRITICAL/HIGH vulnerability.
@@ -168,10 +204,28 @@ jobs:
         run: docker build -t "$IMAGE" .
         working-directory: ${{ env.WORKDIR }}
 
-      # Generate a SARIF report (does NOT fail the job) so findings can appear
-      # in the GitHub Security tab. NOTE: SARIF/code-scanning upload requires a
-      # public repo or GitHub Advanced Security — hence continue-on-error.
-      - name: Trivy scan (SARIF report)
+      # --- Reports (exit-code 0: never fail here, just produce the files) ------
+      - name: Trivy report (JSON)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: json
+          output: trivy-report.json
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Trivy report (table)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          output: trivy-report.txt
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      # SARIF for the GitHub Security tab (requires public repo or GHAS — hence
+      # continue-on-error on the upload below).
+      - name: Trivy report (SARIF)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}
@@ -180,6 +234,17 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
 
+      - name: Publish Trivy summary
+        if: always()
+        run: |
+          {
+            echo "## Trivy Container Scan (CRITICAL/HIGH)"
+            echo ""
+            echo '```'
+            cat trivy-report.txt 2>/dev/null || echo "report not generated"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Trivy SARIF to Security tab
         if: always()
         continue-on-error: true
@@ -187,9 +252,20 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-      # The gate: human-readable table in the logs AND a non-zero exit on any
-      # CRITICAL/HIGH finding, which fails the job (and thus the PR check).
-      - name: Trivy scan (gate — fail on CRITICAL/HIGH)
+      - name: Upload Trivy reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: |
+            trivy-report.json
+            trivy-report.txt
+            trivy-results.sarif
+          if-no-files-found: warn
+
+      # --- Gate (runs last so the reports above are saved even on failure) -----
+      # Non-zero exit on any CRITICAL/HIGH finding fails the job and the PR check.
+      - name: Trivy gate (fail on CRITICAL/HIGH)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}
