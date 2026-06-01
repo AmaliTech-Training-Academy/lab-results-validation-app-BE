@@ -59,9 +59,12 @@ jobs:
 
       - name: Lint
         run: mvn checkstyle:check
+        working-directory: labresultsvalidator
 
       - name: Run tests
         run: mvn test
+        working-directory: labresultsvalidator
 
       - name: Build
         run: mvn clean package -DskipTests
+        working-directory: labresultsvalidator
