@@ -32,3 +32,6 @@ build/
 ### VS Code ###
 .vscode/
 .env
+
+### Local dev docs (never push) ###
+SECURITY_IMPLEMENTATION.md

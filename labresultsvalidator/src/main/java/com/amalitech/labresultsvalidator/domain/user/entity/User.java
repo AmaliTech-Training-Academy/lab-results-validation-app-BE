@@ -1,11 +1,9 @@
 package com.amalitech.labresultsvalidator.domain.user.entity;
 
 import com.amalitech.labresultsvalidator.common.BaseEntity;
-import com.amalitech.labresultsvalidator.enums.UserRole;
+import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -15,48 +13,62 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
 @Table(name = "users")
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class User extends BaseEntity {
+public class User extends BaseEntity implements UserDetails {
 
-    /** Maximum length for email address columns. */
-    private static final int EMAIL_MAX_LENGTH = 254;
-
-    /** Unique identifier for this user. */
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "id", updatable = false, nullable = false)
+    @Column(nullable = false, updatable = false)
     private UUID id;
 
-    /** Login email address of this user. */
-    @Column(name = "email", nullable = false, unique = true,
-        length = EMAIL_MAX_LENGTH)
+    @Column(nullable = false, unique = true, length = 254)
     private String email;
 
-    /** BCrypt hash of the user's password. */
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
-    /** Role that determines this user's access level. */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false)
+    @Column(nullable = false)
     private UserRole role;
 
-    /** Whether this user account is currently active. */
     @Builder.Default
     @Column(name = "is_active", nullable = false)
-    private boolean active = true;
+    private boolean isActive = true;
 
-    /** Whether the user must change their password on next login. */
     @Builder.Default
     @Column(name = "must_change_password", nullable = false)
     private boolean mustChangePassword = true;
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+    }
+
+    @Override
+    public String getPassword() {
+        return passwordHash;
+    }
+
+    @Override
+    public String getUsername() {
+        return email;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return isActive;
+    }
 }
