@@ -114,3 +114,35 @@ If you'd like, I can:
 - Add a `.env.example` file with placeholders.
 
 
+main/
+├── java/
+│   └── com.amalitech.labresultsvalidator/
+│       ├── common/
+│       ├── config/
+│       ├── domain/
+│       │   ├── audit/
+│       │   ├── cohort/
+│       │   ├── csv_upload/
+│       │   ├── enums/
+│       │   ├── lab/
+│       │   ├── lab_result/
+│       │   ├── learner/
+│       │   ├── module/
+│       │   ├── specialization/
+│       │   ├── user/
+│       │   └── user_module_assignment/
+│       ├── security/
+│       │   ├── controller/
+│       │   ├── dto/
+│       │   ├── entity/
+│       │   ├── repository/
+│       │   └── service/
+│       ├── LabresultsvalidatorApplication.java
+│       └── package-info.java
+└── resources/
+├── db.migration/
+│   ├── R__seed_data.sql
+│   └── V1__create_tables.sql
+├── static/
+├── templates/
+└── application.properties
