@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
       - 'feature/**'
       - 'feat/**'
       - 'chore/**'
@@ -25,7 +26,7 @@ on:
       - '.gitignore'
   pull_request:
     branches:
-      - main
+      - dev
     paths-ignore:
       - '**.md'
       - '**.txt'
@@ -42,8 +43,25 @@ on:
       - 'LICENSE'
       - '.gitignore'
 
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKDIR: labresultsvalidator
+  # Name of the shared build output artifact (the app is compiled once in
+  # `build` and reused by `sonarqube` and `trivy`).
+  BUILD_ARTIFACT: maven-build
+
 jobs:
+  # ---------------------------------------------------------------------------
+  # Build: lint, test, package — ONCE. Publishes target/ (jar + compiled
+  # classes + JaCoCo coverage) as an artifact that the scan jobs reuse, so the
+  # application is never recompiled downstream.
+  # ---------------------------------------------------------------------------
   build:
+    name: Build & Test
     runs-on: ubuntu-latest
 
     steps:
@@ -58,13 +76,237 @@ jobs:
           cache: maven
 
       - name: Lint
-        run: mvn checkstyle:check
-        working-directory: labresultsvalidator
+        run: mvn -B checkstyle:check
+        working-directory: ${{ env.WORKDIR }}
 
-      - name: Run tests
-        run: mvn test
-        working-directory: labresultsvalidator
+      # `verify` compiles, runs tests (JaCoCo agent attached) and packages the
+      # jar in a single pass — this is the one and only compilation in the run.
+      - name: Build, test & package
+        run: mvn -B clean verify
+        working-directory: ${{ env.WORKDIR }}
 
-      - name: Build
-        run: mvn clean package -DskipTests
-        working-directory: labresultsvalidator
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}
+          path: ${{ env.WORKDIR }}/target
+          retention-days: 1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # SonarQube quality gate (AC1, AC3)
+  # Reuses the compiled classes + coverage from `build` and runs ONLY the
+  # analysis (no recompile) against an ephemeral SonarQube server.
+  # `sonar.qualitygate.wait=true` fails the job when the gate is not met.
+  # ---------------------------------------------------------------------------
+  sonarqube:
+    name: SonarQube Quality Gate
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history gives SonarQube accurate SCM/blame data.
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}
+          path: ${{ env.WORKDIR }}/target
+
+      - name: Raise vm.max_map_count (required by SonarQube's Elasticsearch)
+        run: sudo sysctl -w vm.max_map_count=262144
+
+      - name: Start ephemeral SonarQube
+        run: |
+          docker run -d --name sonarqube \
+            -p 9000:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+            sonarqube:community
+
+      - name: Wait for SonarQube to be UP
+        run: |
+          for i in $(seq 1 40); do
+            status=$(curl -s -u admin:admin http://localhost:9000/api/system/status | jq -r .status 2>/dev/null || true)
+            echo "Attempt $i — SonarQube status: ${status:-unreachable}"
+            if [ "$status" = "UP" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::SonarQube did not become ready in time"
+          docker logs sonarqube || true
+          exit 1
+
+      - name: Generate analysis token
+        id: sonar
+        run: |
+          # A fresh container starts with admin/admin; rotate it so we can mint a token.
+          curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
+            -d "login=admin&previousPassword=admin&password=Adm1n-${GITHUB_RUN_ID}!" >/dev/null || true
+          token=$(curl -s -u "admin:Adm1n-${GITHUB_RUN_ID}!" -X POST \
+            "http://localhost:9000/api/user_tokens/generate?name=ci-${GITHUB_RUN_ID}" | jq -r .token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "::error::Failed to generate SonarQube token"; exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      # Analysis only — points at the prebuilt classes and the JaCoCo report
+      # that came from the `build` artifact, so nothing is recompiled here.
+      - name: Analyze (fails if quality gate is not met)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.token=${{ steps.sonar.outputs.token }} \
+            -Dsonar.projectKey=labresultsvalidator \
+            -Dsonar.projectName=labresultsvalidator \
+            -Dsonar.java.binaries=target/classes \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300
+
+      # Pull the gate result + key measures from the local server BEFORE it is
+      # torn down. Runs even when the gate failed (if: always) so the report and
+      # the failed-condition list are always captured.
+      - name: Collect SonarQube report
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+        run: |
+          set +e
+          PROJECT=labresultsvalidator
+          BASE=http://localhost:9000
+          mkdir -p sonar-report
+          curl -s -u "$SONAR_TOKEN:" "$BASE/api/qualitygates/project_status?projectKey=$PROJECT" -o sonar-report/quality-gate.json
+          curl -s -u "$SONAR_TOKEN:" "$BASE/api/measures/component?component=$PROJECT&metricKeys=alert_status,bugs,vulnerabilities,security_hotspots,code_smells,coverage,duplicated_lines_density,ncloc" -o sonar-report/measures.json
+
+          status=$(jq -r '.projectStatus.status // "UNKNOWN"' sonar-report/quality-gate.json)
+          {
+            echo "## SonarQube Quality Gate: ${status}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            jq -r '.component.measures[]? | "| \(.metric) | \(.value) |"' sonar-report/measures.json
+            echo ""
+            echo "### Failed conditions"
+            failed=$(jq -r '.projectStatus.conditions[]? | select(.status=="ERROR") | "- **\(.metricKey)**: actual \(.actualValue) (threshold \(.comparator) \(.errorThreshold))"' sonar-report/quality-gate.json)
+            if [ -n "$failed" ]; then echo "$failed"; else echo "_None — gate passed._"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SonarQube report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonarqube-report
+          path: ${{ env.WORKDIR }}/sonar-report/
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # Trivy container scan (AC2, AC4)
+  # Builds the runtime image from the PRE-BUILT jar (Dockerfile target
+  # `runtime-prebuilt`, no recompilation) and fails the job on any CRITICAL/HIGH.
+  # ---------------------------------------------------------------------------
+  trivy:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      security-events: write   # for the optional SARIF upload below
+    env:
+      IMAGE: labresultsvalidator:ci-${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}
+          path: ${{ env.WORKDIR }}/target
+
+      # Package the already-built jar into the runtime image — no recompile.
+      - name: Build runtime image (from prebuilt jar)
+        run: docker build --target runtime-prebuilt -t "$IMAGE" .
+        working-directory: ${{ env.WORKDIR }}
+
+      # --- Reports (exit-code 0: never fail here, just produce the files) ------
+      - name: Trivy report (JSON)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: json
+          output: trivy-report.json
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Trivy report (table)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          output: trivy-report.txt
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      # SARIF for the GitHub Security tab (requires public repo or GHAS — hence
+      # continue-on-error on the upload below).
+      - name: Trivy report (SARIF)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Publish Trivy summary
+        if: always()
+        run: |
+          {
+            echo "## Trivy Container Scan (CRITICAL/HIGH)"
+            echo ""
+            echo '```'
+            cat trivy-report.txt 2>/dev/null || echo "report not generated"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Trivy SARIF to Security tab
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Upload Trivy reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: |
+            trivy-report.json
+            trivy-report.txt
+            trivy-results.sarif
+          if-no-files-found: warn
+
+      # --- Gate (runs last so the reports above are saved even on failure) -----
+      # Non-zero exit on any CRITICAL/HIGH finding fails the job and the PR check.
+      - name: Trivy gate (fail on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: false

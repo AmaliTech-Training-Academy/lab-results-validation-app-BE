@@ -28,6 +28,10 @@
     </scm>
     <properties>
         <java.version>21</java.version>
+        <!-- Override the Spring Boot-managed embedded Tomcat to patch the
+             CRITICAL/HIGH CVEs flagged by Trivy (CVE-2026-41293, -43512,
+             -43515, -41284, -42498, -43513). Fixed in 11.0.22. -->
+        <tomcat.version>11.0.22</tomcat.version>
     </properties>
     <dependencies>
         <dependency>
@@ -58,6 +62,9 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+            <!-- Pinned above the Spring Boot-managed version to patch
+                 CVE-2026-42198 (HIGH). Fixed in 42.7.11. -->
+            <version>42.7.11</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
@@ -131,6 +138,29 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.0.0-M8</version>
+            </plugin>
+
+            <!-- JaCoCo: produces target/site/jacoco/jacoco.xml, which SonarQube
+                 auto-detects to evaluate the coverage condition of the quality gate. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
