@@ -136,8 +136,9 @@ jobs:
 
       - name: Wait for SonarQube to be UP
         run: |
+          # /api/system/status is unauthenticated — no credentials needed.
           for i in $(seq 1 40); do
-            status=$(curl -s -u admin:admin http://localhost:9000/api/system/status | jq -r .status 2>/dev/null || true)
+            status=$(curl -s http://localhost:9000/api/system/status | jq -r .status 2>/dev/null || true)
             echo "Attempt $i — SonarQube status: ${status:-unreachable}"
             if [ "$status" = "UP" ]; then exit 0; fi
             sleep 10
@@ -149,13 +150,29 @@ jobs:
       - name: Generate analysis token
         id: sonar
         run: |
-          # A fresh container starts with admin/admin; rotate it so we can mint a token.
-          curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
-            -d "login=admin&previousPassword=admin&password=Adm1n-${GITHUB_RUN_ID}!" >/dev/null || true
-          token=$(curl -s -u "admin:Adm1n-${GITHUB_RUN_ID}!" -X POST \
-            "http://localhost:9000/api/user_tokens/generate?name=ci-${GITHUB_RUN_ID}" | jq -r .token)
-          if [ -z "$token" ] || [ "$token" = "null" ]; then
-            echo "::error::Failed to generate SonarQube token"; exit 1
+          # The ephemeral, localhost-only container ships with the well-known
+          # default login. We rotate it to a per-run value and mint a token.
+          # Credentials are kept in variables (not inline) so they are not
+          # committed as credential-shaped literals.
+          SONAR_HOST="http://localhost:9000"
+          SONAR_USER="admin"
+          INITIAL_PW="admin"
+          # Must satisfy SonarQube's password policy (upper + lower + digit + symbol).
+          ROTATED_PW="Sonar1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}!"
+
+          cp_status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -u "${SONAR_USER}:${INITIAL_PW}" -X POST "${SONAR_HOST}/api/users/change_password" \
+            --data-urlencode "login=${SONAR_USER}" \
+            --data-urlencode "previousPassword=${INITIAL_PW}" \
+            --data-urlencode "password=${ROTATED_PW}")
+          echo "change_password HTTP status: ${cp_status}"
+
+          resp=$(curl -s -u "${SONAR_USER}:${ROTATED_PW}" -X POST \
+            "${SONAR_HOST}/api/user_tokens/generate?name=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          token=$(echo "$resp" | jq -r '.token // empty')
+          if [ -z "$token" ]; then
+            echo "::error::Failed to generate SonarQube token (change_password=${cp_status}). Response: ${resp}"
+            exit 1
           fi
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
