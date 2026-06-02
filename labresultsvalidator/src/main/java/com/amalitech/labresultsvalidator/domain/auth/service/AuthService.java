@@ -32,7 +32,6 @@ public class AuthService {
                 .token(token)
                 .email(user.getEmail())
                 .role(user.getRole().name())
-                .mustChangePassword(user.isMustChangePassword())
                 .build();
     }
 }
