@@ -2,7 +2,7 @@ package com.amalitech.labresultsvalidator.domain.csvUploads.entity;
 
 import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
-import com.amalitech.labresultsvalidator.enums.UploadStatus;
+import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

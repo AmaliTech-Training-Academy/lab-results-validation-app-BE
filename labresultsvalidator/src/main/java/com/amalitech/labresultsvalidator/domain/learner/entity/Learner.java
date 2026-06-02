@@ -4,7 +4,7 @@ import com.amalitech.labresultsvalidator.common.BaseEntity;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
-import com.amalitech.labresultsvalidator.enums.LearnerStatus;
+import com.amalitech.labresultsvalidator.domain.enums.LearnerStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
