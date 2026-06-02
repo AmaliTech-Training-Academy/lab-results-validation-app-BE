@@ -157,17 +157,22 @@ jobs:
           SONAR_HOST="http://localhost:9000"
           SONAR_USER="admin"
           INITIAL_PW="admin"
-          ROTATED_PW="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # Must satisfy SonarQube's password policy (upper + lower + digit + symbol).
+          ROTATED_PW="Sonar1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}!"
 
-          curl -s -u "${SONAR_USER}:${INITIAL_PW}" -X POST "${SONAR_HOST}/api/users/change_password" \
+          cp_status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -u "${SONAR_USER}:${INITIAL_PW}" -X POST "${SONAR_HOST}/api/users/change_password" \
             --data-urlencode "login=${SONAR_USER}" \
             --data-urlencode "previousPassword=${INITIAL_PW}" \
-            --data-urlencode "password=${ROTATED_PW}" >/dev/null || true
+            --data-urlencode "password=${ROTATED_PW}")
+          echo "change_password HTTP status: ${cp_status}"
 
-          token=$(curl -s -u "${SONAR_USER}:${ROTATED_PW}" -X POST \
-            "${SONAR_HOST}/api/user_tokens/generate?name=ci-${GITHUB_RUN_ID}" | jq -r .token)
-          if [ -z "$token" ] || [ "$token" = "null" ]; then
-            echo "::error::Failed to generate SonarQube token"; exit 1
+          resp=$(curl -s -u "${SONAR_USER}:${ROTATED_PW}" -X POST \
+            "${SONAR_HOST}/api/user_tokens/generate?name=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          token=$(echo "$resp" | jq -r '.token // empty')
+          if [ -z "$token" ]; then
+            echo "::error::Failed to generate SonarQube token (change_password=${cp_status}). Response: ${resp}"
+            exit 1
           fi
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
