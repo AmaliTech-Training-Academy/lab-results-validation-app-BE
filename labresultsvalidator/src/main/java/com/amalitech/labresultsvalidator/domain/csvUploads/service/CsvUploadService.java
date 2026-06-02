@@ -1,4 +1,4 @@
 package com.amalitech.labresultsvalidator.domain.csvUploads.service;
 
-public class CsvUploadService{
+public class CsvUploadService {
 }
