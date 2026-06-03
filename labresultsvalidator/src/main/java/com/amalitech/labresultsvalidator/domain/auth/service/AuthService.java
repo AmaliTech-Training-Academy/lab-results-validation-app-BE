@@ -8,7 +8,6 @@ import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.amalitech.labresultsvalidator.security.JwtService;
 import com.amalitech.labresultsvalidator.security.RefreshTokenService;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
