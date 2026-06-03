@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.auth.controller;
 
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
+import com.amalitech.labresultsvalidator.common.utils.CookieUtils;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginResponse;
 import com.amalitech.labresultsvalidator.domain.auth.service.AuthService;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +29,9 @@ class AuthControllerTest {
     @Mock
     private AuthService authService;
 
+    @Mock
+    private CookieUtils cookieUtils;
+
     @InjectMocks
     private AuthController authController;
 
@@ -48,6 +52,8 @@ class AuthControllerTest {
                         .token("test.jwt.token")
                         .email("admin@test.com")
                         .role("ADMIN")
+                        .mustChangePassword(false)
+                        .refreshToken("refresh.token")
                         .build()
         );
 
@@ -60,7 +66,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.token").value("test.jwt.token"))
                 .andExpect(jsonPath("$.data.email").value("admin@test.com"))
                 .andExpect(jsonPath("$.data.role").value("ADMIN"))
-                .andExpect(jsonPath("$.data.mustChangePassword").doesNotExist());
+                .andExpect(jsonPath("$.data.refreshToken").doesNotExist());
     }
 
     @Test

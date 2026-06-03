@@ -33,7 +33,7 @@
              -43515, -41284, -42498, -43513). Fixed in 11.0.22. -->
         <tomcat.version>11.0.22</tomcat.version>
         <!-- Override Netty to patch CVE-2026-42579 (HIGH) — improper DNS
-            domain name constraint handling. Fixed in 4.2.13.Final. -->
+             domain name constraint handling. Fixed in 4.2.13.Final. -->
         <netty.version>4.2.13.Final</netty.version>
     </properties>
     <dependencies>
@@ -168,11 +168,15 @@
                 </executions>
             </plugin>
 
-            <!-- Ensure Surefire can run JUnit 5 (JUnit Jupiter) -->
+            <!-- Ensure Surefire can run JUnit Jupiter -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.0.0-M8</version>
+                <configuration>
+                    <!-- Allow Mockito to self-attach on Linux/CI (Java 21 strict mode) -->
+                    <argLine>@{argLine} -Djdk.attach.allowAttachSelf=true</argLine>
+                </configuration>
             </plugin>
 
             <plugin>
