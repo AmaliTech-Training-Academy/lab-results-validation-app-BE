@@ -63,6 +63,7 @@ public class CsvUpload {
     private String filename;
 
     /** SHA-256 hex digest of the file used for deduplication. */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "file_sha256", nullable = false,
         unique = true, length = SHA256_LENGTH)
     private String fileSha256;
@@ -72,14 +73,17 @@ public class CsvUpload {
     private OffsetDateTime uploadedAt;
 
     /** Total number of data rows found in the CSV. */
+    @Builder.Default
     @Column(name = "total_rows", nullable = false)
     private int totalRows = 0;
 
     /** Number of rows that passed validation and were accepted. */
+    @Builder.Default
     @Column(name = "accepted_rows", nullable = false)
     private int acceptedRows = 0;
 
     /** Number of rows that failed validation and were rejected. */
+    @Builder.Default
     @Column(name = "rejected_rows", nullable = false)
     private int rejectedRows = 0;
 
