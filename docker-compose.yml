@@ -3,7 +3,7 @@ services:
   postgres:
     image: postgres:16
     container_name: labresultsvalidator-db
-    restart: unless-stopped
+    restart: on-failure:2
     env_file:
       - .env
     environment:
@@ -25,7 +25,7 @@ services:
       context: ./labresultsvalidator
       dockerfile: Dockerfile
     container_name: labresultsvalidator-app
-    restart: unless-stopped
+    restart: on-failure:2
     env_file:
       - .env
     environment:
