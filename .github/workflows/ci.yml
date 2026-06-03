@@ -327,3 +327,25 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '1'
           ignore-unfixed: false
+
+  # TruffleHog secret scan
+   
+  trufflehog:
+    name: TruffleHog Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so the action can resolve the base of the commit range
+          # to diff (a shallow clone can leave the base commit unavailable).
+          fetch-depth: 0
+
+      # Fails the job on any verified OR unknown-status finding in the diff.
+      - name: TruffleHog scan (fail on verified + unknown)
+        uses: trufflesecurity/trufflehog@v3.95.5
+        with:
+          extra_args: --results=verified,unknown
