@@ -4,8 +4,6 @@ import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignModuleRequest;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignModuleResponse;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignedModuleResponse;
-
-import java.util.List;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.service.UserModuleAssignmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -24,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "Module Assignments", description = "Assign modules to instructors")
@@ -64,7 +63,8 @@ public class UserModuleAssignmentController {
 
     @Operation(
         summary = "Get modules assigned to an instructor",
-        description = "Returns all modules assigned to a specific instructor. Restricted to ADMIN and SUPER_ADMIN roles."
+        description = "Returns all modules assigned to a specific instructor." +
+                " Restricted to ADMIN and SUPER_ADMIN roles."
     )
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
