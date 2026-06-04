@@ -3,6 +3,9 @@ package com.amalitech.labresultsvalidator.domain.user_module_assignment.controll
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignModuleRequest;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignModuleResponse;
+import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignedModuleResponse;
+
+import java.util.List;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.service.UserModuleAssignmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -14,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,7 +28,7 @@ import java.util.UUID;
 
 @Tag(name = "Module Assignments", description = "Assign modules to instructors")
 @RestController
-@RequestMapping("/api/v1/instructors")
+@RequestMapping("/api/v1/admin/instructors")
 @RequiredArgsConstructor
 public class UserModuleAssignmentController {
 
@@ -56,5 +60,29 @@ public class UserModuleAssignmentController {
         AssignModuleResponse response = userModuleAssignmentService.assignModule(instructorId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Modules assigned successfully", response));
+    }
+
+    @Operation(
+        summary = "Get modules assigned to an instructor",
+        description = "Returns all modules assigned to a specific instructor. Restricted to ADMIN and SUPER_ADMIN roles."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Assigned modules retrieved successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "User is not an instructor",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "Instructor not found",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @GetMapping("/{instructorId}/modules")
+    public ResponseEntity<ApiResponse<List<AssignedModuleResponse>>> getInstructorModules(
+            @PathVariable UUID instructorId) {
+
+        List<AssignedModuleResponse> response = userModuleAssignmentService.getInstructorModules(instructorId);
+        return ResponseEntity.ok(
+                ApiResponse.success("Assigned modules retrieved successfully", response));
     }
 }

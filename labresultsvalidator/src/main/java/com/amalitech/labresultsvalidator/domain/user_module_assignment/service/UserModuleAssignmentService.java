@@ -83,4 +83,25 @@ public class UserModuleAssignmentService {
                 .assignedModules(assignedModules)
                 .build();
     }
+
+    public List<AssignedModuleResponse> getInstructorModules(UUID instructorId) {
+        User instructor = userRepository.findByIdAndIsActiveTrue(instructorId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Instructor not found with ID: " + instructorId));
+
+        if (instructor.getRole() != UserRole.INSTRUCTOR) {
+            throw new IllegalArgumentException(
+                    "User with ID " + instructorId + " is not an instructor");
+        }
+
+        return userModuleAssignmentRepository
+                .findAllByUserId(instructorId)
+                .stream()
+                .map(a -> AssignedModuleResponse.builder()
+                        .moduleId(a.getModule().getId())
+                        .moduleName(a.getModule().getName())
+                        .specializationName(a.getModule().getSpecialization().getName())
+                        .build())
+                .toList();
+    }
 }
