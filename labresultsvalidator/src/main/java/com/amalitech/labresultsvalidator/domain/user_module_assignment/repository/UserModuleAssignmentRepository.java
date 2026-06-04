@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public interface UserModuleAssignmentRepository extends JpaRepository<UserModuleAssignment, UUID> {
     boolean existsByUserIdAndModuleId(UUID userId, UUID moduleId);
-    @EntityGraph(attributePaths = {"module", "moduke.specialization"})
+    @EntityGraph(attributePaths = {"module", "module.specialization"})
     List<UserModuleAssignment> findAllByUserId(UUID userId);
 
 
