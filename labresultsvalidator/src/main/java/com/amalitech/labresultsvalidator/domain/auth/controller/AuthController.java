@@ -58,6 +58,18 @@ public class AuthController {
         );
     }
 
+    @Operation(
+        summary = "Refresh JWT token",
+        description = "Use the refresh token cookie to get a new JWT access token. Returns a new refresh token cookie as well."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Token refreshed successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Missing or invalid refresh token",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @SecurityRequirements
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<LoginResponse>> refresh(
             HttpServletRequest request,
@@ -74,6 +86,18 @@ public class AuthController {
         );
     }
 
+    @Operation(
+        summary = "Logout",
+        description = "Invalidate the current session and clear the refresh token cookie."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Logout successful"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Unauthorized",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @SecurityRequirements
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             HttpServletRequest request,
