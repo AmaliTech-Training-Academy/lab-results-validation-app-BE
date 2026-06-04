@@ -29,14 +29,16 @@ public class AuthController {
 
     private final AuthService authService;
     private final CookieUtils cookieUtils;
-    
+
     @Operation(
         summary = "Login",
-        description = "Authenticate with email and password. Copy the returned token and paste it into the Authorize dialog (lock icon) to access protected endpoints."
+        description = "Authenticate with email and password. Returns a JWT token for use in the Authorize dialog."
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Login successful — JWT token returned"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Bad credentials or account disabled",
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Login successful — JWT token returned"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Bad credentials or account disabled",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
     @SecurityRequirements

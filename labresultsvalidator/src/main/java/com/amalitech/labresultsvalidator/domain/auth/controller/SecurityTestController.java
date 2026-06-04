@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "Security Tests", description = "Temporary endpoints for validating JWT and RBAC — remove before production")
+@Tag(name = "Security Tests", description = "Temporary JWT and RBAC validation endpoints — remove before production")
 @RestController
 @RequestMapping("/api/v1/test")
 public class SecurityTestController {
@@ -30,7 +30,8 @@ public class SecurityTestController {
     @Operation(summary = "Authenticated endpoint", description = "Any valid JWT accepted")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Token is valid"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Missing or invalid token")
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Missing or invalid token")
     })
     @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/authenticated")
@@ -41,7 +42,8 @@ public class SecurityTestController {
     @Operation(summary = "SUPER_ADMIN only", description = "Requires SUPER_ADMIN role")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Access granted"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Missing or invalid token"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Missing or invalid token"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Insufficient role")
     })
     @SecurityRequirement(name = "bearerAuth")
@@ -54,7 +56,8 @@ public class SecurityTestController {
     @Operation(summary = "ADMIN or SUPER_ADMIN only", description = "Requires ADMIN or SUPER_ADMIN role")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Access granted"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Missing or invalid token"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Missing or invalid token"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Insufficient role")
     })
     @SecurityRequirement(name = "bearerAuth")
@@ -67,7 +70,8 @@ public class SecurityTestController {
     @Operation(summary = "INSTRUCTOR only", description = "Requires INSTRUCTOR role")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Access granted"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Missing or invalid token"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Missing or invalid token"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Insufficient role")
     })
     @SecurityRequirement(name = "bearerAuth")
