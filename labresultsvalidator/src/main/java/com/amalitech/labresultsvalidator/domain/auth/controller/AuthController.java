@@ -60,7 +60,7 @@ public class AuthController {
 
     @Operation(
         summary = "Refresh JWT token",
-        description = "Use the refresh token cookie to get a new JWT access token. Returns a new refresh token cookie as well."
+        description = "Use the refresh token cookie to get a new JWT access token."
     )
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
