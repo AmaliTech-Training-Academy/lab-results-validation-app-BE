@@ -1,4 +1,3 @@
-
 services:
   postgres:
     image: postgres:16
@@ -20,6 +19,18 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: labresultsvalidator-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: ./labresultsvalidator
@@ -30,13 +41,15 @@ services:
       - .env
     environment:
       - DB_HOST=postgres
+      - REDIS_HOST=redis
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   db_data:
     name: labresultsvalidator-db-data
-

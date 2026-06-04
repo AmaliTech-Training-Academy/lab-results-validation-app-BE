@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.auth.controller;
 
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
+import com.amalitech.labresultsvalidator.common.utils.CookieUtils;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginRequest;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginResponse;
 import com.amalitech.labresultsvalidator.domain.auth.service.AuthService;
@@ -10,6 +11,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
-
+    private final CookieUtils cookieUtils;
+    
     @Operation(
         summary = "Login",
         description = "Authenticate with email and password. Copy the returned token and paste it into the Authorize dialog (lock icon) to access protected endpoints."
@@ -38,9 +42,46 @@ public class AuthController {
     @SecurityRequirements
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(
-            @Valid @RequestBody LoginRequest request
-    ) {
-        LoginResponse response = authService.login(request);
-        return ResponseEntity.ok(ApiResponse.success("Login successful", response));
+            @Valid @RequestBody LoginRequest request,
+            HttpServletResponse response) {
+
+        LoginResponse loginResponse = authService.login(request);
+        cookieUtils.setRefreshTokenCookie(
+                response,
+                loginResponse.getRefreshToken()
+        );
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Login successful", loginResponse)
+        );
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<LoginResponse>> refresh(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+
+        LoginResponse loginResponse = authService.refresh(request);
+        cookieUtils.setRefreshTokenCookie(
+                response,
+                loginResponse.getRefreshToken()
+        );
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Token refreshed successfully", loginResponse)
+        );
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+
+        authService.logout(request);
+        cookieUtils.clearRefreshTokenCookie(response);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Logged out successfully", null)
+        );
     }
 }
