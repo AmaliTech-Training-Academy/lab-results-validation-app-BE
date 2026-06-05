@@ -15,7 +15,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,13 +35,19 @@ public class ModuleController {
 
     private final ModuleService moduleService;
 
-    @Operation(summary = "Create a module",
-               description = "Creates a new module under the given cohort and specialization. Returns 422 if the cohort and specialization combination does not exist.")
+    @Operation(
+        summary = "Create a module",
+        description = "Creates a new module under the given cohort and specialization. "
+            + "Returns 422 if the cohort and specialization combination does not exist.")
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Module created successfully"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422", description = "Cohort and specialization combination does not exist",
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "201", description = "Module created successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "422",
+            description = "Cohort and specialization combination does not exist",
             content = @Content(schema = @Schema(implementation = ApiResponse.class))),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Validation error",
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "Validation error",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
@@ -46,10 +59,13 @@ public class ModuleController {
                 .body(ApiResponse.success("Module created successfully", response));
     }
 
-    @Operation(summary = "List modules",
-               description = "Returns modules filtered by cohort_id and/or specialization_id. Both parameters are optional.")
+    @Operation(
+        summary = "List modules",
+        description = "Returns modules filtered by cohort_id and/or specialization_id. "
+            + "Both parameters are optional.")
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Modules retrieved successfully")
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Modules retrieved successfully")
     })
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR')")
     @GetMapping
@@ -63,10 +79,13 @@ public class ModuleController {
     @Operation(summary = "Update a module",
                description = "Supports archiving a module via { status: 'ARCHIVED' }.")
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Module updated successfully"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Module not found",
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Module updated successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "Module not found",
             content = @Content(schema = @Schema(implementation = ApiResponse.class))),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Validation error",
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "Validation error",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
