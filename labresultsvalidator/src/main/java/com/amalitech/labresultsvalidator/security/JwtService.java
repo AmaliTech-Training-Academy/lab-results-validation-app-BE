@@ -31,7 +31,13 @@ public class JwtService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", user.getRole().name());
         claims.put("userId", user.getId().toString());
+        claims.put("mustChangePassword", user.isMustChangePassword());
         return buildToken(claims, user.getEmail(), jwtExpiration);
+    }
+
+    public boolean extractMustChangePassword(String token) {
+        Boolean value = extractClaim(token, c -> c.get("mustChangePassword", Boolean.class));
+        return Boolean.TRUE.equals(value);
     }
 
     public String generateRefreshToken(User user) {
