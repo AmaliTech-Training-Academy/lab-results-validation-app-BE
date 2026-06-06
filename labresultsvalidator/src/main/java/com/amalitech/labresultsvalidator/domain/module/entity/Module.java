@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.module.entity;
 
 import com.amalitech.labresultsvalidator.common.BaseEntity;
+import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
 import com.amalitech.labresultsvalidator.domain.lab.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.entity.UserModuleAssignment;
@@ -63,6 +64,10 @@ public class Module extends BaseEntity {
     /** Ordering position of this module within its specialization. */
     @Column(name = "sequence", nullable = false)
     private int sequence;
+
+    @Builder.Default
+    @Column(name = "status", nullable = false)
+    private ModuleStatus status = ModuleStatus.ACTIVE;
 
     /** Labs contained within this module. */
     @OneToMany(mappedBy = "module",
