@@ -123,9 +123,7 @@ public class  AuthController {
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "200", description = "Password changed — new JWT returned"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "400", description = "Validation error or new password same as current"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "401", description = "Current password incorrect")
+            responseCode = "400", description = "Validation error, current password incorrect, or new password same as current")
     })
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/change-password")
