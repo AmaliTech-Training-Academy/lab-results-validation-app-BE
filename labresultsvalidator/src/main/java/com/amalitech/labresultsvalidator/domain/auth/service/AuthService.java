@@ -1,6 +1,8 @@
 package com.amalitech.labresultsvalidator.domain.auth.service;
 
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.utils.CookieUtils;
+import com.amalitech.labresultsvalidator.domain.auth.dto.ChangePasswordRequest;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginRequest;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginResponse;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
@@ -10,8 +12,10 @@ import com.amalitech.labresultsvalidator.security.RefreshTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,6 +26,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
     private final CookieUtils cookieUtils;
 
     public LoginResponse login(LoginRequest request) {
@@ -101,5 +106,34 @@ public class AuthService {
             String userId = jwtService.extractUserId(refreshToken);
             refreshTokenService.deleteRefreshToken(userId);
         }
+    }
+
+    public LoginResponse changePassword(String userEmail, ChangePasswordRequest request) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new BadCredentialsException("Current password is incorrect");
+        }
+
+        if (request.getNewPassword().equals(request.getCurrentPassword())) {
+            throw new IllegalArgumentException("New password must differ from the current password");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setMustChangePassword(false);
+        userRepository.save(user);
+
+        String newAccessToken = jwtService.generateToken(user);
+        String newRefreshToken = jwtService.generateRefreshToken(user);
+        refreshTokenService.storeRefreshToken(user.getId().toString(), newRefreshToken);
+
+        return LoginResponse.builder()
+                .token(newAccessToken)
+                .email(user.getEmail())
+                .role(user.getRole().name())
+                .mustChangePassword(false)
+                .refreshToken(newRefreshToken)
+                .build();
     }
 }

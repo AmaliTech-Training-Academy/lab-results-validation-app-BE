@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.auth.controller;
 
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.common.utils.CookieUtils;
+import com.amalitech.labresultsvalidator.domain.auth.dto.ChangePasswordRequest;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginRequest;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginResponse;
 import com.amalitech.labresultsvalidator.domain.auth.service.AuthService;
@@ -9,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,6 +18,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -108,6 +111,35 @@ public class  AuthController {
 
         return ResponseEntity.ok(
                 ApiResponse.success("Logged out successfully", null)
+        );
+    }
+
+    @Operation(
+        summary = "Change password",
+        description = "Required on first login when mustChangePassword is true. "
+            + "Issues a new token with mustChangePassword = false on success."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Password changed — new JWT returned"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Validation error, current password incorrect, or new password same as current")
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping("/change-password")
+    public ResponseEntity<ApiResponse<LoginResponse>> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            Authentication authentication,
+            HttpServletResponse response) {
+
+        LoginResponse loginResponse = authService.changePassword(
+                authentication.getName(), request
+        );
+        cookieUtils.setRefreshTokenCookie(response, loginResponse.getRefreshToken());
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Password changed successfully", loginResponse)
         );
     }
 }
