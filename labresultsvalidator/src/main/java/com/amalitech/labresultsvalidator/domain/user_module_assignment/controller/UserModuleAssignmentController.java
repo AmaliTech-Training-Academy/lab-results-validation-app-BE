@@ -14,7 +14,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -50,7 +49,7 @@ public class UserModuleAssignmentController {
             responseCode = "409", description = "Instructor already assigned to a module",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+
     @PostMapping("/{instructorId}/modules")
     public ResponseEntity<ApiResponse<AssignModuleResponse>> assignModules(
             @PathVariable UUID instructorId,
@@ -76,7 +75,7 @@ public class UserModuleAssignmentController {
             responseCode = "404", description = "Instructor not found",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+
     @GetMapping("/{instructorId}/modules")
     public ResponseEntity<ApiResponse<List<AssignedModuleResponse>>> getInstructorModules(
             @PathVariable UUID instructorId) {
