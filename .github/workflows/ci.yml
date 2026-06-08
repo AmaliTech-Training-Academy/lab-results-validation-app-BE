@@ -255,8 +255,19 @@ jobs:
 
       # Package the already-built jar into the runtime image — no recompile.
       - name: Build runtime image (from prebuilt jar)
-        run: docker build --target runtime-prebuilt -t "$IMAGE" .
         working-directory: ${{ env.WORKDIR }}
+        run: |
+          for attempt in 1 2 3; do
+            if docker build --target runtime-prebuilt -t "$IMAGE" .; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::docker build failed on attempt ${attempt}; retrying..."
+              sleep 15
+            fi
+          done
+          echo "::error::docker build failed after 3 attempts"
+          exit 1
 
       # --- Reports (exit-code 0: never fail here, just produce the files) ------
       - name: Trivy report (JSON)
