@@ -35,3 +35,4 @@ build/
 
 ### Local dev docs (never push) ###
 SECURITY_IMPLEMENTATION.md
+LEARNER_ROSTER_IMPLEMENTATION.md
