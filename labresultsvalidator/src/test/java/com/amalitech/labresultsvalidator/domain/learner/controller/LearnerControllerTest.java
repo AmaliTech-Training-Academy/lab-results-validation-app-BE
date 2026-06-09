@@ -305,4 +305,89 @@ class LearnerControllerTest {
                 .andExpect(jsonPath("$.message").value(
                         "Learner has associated lab results. Archive the learner instead."));
     }
+
+    // ── GET /api/v1/admin/learners/template ───────────────────────────────────
+
+    @Test
+    void downloadTemplate_returns200WithCsvContentType() throws Exception {
+        doNothing().when(learnerService).downloadTemplate(any());
+
+        mockMvc.perform(get(BASE_URL + "/template"))
+                .andExpect(status().isOk());
+    }
+
+    // ── Additional AC-1 validation edge cases ─────────────────────────────────
+
+    @Test
+    void createLearner_withMissingFullName_returns400() throws Exception {
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "ama@test.com",
+                                  "cohortId": "%s",
+                                  "specializationId": "%s"
+                                }
+                                """.formatted(UUID.randomUUID(), UUID.randomUUID())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void createLearner_withMissingCohortId_returns400() throws Exception {
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ama Owusu",
+                                  "email": "ama@test.com",
+                                  "specializationId": "%s"
+                                }
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ── Additional AC-3 update edge cases ─────────────────────────────────────
+
+    @Test
+    void updateLearner_withMissingFullName_returns400() throws Exception {
+        mockMvc.perform(put(BASE_URL + "/" + learnerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cohortId": "%s",
+                                  "specializationId": "%s"
+                                }
+                                """.formatted(UUID.randomUUID(), UUID.randomUUID())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void updateLearner_whenNotFound_returns404() throws Exception {
+        when(learnerService.updateLearner(any(), any()))
+                .thenThrow(new ResourceNotFoundException("Learner not found"));
+
+        mockMvc.perform(put(BASE_URL + "/" + learnerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ama Owusu",
+                                  "cohortId": "%s",
+                                  "specializationId": "%s"
+                                }
+                                """.formatted(UUID.randomUUID(), UUID.randomUUID())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void updateLearnerStatus_withMissingStatus_returns400() throws Exception {
+        mockMvc.perform(patch(BASE_URL + "/" + learnerId + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
 }

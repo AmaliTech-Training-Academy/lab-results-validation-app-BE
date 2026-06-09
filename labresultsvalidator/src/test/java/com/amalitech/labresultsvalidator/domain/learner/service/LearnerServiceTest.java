@@ -17,6 +17,8 @@ import com.amalitech.labresultsvalidator.domain.learner.dto.BulkUploadResponse;
 import com.amalitech.labresultsvalidator.domain.learner.dto.CreateLearnerRequest;
 import com.amalitech.labresultsvalidator.domain.learner.dto.LearnerCsvRow;
 import com.amalitech.labresultsvalidator.domain.learner.dto.LearnerResponse;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
+import com.amalitech.labresultsvalidator.domain.learner.dto.UpdateLearnerRequest;
 import com.amalitech.labresultsvalidator.domain.learner.dto.UpdateLearnerStatusRequest;
 import com.amalitech.labresultsvalidator.domain.learner.entity.Learner;
 import com.amalitech.labresultsvalidator.domain.learner.repository.LearnerRepository;
@@ -388,6 +390,126 @@ class LearnerServiceTest {
         learnerService.deleteLearner(learner.getId());
 
         verify(learnerRepository).delete(any(Learner.class));
+    }
+
+    @Test
+    void getLearnerById_whenFound_returnsCorrectResponse() {
+        Learner learner = buildLearner("ama@test.com");
+        when(learnerRepository.findById(learner.getId())).thenReturn(Optional.of(learner));
+
+        LearnerResponse response = learnerService.getLearnerById(learner.getId());
+
+        assertThat(response.getId()).isEqualTo(learner.getId());
+        assertThat(response.getEmail()).isEqualTo("ama@test.com");
+        assertThat(response.getCohortName()).isEqualTo(cohort.getName());
+        assertThat(response.getSpecializationName()).isEqualTo(specialization.getName());
+    }
+
+    @Test
+    void getLearners_returnsPagedResponseWithMappedContent() {
+        Learner learner = buildLearner("ama@test.com");
+        org.springframework.data.domain.PageImpl<Learner> page =
+            new org.springframework.data.domain.PageImpl<>(List.of(learner));
+        when(learnerRepository.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Pageable.class)))
+            .thenReturn(page);
+
+        PagedResponse<LearnerResponse> result = learnerService.getLearners(
+            null, null, null, null,
+            org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getEmail()).isEqualTo("ama@test.com");
+        assertThat(result.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void updateLearner_withValidData_updatesAndReturnsResponse() {
+        Learner learner = buildLearner("ama@test.com");
+        when(learnerRepository.findById(learner.getId())).thenReturn(Optional.of(learner));
+        when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(cohort));
+        when(specializationRepository.findByIdAndCohortId(any(), any()))
+            .thenReturn(Optional.of(specialization));
+        when(learnerRepository.save(any())).thenReturn(learner);
+
+        UpdateLearnerRequest req = new UpdateLearnerRequest();
+        setField(req, "fullName", "Ama Owusu-Mensah");
+        setField(req, "cohortId", cohort.getId());
+        setField(req, "specializationId", specialization.getId());
+
+        learnerService.updateLearner(learner.getId(), req);
+
+        ArgumentCaptor<Learner> captor = ArgumentCaptor.forClass(Learner.class);
+        verify(learnerRepository).save(captor.capture());
+        assertThat(captor.getValue().getFullName()).isEqualTo("Ama Owusu-Mensah");
+    }
+
+    @Test
+    void updateLearner_withUnknownCohort_throwsResourceNotFoundException() {
+        Learner learner = buildLearner("ama@test.com");
+        when(learnerRepository.findById(learner.getId())).thenReturn(Optional.of(learner));
+        when(cohortRepository.findById(any())).thenReturn(Optional.empty());
+
+        UpdateLearnerRequest req = new UpdateLearnerRequest();
+        setField(req, "fullName", "Name");
+        setField(req, "cohortId", UUID.randomUUID());
+        setField(req, "specializationId", UUID.randomUUID());
+
+        assertThatThrownBy(() -> learnerService.updateLearner(learner.getId(), req))
+            .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(learnerRepository, never()).save(any());
+    }
+
+    @Test
+    void updateLearner_withSpecNotInCohort_throwsResourceNotFoundException() {
+        Learner learner = buildLearner("ama@test.com");
+        when(learnerRepository.findById(learner.getId())).thenReturn(Optional.of(learner));
+        when(cohortRepository.findById(any())).thenReturn(Optional.of(cohort));
+        when(specializationRepository.findByIdAndCohortId(any(), any()))
+            .thenReturn(Optional.empty());
+
+        UpdateLearnerRequest req = new UpdateLearnerRequest();
+        setField(req, "fullName", "Name");
+        setField(req, "cohortId", cohort.getId());
+        setField(req, "specializationId", UUID.randomUUID());
+
+        assertThatThrownBy(() -> learnerService.updateLearner(learner.getId(), req))
+            .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void deleteLearner_whenNotFound_throwsResourceNotFoundException() {
+        UUID id = UUID.randomUUID();
+        when(learnerRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> learnerService.deleteLearner(id))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining(id.toString());
+
+        verify(learnerRepository, never()).delete(any(Learner.class));
+    }
+
+    @Test
+    void bulkUpload_withSpecializationNotInCohort_rejectsThatRow() {
+        LearnerCsvRow row = csvRow("Ama Owusu", "ama@test.com", "Cohort 1", "Wrong Track");
+        CsvParseResult<LearnerCsvRow> parsed = new CsvParseResult<>(
+                List.of(new ParsedRow<>(2L, row)), List.of());
+
+        doReturn(parsed).when(csvParserService).parse(any(), any());
+        when(learnerRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
+        when(cohortRepository.findByNameIgnoreCase("Cohort 1")).thenReturn(Optional.of(cohort));
+        when(specializationRepository.findByCohortIdAndNameIgnoreCase(any(), anyString()))
+            .thenReturn(Optional.empty());
+        when(learnerRepository.saveAll(any())).thenReturn(List.of());
+
+        BulkUploadResponse result = learnerService.bulkUpload(
+            new org.springframework.mock.web.MockMultipartFile(
+                "file", "f.csv", "text/csv", new byte[0]));
+
+        assertThat(result.getAcceptedCount()).isZero();
+        assertThat(result.getErrors().get(0).field()).isEqualTo("SPECIALIZATION_NAME");
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
