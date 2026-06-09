@@ -13,6 +13,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class SpecializationService {
@@ -52,11 +57,19 @@ public class SpecializationService {
         return mapToResponse(saved);
     }
 
+    public Page<SpecializationResponse> listSpecializations(UUID cohortId, Pageable pageable) {
+        if (cohortId != null) {
+            return specializationRepository.findAllByCohortIdOrderByNameAsc(cohortId, pageable)
+                    .map(this::mapToResponse);
+        }
+        return specializationRepository.findAllByOrderByNameAsc(pageable)
+                .map(this::mapToResponse);
+    }
+
     private SpecializationResponse mapToResponse(Specialization specialization) {
         return SpecializationResponse.builder()
                 .id(specialization.getId())
                 .cohortId(specialization.getCohort().getId())
-                .cohortName(specialization.getCohort().getName())
                 .name(specialization.getName())
                 .code(specialization.getCode())
                 .createdAt(specialization.getCreatedAt())

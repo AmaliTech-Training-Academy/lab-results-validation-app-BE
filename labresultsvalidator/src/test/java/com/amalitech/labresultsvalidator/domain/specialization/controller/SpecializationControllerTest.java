@@ -45,7 +45,6 @@ class SpecializationControllerTest {
         SpecializationResponse response = SpecializationResponse.builder()
                 .id(UUID.randomUUID())
                 .cohortId(cohortId)
-                .cohortName("Cohort 12")
                 .name("Software Engineering")
                 .code("SWE")
                 .build();
@@ -68,7 +67,7 @@ class SpecializationControllerTest {
                         .value("Specialization created successfully"))
                 .andExpect(jsonPath("$.data.name").value("Software Engineering"))
                 .andExpect(jsonPath("$.data.code").value("SWE"))
-                .andExpect(jsonPath("$.data.cohortName").value("Cohort 12"));
+                .andExpect(jsonPath("$.data.cohortId").value(cohortId.toString()));
     }
 
     @Test

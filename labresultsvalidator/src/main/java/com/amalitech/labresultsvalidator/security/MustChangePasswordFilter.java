@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.security;
 
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,18 +39,22 @@ public class MustChangePasswordFilter extends OncePerRequestFilter {
             return;
         }
 
+        String jwt = authHeader.substring(7);
+        boolean mustChange;
         try {
-            String jwt = authHeader.substring(7);
-            if (jwtService.extractMustChangePassword(jwt)) {
-                response.setStatus(HttpStatus.FORBIDDEN.value());
-                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                response.getWriter().write(
-                    "{\"success\":false,\"message\":\"Password change required\",\"data\":null}"
-                );
-                return;
-            }
-        } catch (Exception e) {
-            // Invalid tokens are handled upstream by JwtAuthenticationFilter
+            mustChange = jwtService.extractMustChangePassword(jwt);
+        } catch (JwtException | IllegalArgumentException e) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        if (mustChange) {
+            response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.getWriter().write(
+                "{\"success\":false,\"message\":\"Password change required\",\"data\":null}"
+            );
+            return;
         }
 
         filterChain.doFilter(request, response);
