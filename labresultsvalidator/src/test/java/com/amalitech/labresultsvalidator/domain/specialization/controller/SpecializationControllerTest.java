@@ -67,7 +67,7 @@ class SpecializationControllerTest {
                         .value("Specialization created successfully"))
                 .andExpect(jsonPath("$.data.name").value("Software Engineering"))
                 .andExpect(jsonPath("$.data.code").value("SWE"))
-                .andExpect(jsonPath("$.data.cohortName").value("Cohort 12"));
+                .andExpect(jsonPath("$.data.cohortId").value(cohortId.toString()));
     }
 
     @Test
