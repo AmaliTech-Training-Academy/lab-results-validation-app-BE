@@ -20,6 +20,9 @@ public interface SpecializationRepository extends JpaRepository<Specialization, 
     Optional<Specialization> findByIdAndCohortId(UUID id, UUID cohortId);
 
     @EntityGraph(attributePaths = {"cohort"})
+    Optional<Specialization> findByCohortIdAndNameIgnoreCase(UUID cohortId, String name);
+
+    @EntityGraph(attributePaths = {"cohort"})
     Page<Specialization> findAllByOrderByNameAsc(Pageable pageable);
 
     @EntityGraph(attributePaths = {"cohort"})
