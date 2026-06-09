@@ -9,8 +9,10 @@ import java.util.UUID;
 
 public interface UserModuleAssignmentRepository extends JpaRepository<UserModuleAssignment, UUID> {
     boolean existsByUserIdAndModuleId(UUID userId, UUID moduleId);
+
     @EntityGraph(attributePaths = {"module", "module.specialization"})
     List<UserModuleAssignment> findAllByUserId(UUID userId);
 
-
+    @EntityGraph(attributePaths = {"user", "module", "module.specialization"})
+    List<UserModuleAssignment> findAllByUserIdIn(List<UUID> userIds);
 }

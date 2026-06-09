@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.user.controller;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorResponse;
+import com.amalitech.labresultsvalidator.domain.user.dto.UserResponseDTO;
 import com.amalitech.labresultsvalidator.domain.user.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,10 +16,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @Tag(name = "User Management", description = "Admin operations for managing user accounts")
 @RestController
@@ -67,5 +71,32 @@ public class UserController {
         ProvisionInstructorResponse response = userService.provisionInstructor(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Instructor account created successfully", response));
+    }
+
+    @Operation(
+        summary = "List instructors",
+        description = "Returns all INSTRUCTOR accounts with their email, active status, "
+            + "and assigned modules. Restricted to ADMIN and SUPER_ADMIN roles."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Instructor list returned"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401",
+            description = "Missing or invalid JWT token",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "Insufficient role — requires ADMIN or SUPER_ADMIN",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    @GetMapping("/instructors")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<List<UserResponseDTO>>> listInstructors() {
+        List<UserResponseDTO> instructors = userService.listInstructors();
+        return ResponseEntity.ok(
+                ApiResponse.success("Instructors retrieved successfully", instructors)
+        );
     }
 }
