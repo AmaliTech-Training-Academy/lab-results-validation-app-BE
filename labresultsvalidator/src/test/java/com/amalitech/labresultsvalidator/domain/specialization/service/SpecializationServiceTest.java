@@ -95,7 +95,6 @@ class SpecializationServiceTest {
         assertThat(response.getName()).isEqualTo("Software Engineering");
         assertThat(response.getCode()).isEqualTo("SWE");
         assertThat(response.getCohortId()).isEqualTo(cohort.getId());
-        assertThat(response.getCohortName()).isEqualTo("Cohort 12");
         assertThat(response.getId()).isNotNull();
     }
 

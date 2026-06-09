@@ -45,7 +45,6 @@ class SpecializationControllerTest {
         SpecializationResponse response = SpecializationResponse.builder()
                 .id(UUID.randomUUID())
                 .cohortId(cohortId)
-                .cohortName("Cohort 12")
                 .name("Software Engineering")
                 .code("SWE")
                 .build();
