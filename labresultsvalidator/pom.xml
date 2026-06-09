@@ -32,9 +32,12 @@
              CRITICAL/HIGH CVEs flagged by Trivy (CVE-2026-41293, -43512,
              -43515, -41284, -42498, -43513). Fixed in 11.0.22. -->
         <tomcat.version>11.0.22</tomcat.version>
-        <!-- Override Netty to patch CVE-2026-42579 (HIGH) — improper DNS
-             domain name constraint handling. Fixed in 4.2.13.Final. -->
-        <netty.version>4.2.13.Final</netty.version>
+        <!-- Override Netty to patch HIGH CVEs: CVE-2026-42579 (DNS domain name
+             constraint handling), CVE-2026-44249 (IPv6 subnet filter bypass),
+             CVE-2026-45416 (SNI handler over-allocation), CVE-2026-45674 and
+             CVE-2026-47691 (DNS cache poisoning / bailiwick checks).
+             Fixed in 4.2.15.Final. -->
+        <netty.version>4.2.15.Final</netty.version>
     </properties>
     <dependencies>
         <dependency>
