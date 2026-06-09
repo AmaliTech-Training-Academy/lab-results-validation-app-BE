@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.common.exceptions;
 
+import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
@@ -56,6 +58,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleUnprocessableEntity(UnprocessableEntityException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(MalformedCsvException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMalformedCsv(MalformedCsvException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ApiResponse.error("Uploaded file exceeds the maximum allowed size of 5MB"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
