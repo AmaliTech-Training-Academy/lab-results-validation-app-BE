@@ -15,7 +15,6 @@ import java.util.UUID;
 public class SpecializationResponse {
     private UUID id;
     private UUID cohortId;
-    private String cohortName;
     private String name;
     private String code;
     private OffsetDateTime createdAt;
