@@ -77,7 +77,8 @@ public class ProgramStructureUploadService {
                 try {
                     BigDecimal score = new BigDecimal(r.getMaxScore().trim());
                     if (score.compareTo(BigDecimal.ZERO) <= 0) {
-                        errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score must be greater than zero"));
+                        errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE",
+                                "Max score must be greater than zero"));
                     }
                 } catch (NumberFormatException e) {
                     errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score must be a valid number"));
