@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -58,6 +59,30 @@ public class UserModuleAssignmentController {
         AssignModuleResponse response = userModuleAssignmentService.assignModule(instructorId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Modules assigned successfully", response));
+    }
+
+    @Operation(
+        summary = "Remove module assignments from an instructor",
+        description = "Removes specific module assignments from an instructor. Returns the remaining assignments. Restricted to ADMIN and SUPER_ADMIN roles."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Module assignments removed successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "User is not an instructor",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "Instructor not found or module not assigned",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @DeleteMapping("/{instructorId}/modules")
+    public ResponseEntity<ApiResponse<List<AssignedModuleResponse>>> removeModuleAssignments(
+            @PathVariable UUID instructorId,
+            @Valid @RequestBody AssignModuleRequest request) {
+
+        List<AssignedModuleResponse> remaining = userModuleAssignmentService.removeModuleAssignments(instructorId, request);
+        return ResponseEntity.ok(
+                ApiResponse.success("Module assignments removed successfully", remaining));
     }
 
     @Operation(
