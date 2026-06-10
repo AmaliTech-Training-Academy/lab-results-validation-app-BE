@@ -63,7 +63,8 @@ public class UserModuleAssignmentController {
 
     @Operation(
         summary = "Remove module assignments from an instructor",
-        description = "Removes specific module assignments from an instructor. Returns the remaining assignments. Restricted to ADMIN and SUPER_ADMIN roles."
+        description = "Removes specific module assignments from an instructor. "
+            + "Returns the remaining assignments. Restricted to ADMIN and SUPER_ADMIN roles."
     )
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -80,7 +81,8 @@ public class UserModuleAssignmentController {
             @PathVariable UUID instructorId,
             @Valid @RequestBody AssignModuleRequest request) {
 
-        List<AssignedModuleResponse> remaining = userModuleAssignmentService.removeModuleAssignments(instructorId, request);
+        List<AssignedModuleResponse> remaining =
+                userModuleAssignmentService.removeModuleAssignments(instructorId, request);
         return ResponseEntity.ok(
                 ApiResponse.success("Module assignments removed successfully", remaining));
     }

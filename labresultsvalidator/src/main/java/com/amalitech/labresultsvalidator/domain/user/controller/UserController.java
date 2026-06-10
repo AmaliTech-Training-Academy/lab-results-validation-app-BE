@@ -79,7 +79,8 @@ public class UserController {
 
     @Operation(
         summary = "Update instructor info",
-        description = "Updates email and/or active status of an instructor. Only provided fields are changed. Restricted to ADMIN and SUPER_ADMIN roles."
+        description = "Updates email and/or active status of an instructor. "
+            + "Only provided fields are changed. Restricted to ADMIN and SUPER_ADMIN roles."
     )
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
