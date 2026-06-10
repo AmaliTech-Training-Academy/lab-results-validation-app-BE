@@ -43,25 +43,35 @@ public class ProgramStructureUploadService {
     public ProgramStructureUploadResponse upload(MultipartFile file) {
         CsvParseResult<ProgramStructureCsvRow> parsed = csvParserService.parse(file, ProgramStructureCsvRow.class);
         List<CsvRowError> errors = new ArrayList<>(parsed.errors());
-        if (!errors.isEmpty()) return errorResponse(errors);
+        if (!errors.isEmpty()) {
+            return errorResponse(errors);
+        }
 
         if (parsed.validRows().isEmpty()) {
             throw new IllegalArgumentException("CSV file contains no data rows");
         }
 
         errors.addAll(validateFields(parsed.validRows()));
-        if (!errors.isEmpty()) return errorResponse(errors);
+        if (!errors.isEmpty()) {
+            return errorResponse(errors);
+        }
 
         Map<String, Optional<Cohort>> cohortCache = buildCohortCache(parsed.validRows());
         errors.addAll(validateCohortsExist(parsed.validRows(), cohortCache));
-        if (!errors.isEmpty()) return errorResponse(errors);
+        if (!errors.isEmpty()) {
+            return errorResponse(errors);
+        }
 
         errors.addAll(validateSpecCodeConsistency(parsed.validRows()));
         errors.addAll(validateNoDuplicateLabs(parsed.validRows()));
-        if (!errors.isEmpty()) return errorResponse(errors);
+        if (!errors.isEmpty()) {
+            return errorResponse(errors);
+        }
 
         errors.addAll(validateSpecializationsNew(parsed.validRows(), cohortCache));
-        if (!errors.isEmpty()) return errorResponse(errors);
+        if (!errors.isEmpty()) {
+            return errorResponse(errors);
+        }
 
         return persist(parsed.validRows(), cohortCache);
     }
@@ -70,22 +80,28 @@ public class ProgramStructureUploadService {
         List<CsvRowError> errors = new ArrayList<>();
         for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             ProgramStructureCsvRow r = row.data();
-            if (isBlank(r.getCohortName()))
+            if (isBlank(r.getCohortName())) {
                 errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME", "Cohort name is required"));
-            if (isBlank(r.getSpecializationName()))
+            }
+            if (isBlank(r.getSpecializationName())) {
                 errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "Specialization name is required"));
-            if (isBlank(r.getSpecializationCode()))
+            }
+            if (isBlank(r.getSpecializationCode())) {
                 errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE", "Specialization code is required"));
-            if (isBlank(r.getModuleName()))
+            }
+            if (isBlank(r.getModuleName())) {
                 errors.add(new CsvRowError(row.lineNumber(), "MODULE_NAME", "Module name is required"));
-            if (isBlank(r.getLabTitle()))
+            }
+            if (isBlank(r.getLabTitle())) {
                 errors.add(new CsvRowError(row.lineNumber(), "LAB_TITLE", "Lab title is required"));
+            }
             validateMaxScore(row, r, errors);
         }
         return errors;
     }
 
-    private void validateMaxScore(ParsedRow<ProgramStructureCsvRow> row, ProgramStructureCsvRow r, List<CsvRowError> errors) {
+    private void validateMaxScore(ParsedRow<ProgramStructureCsvRow> row, ProgramStructureCsvRow r,
+                                  List<CsvRowError> errors) {
         if (isBlank(r.getMaxScore())) {
             errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score is required"));
             return;
@@ -162,9 +178,12 @@ public class ProgramStructureUploadService {
         for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             ProgramStructureCsvRow r = row.data();
             String key = specKey(r);
-            if (checked.containsKey(key)) continue;
+            if (checked.containsKey(key)) {
+                continue;
+            }
             Cohort cohort = cohortCache.get(r.getCohortName().trim()).get();
-            boolean exists = specializationRepository.existsByCohortIdAndName(cohort.getId(), r.getSpecializationName().trim());
+            boolean exists = specializationRepository.existsByCohortIdAndName(
+                cohort.getId(), r.getSpecializationName().trim());
             checked.put(key, exists);
             if (exists) {
                 errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME",
@@ -241,7 +260,8 @@ public class ProgramStructureUploadService {
     }
 
     private static String labKey(ProgramStructureCsvRow r) {
-        return (r.getCohortName() + "|" + r.getSpecializationName() + "|" + r.getModuleName() + "|" + r.getLabTitle()).toLowerCase();
+        return (r.getCohortName() + "|" + r.getSpecializationName()
+            + "|" + r.getModuleName() + "|" + r.getLabTitle()).toLowerCase();
     }
 
     private static boolean isBlank(String value) {
