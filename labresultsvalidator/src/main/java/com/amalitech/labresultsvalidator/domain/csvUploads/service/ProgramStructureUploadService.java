@@ -41,141 +41,153 @@ public class ProgramStructureUploadService {
 
     @Transactional
     public ProgramStructureUploadResponse upload(MultipartFile file) {
-
-        // Stage 1: Parse CSV — structural failures (bad format, missing headers) reject everything
         CsvParseResult<ProgramStructureCsvRow> parsed = csvParserService.parse(file, ProgramStructureCsvRow.class);
         List<CsvRowError> errors = new ArrayList<>(parsed.errors());
-        if (!errors.isEmpty()) {
-            return errorResponse(errors);
-        }
+        if (!errors.isEmpty()) return errorResponse(errors);
 
         if (parsed.validRows().isEmpty()) {
             throw new IllegalArgumentException("CSV file contains no data rows");
         }
 
-        // Stage 2: Field-level validation
-        for (ParsedRow<ProgramStructureCsvRow> row : parsed.validRows()) {
-            ProgramStructureCsvRow r = row.data();
-            if (r.getCohortName() == null || r.getCohortName().isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME", "Cohort name is required"));
-            }
-            if (r.getSpecializationName() == null || r.getSpecializationName().isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "Specialization name is required"));
-            }
-            if (r.getSpecializationCode() == null || r.getSpecializationCode().isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE", "Specialization code is required"));
-            }
-            if (r.getModuleName() == null || r.getModuleName().isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "MODULE_NAME", "Module name is required"));
-            }
-            if (r.getLabTitle() == null || r.getLabTitle().isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "LAB_TITLE", "Lab title is required"));
-            }
-            if (r.getMaxScore() == null || r.getMaxScore().isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score is required"));
-            } else {
-                try {
-                    BigDecimal score = new BigDecimal(r.getMaxScore().trim());
-                    if (score.compareTo(BigDecimal.ZERO) <= 0) {
-                        errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE",
-                                "Max score must be greater than zero"));
-                    }
-                } catch (NumberFormatException e) {
-                    errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score must be a valid number"));
-                }
-            }
-        }
-        if (!errors.isEmpty()) {
-            return errorResponse(errors);
-        }
+        errors.addAll(validateFields(parsed.validRows()));
+        if (!errors.isEmpty()) return errorResponse(errors);
 
-        // Stage 3: Cohort existence — cohort must already exist before uploading structure
-        Map<String, Optional<Cohort>> cohortCache = new HashMap<>();
-        for (ParsedRow<ProgramStructureCsvRow> row : parsed.validRows()) {
-            String name = row.data().getCohortName().trim();
-            cohortCache.computeIfAbsent(name, cohortRepository::findByNameIgnoreCase);
+        Map<String, Optional<Cohort>> cohortCache = buildCohortCache(parsed.validRows());
+        errors.addAll(validateCohortsExist(parsed.validRows(), cohortCache));
+        if (!errors.isEmpty()) return errorResponse(errors);
+
+        errors.addAll(validateSpecCodeConsistency(parsed.validRows()));
+        errors.addAll(validateNoDuplicateLabs(parsed.validRows()));
+        if (!errors.isEmpty()) return errorResponse(errors);
+
+        errors.addAll(validateSpecializationsNew(parsed.validRows(), cohortCache));
+        if (!errors.isEmpty()) return errorResponse(errors);
+
+        return persist(parsed.validRows(), cohortCache);
+    }
+
+    private List<CsvRowError> validateFields(List<ParsedRow<ProgramStructureCsvRow>> rows) {
+        List<CsvRowError> errors = new ArrayList<>();
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
+            ProgramStructureCsvRow r = row.data();
+            if (isBlank(r.getCohortName()))
+                errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME", "Cohort name is required"));
+            if (isBlank(r.getSpecializationName()))
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "Specialization name is required"));
+            if (isBlank(r.getSpecializationCode()))
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE", "Specialization code is required"));
+            if (isBlank(r.getModuleName()))
+                errors.add(new CsvRowError(row.lineNumber(), "MODULE_NAME", "Module name is required"));
+            if (isBlank(r.getLabTitle()))
+                errors.add(new CsvRowError(row.lineNumber(), "LAB_TITLE", "Lab title is required"));
+            validateMaxScore(row, r, errors);
         }
-        for (ParsedRow<ProgramStructureCsvRow> row : parsed.validRows()) {
+        return errors;
+    }
+
+    private void validateMaxScore(ParsedRow<ProgramStructureCsvRow> row, ProgramStructureCsvRow r, List<CsvRowError> errors) {
+        if (isBlank(r.getMaxScore())) {
+            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score is required"));
+            return;
+        }
+        try {
+            BigDecimal score = new BigDecimal(r.getMaxScore().trim());
+            if (score.compareTo(BigDecimal.ZERO) <= 0) {
+                errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score must be greater than zero"));
+            }
+        } catch (NumberFormatException e) {
+            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score must be a valid number"));
+        }
+    }
+
+    private Map<String, Optional<Cohort>> buildCohortCache(List<ParsedRow<ProgramStructureCsvRow>> rows) {
+        Map<String, Optional<Cohort>> cache = new HashMap<>();
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
+            cache.computeIfAbsent(row.data().getCohortName().trim(), cohortRepository::findByNameIgnoreCase);
+        }
+        return cache;
+    }
+
+    private List<CsvRowError> validateCohortsExist(List<ParsedRow<ProgramStructureCsvRow>> rows,
+                                                    Map<String, Optional<Cohort>> cohortCache) {
+        List<CsvRowError> errors = new ArrayList<>();
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             String name = row.data().getCohortName().trim();
             if (cohortCache.get(name).isEmpty()) {
                 errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME",
                     "Cohort '" + name + "' not found — create the cohort first"));
             }
         }
-        if (!errors.isEmpty()) {
-            return errorResponse(errors);
-        }
+        return errors;
+    }
 
-        // Stage 4a: Detect inconsistent specialization codes within the file
-        // Same specialization name must use the same code on every row
+    private List<CsvRowError> validateSpecCodeConsistency(List<ParsedRow<ProgramStructureCsvRow>> rows) {
+        List<CsvRowError> errors = new ArrayList<>();
         Map<String, String> specKeyToCode = new HashMap<>();
-        for (ParsedRow<ProgramStructureCsvRow> row : parsed.validRows()) {
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             ProgramStructureCsvRow r = row.data();
-            String specKey = (r.getCohortName() + "|" + r.getSpecializationName()).toLowerCase();
             String code = r.getSpecializationCode().trim();
-            String existing = specKeyToCode.get(specKey);
+            String existing = specKeyToCode.get(specKey(r));
             if (existing == null) {
-                specKeyToCode.put(specKey, code);
+                specKeyToCode.put(specKey(r), code);
             } else if (!existing.equalsIgnoreCase(code)) {
                 errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE",
                     "Inconsistent code for specialization '" + r.getSpecializationName()
                     + "': '" + existing + "' vs '" + code + "'"));
             }
         }
+        return errors;
+    }
 
-        // Stage 4b: Detect duplicate labs within the file
-        Map<String, Long> seenLabKeys = new LinkedHashMap<>();
-        for (ParsedRow<ProgramStructureCsvRow> row : parsed.validRows()) {
+    private List<CsvRowError> validateNoDuplicateLabs(List<ParsedRow<ProgramStructureCsvRow>> rows) {
+        List<CsvRowError> errors = new ArrayList<>();
+        Map<String, Long> seen = new LinkedHashMap<>();
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             ProgramStructureCsvRow r = row.data();
-            String labKey = (r.getCohortName() + "|" + r.getSpecializationName()
-                + "|" + r.getModuleName() + "|" + r.getLabTitle()).toLowerCase();
-            if (seenLabKeys.containsKey(labKey)) {
+            String key = labKey(r);
+            if (seen.containsKey(key)) {
                 errors.add(new CsvRowError(row.lineNumber(), "LAB_TITLE",
                     "Duplicate lab '" + r.getLabTitle() + "' in module '" + r.getModuleName() + "'"));
             } else {
-                seenLabKeys.put(labKey, row.lineNumber());
+                seen.put(key, row.lineNumber());
             }
         }
-        if (!errors.isEmpty()) {
-            return errorResponse(errors);
-        }
+        return errors;
+    }
 
-        // Stage 5: DB uniqueness — specializations must not already exist in the cohort
-        Map<String, Boolean> checkedSpecs = new HashMap<>();
-        for (ParsedRow<ProgramStructureCsvRow> row : parsed.validRows()) {
+    private List<CsvRowError> validateSpecializationsNew(List<ParsedRow<ProgramStructureCsvRow>> rows,
+                                                          Map<String, Optional<Cohort>> cohortCache) {
+        List<CsvRowError> errors = new ArrayList<>();
+        Map<String, Boolean> checked = new HashMap<>();
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             ProgramStructureCsvRow r = row.data();
+            String key = specKey(r);
+            if (checked.containsKey(key)) continue;
             Cohort cohort = cohortCache.get(r.getCohortName().trim()).get();
-            String specKey = (r.getCohortName() + "|" + r.getSpecializationName()).toLowerCase();
-            if (!checkedSpecs.containsKey(specKey)) {
-                boolean exists = specializationRepository.existsByCohortIdAndName(
-                    cohort.getId(), r.getSpecializationName().trim());
-                checkedSpecs.put(specKey, exists);
-                if (exists) {
-                    errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME",
-                        "Specialization '" + r.getSpecializationName()
-                        + "' already exists in cohort '" + r.getCohortName() + "'"));
-                }
+            boolean exists = specializationRepository.existsByCohortIdAndName(cohort.getId(), r.getSpecializationName().trim());
+            checked.put(key, exists);
+            if (exists) {
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME",
+                    "Specialization '" + r.getSpecializationName()
+                    + "' already exists in cohort '" + r.getCohortName() + "'"));
             }
         }
-        if (!errors.isEmpty()) {
-            return errorResponse(errors);
-        }
+        return errors;
+    }
 
-        // Stage 6: Build and persist the full hierarchy atomically
-        // Order matters: specializations → modules (FK to spec) → labs (FK to module)
+    private ProgramStructureUploadResponse persist(List<ParsedRow<ProgramStructureCsvRow>> rows,
+                                                    Map<String, Optional<Cohort>> cohortCache) {
         User actor = currentUser();
-
         Map<String, Specialization> specMap = new LinkedHashMap<>();
         Map<String, Module> moduleMap = new LinkedHashMap<>();
         Map<String, Integer> specModuleSequence = new HashMap<>();
         List<Lab> allLabs = new ArrayList<>();
 
-        for (ParsedRow<ProgramStructureCsvRow> row : parsed.validRows()) {
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             ProgramStructureCsvRow r = row.data();
             Cohort cohort = cohortCache.get(r.getCohortName().trim()).get();
 
-            String specKey = (r.getCohortName() + "|" + r.getSpecializationName()).toLowerCase();
-            Specialization spec = specMap.computeIfAbsent(specKey, k -> {
+            Specialization spec = specMap.computeIfAbsent(specKey(r), k -> {
                 Specialization s = Specialization.builder()
                     .cohort(cohort)
                     .name(r.getSpecializationName().trim())
@@ -186,11 +198,8 @@ public class ProgramStructureUploadService {
                 return s;
             });
 
-            String moduleKey = (r.getCohortName() + "|" + r.getSpecializationName()
-                + "|" + r.getModuleName()).toLowerCase();
-            Module module = moduleMap.computeIfAbsent(moduleKey, k -> {
-                // Sequence is the order of first appearance within the specialization
-                int sequence = specModuleSequence.merge(specKey, 1, Integer::sum);
+            Module module = moduleMap.computeIfAbsent(moduleKey(r), k -> {
+                int sequence = specModuleSequence.merge(specKey(r), 1, Integer::sum);
                 Module m = Module.builder()
                     .specialization(spec)
                     .name(r.getModuleName().trim())
@@ -221,6 +230,22 @@ public class ProgramStructureUploadService {
             .labsCreated(allLabs.size())
             .errors(List.of())
             .build();
+    }
+
+    private static String specKey(ProgramStructureCsvRow r) {
+        return (r.getCohortName() + "|" + r.getSpecializationName()).toLowerCase();
+    }
+
+    private static String moduleKey(ProgramStructureCsvRow r) {
+        return (r.getCohortName() + "|" + r.getSpecializationName() + "|" + r.getModuleName()).toLowerCase();
+    }
+
+    private static String labKey(ProgramStructureCsvRow r) {
+        return (r.getCohortName() + "|" + r.getSpecializationName() + "|" + r.getModuleName() + "|" + r.getLabTitle()).toLowerCase();
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private User currentUser() {
