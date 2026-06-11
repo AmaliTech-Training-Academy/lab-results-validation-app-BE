@@ -3,8 +3,10 @@ package com.amalitech.labresultsvalidator.domain.auth.controller;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.common.utils.CookieUtils;
 import com.amalitech.labresultsvalidator.domain.auth.dto.ChangePasswordRequest;
+import com.amalitech.labresultsvalidator.domain.auth.dto.ForgotPasswordRequest;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginRequest;
 import com.amalitech.labresultsvalidator.domain.auth.dto.LoginResponse;
+import com.amalitech.labresultsvalidator.domain.auth.dto.ResetPasswordRequest;
 import com.amalitech.labresultsvalidator.domain.auth.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -111,6 +113,52 @@ public class  AuthController {
 
         return ResponseEntity.ok(
                 ApiResponse.success("Logged out successfully", null)
+        );
+    }
+
+    @Operation(
+        summary = "Forgot password",
+        description = "Sends a password reset link to the provided email address. "
+            + "Always returns 200 regardless of whether the email exists, "
+            + "to prevent account enumeration. The reset link expires in 15 minutes."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Reset email sent if the address is registered"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "Validation error — email missing or malformed",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @SecurityRequirements
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<Void>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return ResponseEntity.ok(
+                ApiResponse.success("If this email is registered, a reset link has been sent", null)
+        );
+    }
+
+    @Operation(
+        summary = "Reset password",
+        description = "Sets a new password using the one-time token from the reset email. "
+            + "The token expires after 15 minutes and is invalidated after a single use."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Password reset successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Validation error, token missing, or token invalid / expired",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @SecurityRequirements
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok(
+                ApiResponse.success("Password reset successfully. Please log in with your new password.", null)
         );
     }
 
