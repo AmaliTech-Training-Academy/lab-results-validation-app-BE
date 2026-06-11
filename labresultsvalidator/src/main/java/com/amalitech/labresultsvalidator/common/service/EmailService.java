@@ -34,6 +34,15 @@ public class EmailService {
         mailSender.send(message);
     }
 
+    public void sendPasswordResetEmail(String toEmail, String resetLink) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromEmail);
+        message.setTo(toEmail);
+        message.setSubject("LabGate — Password Reset Request");
+        message.setText(buildPasswordResetBody(resetLink));
+        mailSender.send(message);
+    }
+
     private String buildWelcomeBody(String email, String temporaryPassword) {
         return String.format(
             "Hello,%n%n"
@@ -44,6 +53,20 @@ public class EmailService {
             + "Best regards,%n"
             + "LabGate Admin Team",
             email, temporaryPassword
+        );
+    }
+
+    private String buildPasswordResetBody(String resetLink) {
+        return String.format(
+            "Hello,%n%n"
+            + "We received a request to reset your LabGate password.%n%n"
+            + "Click the link below to set a new password:%n"
+            + "%s%n%n"
+            + "This link expires in 15 minutes. If you did not request a password reset, "
+            + "you can safely ignore this email.%n%n"
+            + "Best regards,%n"
+            + "LabGate Admin Team",
+            resetLink
         );
     }
 }
