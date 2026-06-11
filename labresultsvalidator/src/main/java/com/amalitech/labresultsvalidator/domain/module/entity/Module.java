@@ -2,11 +2,13 @@ package com.amalitech.labresultsvalidator.domain.module.entity;
 
 import com.amalitech.labresultsvalidator.common.BaseEntity;
 import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
+import com.amalitech.labresultsvalidator.domain.enums.ModuleStatusConverter;
 import com.amalitech.labresultsvalidator.domain.lab.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.entity.UserModuleAssignment;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -66,6 +68,7 @@ public class Module extends BaseEntity {
     private int sequence;
 
     @Builder.Default
+    @Convert(converter = ModuleStatusConverter.class)
     @Column(name = "status", nullable = false)
     private ModuleStatus status = ModuleStatus.ACTIVE;
 
