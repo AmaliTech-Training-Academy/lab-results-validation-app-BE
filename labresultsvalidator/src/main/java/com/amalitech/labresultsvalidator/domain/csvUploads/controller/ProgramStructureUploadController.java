@@ -10,13 +10,17 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 
 @Tag(name = "Program Structure", description = "Bulk program structure upload — ADMIN and SUPER_ADMIN only")
 @RestController
@@ -25,6 +29,15 @@ import org.springframework.web.multipart.MultipartFile;
 public class ProgramStructureUploadController {
 
     private final ProgramStructureUploadService programStructureUploadService;
+
+    @Operation(summary = "Download CSV template",
+        description = "Returns a header-only CSV file with the correct column names for bulk program structure upload.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "200", description = "CSV template file")
+    @GetMapping("/template")
+    public void downloadTemplate(HttpServletResponse response) throws IOException {
+        programStructureUploadService.downloadTemplate(response);
+    }
 
     @Operation(
         summary = "Bulk upload program structure",
