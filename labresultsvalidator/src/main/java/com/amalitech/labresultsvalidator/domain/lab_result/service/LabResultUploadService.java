@@ -122,6 +122,8 @@ public class LabResultUploadService {
                 case UPDATE -> toUpdate.add(resolution.result());
                 case SKIP -> skipped++;
                 case REJECT -> { /* error already recorded */ }
+                default -> throw new IllegalStateException(
+                    "Unexpected resolution kind: " + resolution.kind());
             }
         }
 
