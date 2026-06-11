@@ -33,7 +33,10 @@ public class AsyncConfig implements AsyncConfigurer {
 
     @Override
     public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
-        return (ex, method, params) ->
-            LOG.error("Async task '{}' failed: {}", method.getName(), ex.getMessage(), ex);
+        return (ex, method, params) -> {
+            String firstArg = params.length > 0 ? String.valueOf(params[0]) : "—";
+            LOG.error("Async task '{}' failed (first arg: {}): {}",
+                method.getName(), firstArg, ex.getMessage(), ex);
+        };
     }
 }
