@@ -82,4 +82,4 @@ jobs:
           ECR_TOKEN=$(aws ecr get-login-password --region "$AWS_REGION")
           echo "::add-mask::$ECR_TOKEN"
           ssh $SSH_OPTS ubuntu@"$SSH_HOST" \
-            "echo '$ECR_TOKEN' | docker login --username AWS --password-stdin '$REGISTRY' && cd /opt/app && docker compose pull && docker compose up -d && docker image prune -f"
+            "echo '$ECR_TOKEN' | docker login --username AWS --password-stdin '$REGISTRY' && cd /opt/app && docker compose pull app && docker compose up -d redis app && docker image prune -f"
