@@ -34,7 +34,7 @@ class EmailServiceTest {
         SimpleMailMessage sent = messageCaptor.getValue();
         assertThat(sent.getTo()).containsExactly("instructor@test.com");
         assertThat(sent.getFrom()).isEqualTo("noreply@labgate.com");
-        assertThat(sent.getSubject()).containsIgnoringCase("LabGate");
+        assertThat(sent.getSubject()).containsIgnoringCase("Amalitech Training Validata");
     }
 
     @Test

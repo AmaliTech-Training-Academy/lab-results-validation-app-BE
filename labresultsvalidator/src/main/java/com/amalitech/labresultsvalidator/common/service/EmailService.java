@@ -41,9 +41,14 @@ public class EmailService {
     public void onInstructorProvisioned(InstructorProvisionedEvent event) {
         dispatch(
             event.email(),
-            "Welcome to LabGate — Your Account Details",
-            buildInstructorWelcomeBody(event.email(), event.temporaryPassword())
+            "Welcome to Amalitech Training Validata - Your Account Details",
+            buildWelcomeBody(event.email(), event.temporaryPassword())
         );
+    }
+
+    @Async("emailTaskExecutor")
+    public void sendPasswordResetEmail(String toEmail, String resetLink) {
+        dispatch(toEmail, "AmalitechTraining — Password Reset Request", buildPasswordResetBody(resetLink));
     }
 
     // ── Shared internal dispatcher ────────────────────────────────────────────
@@ -57,9 +62,7 @@ public class EmailService {
         mailSender.send(message);
     }
 
-    // ── Message body builders ─────────────────────────────────────────────────
-
-    private String buildInstructorWelcomeBody(String email, String temporaryPassword) {
+    private String buildWelcomeBody(String email, String temporaryPassword) {
         return String.format(
             "Hello,%n%n"
             + "Your instructor account has been created for LabGate.%n%n"
@@ -69,6 +72,20 @@ public class EmailService {
             + "Best regards,%n"
             + "LabGate Admin Team",
             email, temporaryPassword
+        );
+    }
+
+    private String buildPasswordResetBody(String resetLink) {
+        return String.format(
+            "Hello,%n%n"
+            + "We received a request to reset your LabGate password.%n%n"
+            + "Click the link below to set a new password:%n"
+            + "%s%n%n"
+            + "This link expires in 15 minutes. If you did not request a password reset, "
+            + "you can safely ignore this email.%n%n"
+            + "Best regards,%n"
+            + "Amalitech Training Admin Team",
+            resetLink
         );
     }
 }
