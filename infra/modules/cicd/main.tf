@@ -35,8 +35,9 @@ resource "aws_iam_role" "deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
+          # Allow any ref (push, PR merge, workflow_dispatch) from the allowed repos.
           "token.actions.githubusercontent.com:sub" = [
-            for r in var.github_repos : "repo:${var.github_org}/${r}:ref:refs/heads/${var.branch}"
+            for r in var.github_repos : "repo:${var.github_org}/${r}:*"
           ]
         }
       }

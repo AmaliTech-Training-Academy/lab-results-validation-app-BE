@@ -32,11 +32,16 @@ services:
     image: ${backend_repo}:${image_tag}
     restart: unless-stopped
     env_file: .env
+    # Exposed on 8080 for on-box debugging only; the security group does not open
+    # 8080 externally. Public traffic reaches the API via the frontend's /api proxy.
+    ports:
+      - "8080:8080"
     depends_on:
       - redis
   frontend:
     image: ${frontend_repo}:${image_tag}
     restart: unless-stopped
+    # nginx listens on 8080 in the container; serves the SPA and proxies /api -> app:8080.
     ports:
       - "80:8080"
     depends_on:
