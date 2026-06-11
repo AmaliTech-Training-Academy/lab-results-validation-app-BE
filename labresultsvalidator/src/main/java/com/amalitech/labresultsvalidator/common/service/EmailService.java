@@ -1,10 +1,14 @@
 package com.amalitech.labresultsvalidator.common.service;
 
+import com.amalitech.labresultsvalidator.domain.user.event.InstructorProvisionedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Service
 @RequiredArgsConstructor
@@ -15,7 +19,13 @@ public class EmailService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
-    public void sendInstructorWelcome(String toEmail, String temporaryPassword) {
+    @Async("emailTaskExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onInstructorProvisioned(InstructorProvisionedEvent event) {
+        sendInstructorWelcome(event.email(), event.temporaryPassword());
+    }
+
+    private void sendInstructorWelcome(String toEmail, String temporaryPassword) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromEmail);
         message.setTo(toEmail);
