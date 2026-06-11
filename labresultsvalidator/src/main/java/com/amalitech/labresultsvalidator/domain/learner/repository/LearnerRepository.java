@@ -20,4 +20,5 @@ public interface LearnerRepository
     boolean existsByEmailIgnoreCase(String email);
 
     @Query("SELECT u.email FROM User u WHERE u.email IN :inFileEmails")
-    Set<String> findExistingEmails(@Param("inFileEmails") Set<String> inFileEmails);}
+    Set<String> findExistingEmails(@Param("inFileEmails") Set<String> inFileEmails);
+}

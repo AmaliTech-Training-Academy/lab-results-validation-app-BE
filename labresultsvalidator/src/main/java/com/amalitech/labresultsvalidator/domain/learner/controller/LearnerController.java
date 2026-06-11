@@ -76,7 +76,8 @@ public class LearnerController {
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "200", description = "At least one row accepted — see acceptedCount / rejectedCount"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "422", description = "All rows rejected, or whole-file structural failure (missing headers, too large, etc.)",
+            responseCode = "422",
+            description = "All rows rejected, or whole-file structural failure (missing headers, too large, etc.)",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
     @PostMapping(value = "/bulk", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

@@ -34,11 +34,18 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -48,7 +55,7 @@ import java.util.stream.Collectors;
 public class LearnerService {
 
     private static final Logger LOG = LoggerFactory.getLogger(LearnerService.class);
-    private final static long MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+    private static final long MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
     private static final Pattern EMAIL_PATTERN =
         Pattern.compile("^[\\w.+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$");
     // Matches PostgreSQL detail: "Key (email)=(john@example.com) already exists."
@@ -205,7 +212,9 @@ public class LearnerService {
                 .findExistingEmails(inFileEmails);
 
         for (ParsedValid v : fieldValid) {
-            if (duplicateLines.contains(v.lineNumber())) continue;
+            if (duplicateLines.contains(v.lineNumber())) {
+                continue;
+            }
 
             LearnerCsvRow r = v.row();
             String email = r.getEmail().toLowerCase(Locale.ROOT);
