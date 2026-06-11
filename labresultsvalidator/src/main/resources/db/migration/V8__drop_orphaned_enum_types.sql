@@ -2,6 +2,6 @@
 -- All three columns were converted to varchar in V6 and V7; the type
 -- definitions were left behind and are cleaned up here.
 
-DROP TYPE IF EXISTS user_role;
-DROP TYPE IF EXISTS module_status;
-DROP TYPE IF EXISTS upload_status;
+DROP TYPE IF EXISTS user_role CASCADE;
+DROP TYPE IF EXISTS module_status CASCADE;
+DROP TYPE IF EXISTS upload_status CASCADE;
