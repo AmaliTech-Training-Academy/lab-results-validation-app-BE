@@ -74,9 +74,10 @@ public class LearnerController {
             + "5 MB / 10,000-row cap. Download the template first.")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "200", description = "Upload processed — see acceptedCount / rejectedCount"),
+            responseCode = "200", description = "At least one row accepted — see acceptedCount / rejectedCount"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "422", description = "Whole-file structural failure (missing headers, too large, etc.)",
+            responseCode = "422",
+            description = "All rows rejected, or whole-file structural failure (missing headers, too large, etc.)",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
     @PostMapping(value = "/bulk", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -84,7 +85,22 @@ public class LearnerController {
             @Parameter(description = "CSV file — use GET /template to download the correct format")
             @RequestParam("file") MultipartFile file) {
         BulkUploadResponse result = learnerService.bulkUpload(file);
-        return ResponseEntity.ok(ApiResponse.success("Bulk upload complete", result));
+
+        if (result.getAcceptedCount() == 0) {
+            return ResponseEntity.unprocessableEntity()
+                .body(ApiResponse.<BulkUploadResponse>builder()
+                    .success(false)
+                    .message("Bulk upload failed — no rows were imported")
+                    .data(result)
+                    .build());
+        }
+
+        String message = result.getRejectedCount() > 0
+            ? String.format("Bulk upload complete — %d accepted, %d rejected",
+                result.getAcceptedCount(), result.getRejectedCount())
+            : String.format("Bulk upload complete — %d rows imported", result.getAcceptedCount());
+
+        return ResponseEntity.ok(ApiResponse.success(message, result));
     }
 
     @Operation(summary = "Download CSV template",
