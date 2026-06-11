@@ -1,3 +1,4 @@
+
 package com.amalitech.labresultsvalidator.domain.LabReferenceAuditLog.entity;
 
 import com.amalitech.labresultsvalidator.domain.user.entity.User;

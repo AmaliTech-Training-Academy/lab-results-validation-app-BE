@@ -1,0 +1,46 @@
+#!/bin/bash
+# Bootstraps the dev box (Ubuntu): installs Docker + Compose and writes the compose file.
+# The box has NO IAM role and NO AWS CLI. CI deploys over SSH — it writes /opt/app/.env,
+# logs in to ECR with a token it passes over the connection, then pulls and starts the stack.
+# So nothing here touches AWS. The stack stays down until CI's first deploy provides .env.
+set -euxo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update -y
+apt-get install -y docker.io
+systemctl enable --now docker
+
+# Let the 'ubuntu' SSH user run docker without sudo (CI connects as ubuntu).
+usermod -aG docker ubuntu
+
+# Docker Compose v2 plugin (static binary)
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+APP_DIR=/opt/app
+mkdir -p "$${APP_DIR}"
+
+# The deployment stack. CI supplies .env and runs `docker compose pull && up -d` over SSH.
+cat > "$${APP_DIR}/docker-compose.yml" <<EOF
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+  app:
+    image: ${backend_repo}:${image_tag}
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - redis
+  frontend:
+    image: ${frontend_repo}:${image_tag}
+    restart: unless-stopped
+    ports:
+      - "80:8080"
+    depends_on:
+      - app
+EOF
+
+chown -R ubuntu:ubuntu "$${APP_DIR}"
