@@ -15,10 +15,13 @@ import com.amalitech.labresultsvalidator.domain.user_module_assignment.repositor
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -82,6 +85,47 @@ public class UserModuleAssignmentService {
                 .instructorEmail(instructor.getEmail())
                 .assignedModules(assignedModules)
                 .build();
+    }
+
+    @Transactional
+    public List<AssignedModuleResponse> removeModuleAssignments(UUID instructorId, AssignModuleRequest request) {
+        User instructor = userRepository.findByIdAndIsActiveTrue(instructorId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Instructor not found with ID: " + instructorId));
+
+        if (instructor.getRole() != UserRole.INSTRUCTOR) {
+            throw new IllegalArgumentException(
+                    "User with ID " + instructorId + " is not an instructor");
+        }
+
+        Set<UUID> toRemoveIds = Set.copyOf(request.getModuleIds());
+
+        List<UserModuleAssignment> existing = userModuleAssignmentRepository.findAllByUserId(instructorId);
+        Set<UUID> assignedIds = existing.stream()
+                .map(a -> a.getModule().getId())
+                .collect(Collectors.toSet());
+
+        // Fail fast if any requested ID is not currently assigned
+        toRemoveIds.forEach(moduleId -> {
+            if (!assignedIds.contains(moduleId)) {
+                throw new ResourceNotFoundException(
+                        "Module " + moduleId + " is not assigned to this instructor");
+            }
+        });
+
+        List<UserModuleAssignment> toRemove = existing.stream()
+                .filter(a -> toRemoveIds.contains(a.getModule().getId()))
+                .toList();
+        userModuleAssignmentRepository.deleteAll(toRemove);
+
+        return existing.stream()
+                .filter(a -> !toRemoveIds.contains(a.getModule().getId()))
+                .map(a -> AssignedModuleResponse.builder()
+                        .moduleId(a.getModule().getId())
+                        .moduleName(a.getModule().getName())
+                        .specializationName(a.getModule().getSpecialization().getName())
+                        .build())
+                .toList();
     }
 
     public List<AssignedModuleResponse> getInstructorModules(UUID instructorId) {

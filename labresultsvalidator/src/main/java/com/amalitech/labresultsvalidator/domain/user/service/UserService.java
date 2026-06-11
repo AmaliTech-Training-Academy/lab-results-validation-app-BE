@@ -4,8 +4,10 @@ import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceExce
 import com.amalitech.labresultsvalidator.common.service.EmailService;
 import com.amalitech.labresultsvalidator.common.utils.PasswordGenerator;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorResponse;
+import com.amalitech.labresultsvalidator.domain.user.dto.UpdateUserRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.UserResponseDTO;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
@@ -57,6 +59,50 @@ public class UserService {
                 .build();
     }
 
+    public UserResponseDTO updateInstructor(UUID instructorId, UpdateUserRequest request) {
+        User instructor = userRepository.findById(instructorId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Instructor not found with ID: " + instructorId));
+
+        if (instructor.getRole() != UserRole.INSTRUCTOR) {
+            throw new IllegalArgumentException(
+                    "User with ID " + instructorId + " is not an instructor");
+        }
+
+        if (request.getEmail() != null) {
+            if (userRepository.findByEmail(request.getEmail())
+                    .filter(u -> !u.getId().equals(instructorId))
+                    .isPresent()) {
+                throw new DuplicateResourceException(
+                        "An account with email " + request.getEmail() + " already exists");
+            }
+            instructor.setEmail(request.getEmail());
+        }
+
+        if (request.getIsActive() != null) {
+            instructor.setActive(request.getIsActive());
+        }
+
+        User saved = userRepository.save(instructor);
+
+        List<AssignedModuleResponse> assignedModules = assignmentRepository
+                .findAllByUserId(saved.getId())
+                .stream()
+                .map(a -> AssignedModuleResponse.builder()
+                        .moduleId(a.getModule().getId())
+                        .moduleName(a.getModule().getName())
+                        .specializationName(a.getModule().getSpecialization().getName())
+                        .build())
+                .toList();
+
+        return UserResponseDTO.builder()
+                .id(saved.getId())
+                .email(saved.getEmail())
+                .active(saved.isActive())
+                .assignedModules(assignedModules)
+                .build();
+    }
+
     public List<UserResponseDTO> listInstructors() {
         List<User> instructors = userRepository.findAllByRole(UserRole.INSTRUCTOR);
 
@@ -82,6 +128,7 @@ public class UserService {
 
         return instructors.stream()
             .map(u -> UserResponseDTO.builder()
+                .id(u.getId())
                 .email(u.getEmail())
                 .active(u.isActive())
                 .assignedModules(modulesByUser.getOrDefault(u.getId(), Collections.emptyList()))

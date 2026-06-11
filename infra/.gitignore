@@ -1,0 +1,12 @@
+# Terraform state can contain secrets (DB password, JWT secret) — never commit it.
+**/*.tfstate
+**/*.tfstate.*
+**/.terraform/
+**/.terraform.lock.hcl
+**/crash.log
+**/*.tfplan
+
+# Personal overrides
+**/*.auto.tfvars
+**/override.tf
+**/override.tf.json
