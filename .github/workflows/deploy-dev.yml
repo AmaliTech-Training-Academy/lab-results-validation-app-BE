@@ -1,0 +1,85 @@
+name: Deploy Dev (backend)
+
+# On merge to dev: build the image, push to ECR, then deploy over SSH. The EC2 box has no IAM
+# role (PassRole denied) and no AWS identity — so this job writes /opt/app/.env on the box,
+# passes a short-lived ECR login token over SSH, and runs `docker compose pull && up -d`.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "labresultsvalidator/**"
+      - ".github/workflows/deploy-dev.yml"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # OIDC, to push to ECR + mint the ECR token
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPO: labresults-dev-backend
+  DB_HOST: development-db.cv0268q40734.eu-west-1.rds.amazonaws.com
+  DB_NAME: lab_results_validator
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPO"
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:dev" ./labresultsvalidator
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:dev"
+
+      - name: Deploy over SSH
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/key"
+
+          # Build .env locally and copy it to the box (avoids quoting hell in remote heredocs).
+          {
+            echo "DB_HOST=$DB_HOST"
+            echo "DB_PORT=5432"
+            echo "DB_NAME=$DB_NAME"
+            echo "DB_USER=$DB_USER"
+            echo "DB_PASSWORD=$DB_PASSWORD"
+            echo "JWT_SECRET=$JWT_SECRET"
+            echo "REDIS_HOST=redis"
+            echo "REDIS_PORT=6379"
+            echo "SPRING_JPA_HIBERNATE_DDL_AUTO=update"
+            echo "CORS_ALLOWED_ORIGINS=*"
+          } > env.deploy
+          scp $SSH_OPTS env.deploy ubuntu@"$SSH_HOST":/opt/app/.env
+          rm -f env.deploy
+
+          # Mint an ECR token (CI has AWS creds via OIDC) and use it to log in ON the box.
+          ECR_TOKEN=$(aws ecr get-login-password --region "$AWS_REGION")
+          echo "::add-mask::$ECR_TOKEN"
+          ssh $SSH_OPTS ubuntu@"$SSH_HOST" \
+            "echo '$ECR_TOKEN' | docker login --username AWS --password-stdin '$REGISTRY' && cd /opt/app && docker compose pull && docker compose up -d && docker image prune -f"
