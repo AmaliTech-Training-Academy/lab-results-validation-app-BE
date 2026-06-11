@@ -6,11 +6,15 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.util.List;
+import java.util.UUID;
 
 @Schema(description = "Instructor summary returned by the list-instructors endpoint")
 @Getter
 @Builder
 public class UserResponseDTO {
+
+    @Schema(description = "Instructor unique identifier")
+    private UUID id;
 
     @Schema(description = "Instructor email address", example = "instructor@amalitech.com")
     private String email;
