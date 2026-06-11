@@ -16,7 +16,7 @@ INSERT INTO users (
           'superadmin@amalitech.com',
           '$2b$12$5uaYVku4G9BGz9CeEpv7FO3B7c9T9AGoYytMuahKng5xTnVsyg7Um',
           'super_admin',
-          true, true, NOW(), NOW()
+          true, false, NOW(), NOW()
       ),
       (
           'ab43299b-b114-4de9-bbfa-89489cc6ee3b',
