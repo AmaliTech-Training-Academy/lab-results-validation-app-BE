@@ -7,6 +7,8 @@ import com.amalitech.labresultsvalidator.common.csv.CsvWriterService;
 import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.csv.ParsedRow;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
 import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
@@ -462,6 +464,57 @@ class LabResultUploadServiceTest {
 
     private MultipartFile file() {
         return new MockMultipartFile("file", "lab_results.csv", "text/csv", "content".getBytes());
+    }
+
+    // ── getLabResultsByModule ────────────────────────────────────────────────
+
+    @Test
+    void getLabResultsByModule_withKnownModule_returnsMappedResults() {
+        UUID moduleId = module.getId();
+        LabResult labResult = LabResult.builder()
+            .id(UUID.randomUUID())
+            .learner(learner)
+            .lab(lab)
+            .score(new BigDecimal("18.00"))
+            .maxScoreSnapshot(new BigDecimal("20.00"))
+            .attemptNumber((short) 1)
+            .submittedOn(LocalDate.of(2026, 1, 15))
+            .gradedBy("Dr. Smith")
+            .build();
+
+        when(moduleRepository.existsById(moduleId)).thenReturn(true);
+        when(labResultRepository.findAllByModuleId(moduleId)).thenReturn(List.of(labResult));
+
+        List<LabResultResponse> results = service.getLabResultsByModule(moduleId);
+
+        assertThat(results).hasSize(1);
+        LabResultResponse r = results.get(0);
+        assertThat(r.getLearnerEmail()).isEqualTo("jane@test.com");
+        assertThat(r.getLearnerName()).isEqualTo("Jane Doe");
+        assertThat(r.getLabId()).isEqualTo(lab.getId());
+        assertThat(r.getLabTitle()).isEqualTo("Lab 1");
+        assertThat(r.getScore()).isEqualByComparingTo("18.00");
+        assertThat(r.getAttemptNumber()).isEqualTo((short) 1);
+        assertThat(r.getGradedBy()).isEqualTo("Dr. Smith");
+    }
+
+    @Test
+    void getLabResultsByModule_withNoResults_returnsEmptyList() {
+        UUID moduleId = module.getId();
+        when(moduleRepository.existsById(moduleId)).thenReturn(true);
+        when(labResultRepository.findAllByModuleId(moduleId)).thenReturn(List.of());
+
+        assertThat(service.getLabResultsByModule(moduleId)).isEmpty();
+    }
+
+    @Test
+    void getLabResultsByModule_withUnknownModule_throwsResourceNotFoundException() {
+        UUID unknownId = UUID.randomUUID();
+        when(moduleRepository.existsById(unknownId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.getLabResultsByModule(unknownId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining(unknownId.toString());
     }
 
     private void setActor(User user) {

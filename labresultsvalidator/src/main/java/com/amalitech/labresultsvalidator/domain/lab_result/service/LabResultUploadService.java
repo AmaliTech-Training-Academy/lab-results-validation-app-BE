@@ -7,6 +7,8 @@ import com.amalitech.labresultsvalidator.common.csv.CsvWriterService;
 import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.csv.ParsedRow;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.common.utils.Sha256Util;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
 import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadRepository;
@@ -49,6 +51,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Bulk import of lab results from a CSV file, running the full PRD validation pipeline (V1–V17) and
@@ -480,5 +483,26 @@ public class LabResultUploadService {
     private record ValidatedRow(
         long lineNumber, LabResultCsvRow raw,
         BigDecimal score, BigDecimal maxScore, short attemptNumber, LocalDate submittedOn) {
+    }
+
+    public List<LabResultResponse> getLabResultsByModule(UUID moduleId) {
+        if (!moduleRepository.existsById(moduleId)) {
+            throw new ResourceNotFoundException("Module not found with ID: " + moduleId);
+        }
+        return labResultRepository.findAllByModuleId(moduleId)
+                .stream()
+                .map(r -> LabResultResponse.builder()
+                        .id(r.getId())
+                        .learnerEmail(r.getLearner().getEmail())
+                        .learnerName(r.getLearner().getFullName())
+                        .labId(r.getLab().getId())
+                        .labTitle(r.getLab().getTitle())
+                        .score(r.getScore())
+                        .maxScoreSnapshot(r.getMaxScoreSnapshot())
+                        .attemptNumber(r.getAttemptNumber())
+                        .submittedOn(r.getSubmittedOn())
+                        .gradedBy(r.getGradedBy())
+                        .build())
+                .toList();
     }
 }
