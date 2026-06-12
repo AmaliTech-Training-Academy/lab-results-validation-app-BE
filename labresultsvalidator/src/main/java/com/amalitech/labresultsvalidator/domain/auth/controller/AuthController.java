@@ -135,7 +135,7 @@ public class  AuthController {
             @Valid @RequestBody ForgotPasswordRequest request) {
         authService.forgotPassword(request);
         return ResponseEntity.ok(
-                ApiResponse.success("If this email is registered, a reset link has been sent", null)
+                ApiResponse.success("If an account with that email exists, a password reset link has been sent. Please check your inbox and spam folder.", null)
         );
     }
 
