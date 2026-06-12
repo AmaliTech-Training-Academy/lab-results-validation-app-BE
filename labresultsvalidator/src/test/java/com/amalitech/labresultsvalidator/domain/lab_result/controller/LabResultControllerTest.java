@@ -4,7 +4,9 @@ import com.amalitech.labresultsvalidator.common.csv.CsvRowError;
 import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
+import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultUploadResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.service.LabResultUploadService;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,5 +111,58 @@ class LabResultControllerTest {
 
         mockMvc.perform(get(BASE_URL + "/template"))
             .andExpect(status().isOk());
+    }
+
+
+    @Test
+    void getResultsByModule_withKnownModule_returns200WithResults() throws Exception {
+        UUID moduleId = UUID.randomUUID();
+        UUID labId = UUID.randomUUID();
+        LabResultResponse result = LabResultResponse.builder()
+            .id(UUID.randomUUID())
+            .learnerEmail("jane@test.com")
+            .learnerName("Jane Doe")
+            .labId(labId)
+            .labTitle("Lab 1")
+            .score(new java.math.BigDecimal("18.00"))
+            .maxScoreSnapshot(new java.math.BigDecimal("20.00"))
+            .attemptNumber((short) 1)
+            .submittedOn(java.time.LocalDate.of(2026, 1, 15))
+            .gradedBy("Dr. Smith")
+            .build();
+
+        when(labResultUploadService.getLabResultsByModule(moduleId)).thenReturn(List.of(result));
+
+        mockMvc.perform(get(BASE_URL + "/modules/" + moduleId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data[0].learnerEmail").value("jane@test.com"))
+            .andExpect(jsonPath("$.data[0].learnerName").value("Jane Doe"))
+            .andExpect(jsonPath("$.data[0].labTitle").value("Lab 1"))
+            .andExpect(jsonPath("$.data[0].attemptNumber").value(1))
+            .andExpect(jsonPath("$.data[0].gradedBy").value("Dr. Smith"));
+    }
+
+    @Test
+    void getResultsByModule_withNoResults_returns200WithEmptyList() throws Exception {
+        UUID moduleId = UUID.randomUUID();
+        when(labResultUploadService.getLabResultsByModule(moduleId)).thenReturn(List.of());
+
+        mockMvc.perform(get(BASE_URL + "/modules/" + moduleId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data").isArray())
+            .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    void getResultsByModule_withUnknownModule_returns404() throws Exception {
+        UUID unknownId = UUID.randomUUID();
+        when(labResultUploadService.getLabResultsByModule(unknownId))
+            .thenThrow(new ResourceNotFoundException("Module not found with ID: " + unknownId));
+
+        mockMvc.perform(get(BASE_URL + "/modules/" + unknownId))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.success").value(false));
     }
 }

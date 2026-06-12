@@ -1,9 +1,13 @@
 package com.amalitech.labresultsvalidator.domain.lab_result.repository;
 
 import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,4 +22,8 @@ public interface LabResultRepository extends JpaRepository<LabResult, UUID> {
      */
     Optional<LabResult> findByLearnerIdAndLabIdAndAttemptNumber(
         UUID learnerId, UUID labId, short attemptNumber);
+
+    @EntityGraph(attributePaths = {"learner", "lab"})
+    @Query("SELECT r FROM LabResult r WHERE r.lab.module.id = :moduleId")
+    List<LabResult> findAllByModuleId(@Param("moduleId") UUID moduleId);
 }
