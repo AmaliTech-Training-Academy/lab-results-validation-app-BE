@@ -55,7 +55,7 @@ class AuthControllerPasswordResetTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value(
-                        "If this email is registered, a reset link has been sent"));
+                        "If an account with that email exists, a password reset link has been sent. Please check your inbox and spam folder."));
 
         verify(authService).forgotPassword(any());
     }
