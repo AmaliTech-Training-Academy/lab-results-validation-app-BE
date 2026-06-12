@@ -103,7 +103,7 @@ public class UserModuleAssignmentController {
             responseCode = "404", description = "Instructor not found",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
-
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN') or hasRole('INSTRUCTOR')")
     @GetMapping("/{instructorId}/modules")
     public ResponseEntity<ApiResponse<List<AssignedModuleResponse>>> getInstructorModules(
             @PathVariable UUID instructorId) {
