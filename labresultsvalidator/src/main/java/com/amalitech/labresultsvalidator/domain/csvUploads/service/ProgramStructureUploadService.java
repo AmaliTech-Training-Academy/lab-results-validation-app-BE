@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.csvUploads.service;
 import com.amalitech.labresultsvalidator.common.csv.CsvParseResult;
 import com.amalitech.labresultsvalidator.common.csv.CsvParserService;
 import com.amalitech.labresultsvalidator.common.csv.CsvRowError;
+import com.amalitech.labresultsvalidator.common.csv.CsvWriterService;
 import com.amalitech.labresultsvalidator.common.csv.ParsedRow;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -15,12 +16,15 @@ import com.amalitech.labresultsvalidator.domain.module.repository.ModuleReposito
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.specialization.repository.SpecializationRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +38,7 @@ import java.util.Optional;
 public class ProgramStructureUploadService {
 
     private final CsvParserService csvParserService;
+    private final CsvWriterService csvWriterService;
     private final CohortRepository cohortRepository;
     private final SpecializationRepository specializationRepository;
     private final ModuleRepository moduleRepository;
@@ -74,6 +79,13 @@ public class ProgramStructureUploadService {
         }
 
         return persist(parsed.validRows(), cohortCache);
+    }
+
+    public void downloadTemplate(HttpServletResponse response) throws IOException {
+        response.setContentType("text/csv");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+            "attachment; filename=\"program_structure_upload_template.csv\"");
+        csvWriterService.writeTemplate(response.getWriter(), ProgramStructureCsvRow.class);
     }
 
     private List<CsvRowError> validateFields(List<ParsedRow<ProgramStructureCsvRow>> rows) {

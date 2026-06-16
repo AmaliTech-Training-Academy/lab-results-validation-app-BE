@@ -1,21 +1,23 @@
 package com.amalitech.labresultsvalidator.domain.user.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
-import com.amalitech.labresultsvalidator.common.service.EmailService;
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.utils.PasswordGenerator;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
-import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorResponse;
 import com.amalitech.labresultsvalidator.domain.user.dto.UpdateUserRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.UserResponseDTO;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
+import com.amalitech.labresultsvalidator.domain.user.event.InstructorProvisionedEvent;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignedModuleResponse;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.repository.UserModuleAssignmentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.List;
@@ -29,9 +31,10 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final EmailService emailService;
+    private final ApplicationEventPublisher eventPublisher;
     private final UserModuleAssignmentRepository assignmentRepository;
 
+    @Transactional
     public ProvisionInstructorResponse provisionInstructor(ProvisionInstructorRequest request) {
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new DuplicateResourceException(
@@ -50,8 +53,7 @@ public class UserService {
                 .build();
 
         User saved = userRepository.save(instructor);
-
-        emailService.sendInstructorWelcome(saved.getEmail(), rawPassword);
+        eventPublisher.publishEvent(new InstructorProvisionedEvent(saved.getEmail(), rawPassword));
 
         return ProvisionInstructorResponse.builder()
                 .id(saved.getId())

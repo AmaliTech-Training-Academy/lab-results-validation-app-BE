@@ -40,6 +40,7 @@ import org.springframework.security.core.context.SecurityContextImpl;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -216,14 +217,14 @@ class LearnerServiceTest {
                 List.of(new ParsedRow<>(2L, row)), List.of());
 
         doReturn(parsed).when(csvParserService).parse(any(), any());
-        when(learnerRepository.existsByEmailIgnoreCase("ama@test.com")).thenReturn(false);
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
         when(cohortRepository.findByNameIgnoreCase("Cohort 1")).thenReturn(Optional.of(cohort));
         when(specializationRepository.findByCohortIdAndNameIgnoreCase(any(), anyString()))
                 .thenReturn(Optional.of(specialization));
-        when(learnerRepository.saveAll(any())).thenReturn(List.of());
+        when(learnerRepository.save(any())).thenReturn(buildLearner("ama@test.com"));
 
         BulkUploadResponse result = learnerService.bulkUpload(
-                new MockMultipartFile("file", "learners.csv", "text/csv", new byte[0]));
+                new MockMultipartFile("file", "learners.csv", "text/csv", "dummy".getBytes()));
 
         assertThat(result.getAcceptedCount()).isEqualTo(1);
         assertThat(result.getRejectedCount()).isZero();
@@ -238,14 +239,14 @@ class LearnerServiceTest {
                 List.of(new ParsedRow<>(2L, valid)), List.of(preError));
 
         doReturn(parsed).when(csvParserService).parse(any(), any());
-        when(learnerRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
         when(cohortRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.of(cohort));
         when(specializationRepository.findByCohortIdAndNameIgnoreCase(any(), anyString()))
                 .thenReturn(Optional.of(specialization));
-        when(learnerRepository.saveAll(any())).thenReturn(List.of());
+        when(learnerRepository.save(any())).thenReturn(buildLearner("ama@test.com"));
 
         BulkUploadResponse result = learnerService.bulkUpload(
-                new MockMultipartFile("file", "f.csv", "text/csv", new byte[0]));
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
 
         assertThat(result.getAcceptedCount()).isEqualTo(1);
         assertThat(result.getRejectedCount()).isEqualTo(1);
@@ -259,10 +260,10 @@ class LearnerServiceTest {
                 List.of(new ParsedRow<>(2L, row1), new ParsedRow<>(3L, row2)), List.of());
 
         doReturn(parsed).when(csvParserService).parse(any(), any());
-        when(learnerRepository.saveAll(any())).thenReturn(List.of());
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
 
         BulkUploadResponse result = learnerService.bulkUpload(
-                new MockMultipartFile("file", "f.csv", "text/csv", new byte[0]));
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
 
         assertThat(result.getAcceptedCount()).isZero();
         assertThat(result.getRejectedCount()).isEqualTo(2);
@@ -278,10 +279,10 @@ class LearnerServiceTest {
                 List.of(new ParsedRow<>(2L, row)), List.of());
 
         doReturn(parsed).when(csvParserService).parse(any(), any());
-        when(learnerRepository.saveAll(any())).thenReturn(List.of());
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
 
         BulkUploadResponse result = learnerService.bulkUpload(
-                new MockMultipartFile("file", "f.csv", "text/csv", new byte[0]));
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
 
         assertThat(result.getAcceptedCount()).isZero();
         assertThat(result.getRejectedCount()).isEqualTo(1);
@@ -295,11 +296,10 @@ class LearnerServiceTest {
                 List.of(new ParsedRow<>(2L, row)), List.of());
 
         doReturn(parsed).when(csvParserService).parse(any(), any());
-        when(learnerRepository.existsByEmailIgnoreCase("ama@test.com")).thenReturn(true);
-        when(learnerRepository.saveAll(any())).thenReturn(List.of());
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of("ama@test.com"));
 
         BulkUploadResponse result = learnerService.bulkUpload(
-                new MockMultipartFile("file", "f.csv", "text/csv", new byte[0]));
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
 
         assertThat(result.getAcceptedCount()).isZero();
         assertThat(result.getErrors().get(0).field()).isEqualTo("EMAIL");
@@ -312,12 +312,11 @@ class LearnerServiceTest {
                 List.of(new ParsedRow<>(2L, row)), List.of());
 
         doReturn(parsed).when(csvParserService).parse(any(), any());
-        when(learnerRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
         when(cohortRepository.findByNameIgnoreCase("Unknown Cohort")).thenReturn(Optional.empty());
-        when(learnerRepository.saveAll(any())).thenReturn(List.of());
 
         BulkUploadResponse result = learnerService.bulkUpload(
-                new MockMultipartFile("file", "f.csv", "text/csv", new byte[0]));
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
 
         assertThat(result.getAcceptedCount()).isZero();
         assertThat(result.getErrors().get(0).field()).isEqualTo("COHORT_NAME");
@@ -498,15 +497,13 @@ class LearnerServiceTest {
                 List.of(new ParsedRow<>(2L, row)), List.of());
 
         doReturn(parsed).when(csvParserService).parse(any(), any());
-        when(learnerRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
         when(cohortRepository.findByNameIgnoreCase("Cohort 1")).thenReturn(Optional.of(cohort));
         when(specializationRepository.findByCohortIdAndNameIgnoreCase(any(), anyString()))
             .thenReturn(Optional.empty());
-        when(learnerRepository.saveAll(any())).thenReturn(List.of());
 
         BulkUploadResponse result = learnerService.bulkUpload(
-            new org.springframework.mock.web.MockMultipartFile(
-                "file", "f.csv", "text/csv", new byte[0]));
+            new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
 
         assertThat(result.getAcceptedCount()).isZero();
         assertThat(result.getErrors().get(0).field()).isEqualTo("SPECIALIZATION_NAME");
