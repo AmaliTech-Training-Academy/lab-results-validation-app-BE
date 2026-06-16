@@ -10,7 +10,7 @@ image_tag = "dev"
 
 # Spot instance: ~70% cheaper. One-time request; on interruption the (stateless) box
 # terminates — re-apply to recreate, or set use_spot=false for steadier on-demand uptime.
-use_spot       = false
+use_spot       = true
 spot_max_price = ""
 
 github_org   = "AmaliTech-Training-Academy"
