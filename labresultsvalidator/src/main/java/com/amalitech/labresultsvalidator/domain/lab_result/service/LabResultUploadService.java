@@ -29,10 +29,13 @@ import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.repository.UserModuleAssignmentRepository;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -52,6 +55,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Bulk import of lab results from a CSV file, running the full PRD validation pipeline (V1–V17) and
@@ -69,9 +74,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class LabResultUploadService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(LabResultUploadService.class);
     /** Same permissive email shape used by the learner roster import (V8). */
-    private static final java.util.regex.Pattern EMAIL_PATTERN =
-        java.util.regex.Pattern.compile("^[\\w.+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$");
+    private static final Pattern EMAIL_PATTERN =
+        Pattern.compile("^[\\w.+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$");
+    // Matches PostgreSQL detail: "Key (column)=(value) already exists."
+    private static final Pattern DUPLICATE_KEY_DETAIL =
+        Pattern.compile("Key \\(([^)]+)\\)=\\(([^)]+)\\)");
 
     private final CsvParserService csvParserService;
     private final CsvWriterService csvWriterService;
@@ -90,7 +99,6 @@ public class LabResultUploadService {
      * @throws MalformedCsvException    for whole-file structural failures (→ 422)
      * @throws DuplicateResourceException if the exact file was already uploaded (→ 409)
      */
-    @Transactional
     public LabResultUploadResponse bulkUpload(MultipartFile file) {
         String sha256 = Sha256Util.sha256Hex(readBytes(file));
         csvUploadRepository.findByFileSha256(sha256).ifPresent(prior -> {
@@ -111,8 +119,10 @@ public class LabResultUploadService {
         boolean adminBypass = actor.getRole() == UserRole.ADMIN
             || actor.getRole() == UserRole.SUPER_ADMIN;
 
-        List<LabResult> toInsert = new ArrayList<>();
-        List<LabResult> toUpdate = new ArrayList<>();
+        // Collect reconciled results paired with their source line number so that any
+        // DB exception during the individual saves can be attributed to the right row.
+        record PendingSave(long lineNumber, ResolutionKind kind, LabResult result) {}
+        List<PendingSave> pending = new ArrayList<>();
         int skipped = 0;
 
         for (ValidatedRow v : fieldValid) {
@@ -121,8 +131,8 @@ public class LabResultUploadService {
             }
             Resolution resolution = reconcile(v, actor, adminBypass, errors, rejectedLines);
             switch (resolution.kind()) {
-                case INSERT -> toInsert.add(resolution.result());
-                case UPDATE -> toUpdate.add(resolution.result());
+                case INSERT -> pending.add(new PendingSave(v.lineNumber(), ResolutionKind.INSERT, resolution.result()));
+                case UPDATE -> pending.add(new PendingSave(v.lineNumber(), ResolutionKind.UPDATE, resolution.result()));
                 case SKIP -> skipped++;
                 case REJECT -> { /* error already recorded */ }
                 default -> throw new IllegalStateException(
@@ -130,29 +140,61 @@ public class LabResultUploadService {
             }
         }
 
-        int accepted = toInsert.size() + toUpdate.size();
+        int preInserted = (int) pending.stream().filter(p -> p.kind() == ResolutionKind.INSERT).count();
+        int preUpdated = (int) pending.stream().filter(p -> p.kind() == ResolutionKind.UPDATE).count();
+
         CsvUpload upload = csvUploadRepository.save(CsvUpload.builder()
             .uploadedByUser(actor)
             .filename(filename(file))
             .fileSha256(sha256)
             .uploadedAt(OffsetDateTime.now())
             .totalRows(parsed.totalRows())
-            .acceptedRows(accepted)
+            .acceptedRows(preInserted + preUpdated)
             .rejectedRows(rejectedLines.size())
             .status(UploadStatus.COMPLETED)
-            .errorReportJson(buildReport(parsed.totalRows(), toInsert.size(), toUpdate.size(),
+            .errorReportJson(buildReport(parsed.totalRows(), preInserted, preUpdated,
                 skipped, rejectedLines.size(), errors))
             .build());
 
-        toInsert.forEach(lr -> lr.setCsvUpload(upload));
-        labResultRepository.saveAll(toInsert);
-        labResultRepository.saveAll(toUpdate);
+        // Save each row individually so a single DB failure is captured as a row-level
+        // error without aborting the rest of the upload.
+        int inserted = 0, updated = 0;
+        for (PendingSave p : pending) {
+            try {
+                if (p.kind() == ResolutionKind.INSERT) {
+                    p.result().setCsvUpload(upload);
+                }
+                labResultRepository.save(p.result());
+                if (p.kind() == ResolutionKind.INSERT) {
+                    inserted++;
+                } else {
+                    updated++;
+                }
+            } catch (DataIntegrityViolationException ex) {
+                LOG.debug("DB constraint violation saving lab result at row {}: {}",
+                    p.lineNumber(), ex.getMessage(), ex);
+                errors.add(toDbRowError(p.lineNumber(), ex));
+                rejectedLines.add(p.lineNumber());
+            } catch (DataAccessException ex) {
+                LOG.error("Database error saving lab result at row {}: {}",
+                    p.lineNumber(), ex.getMostSpecificCause().getMessage(), ex);
+                errors.add(new CsvRowError(p.lineNumber(), null,
+                    "Failed to save to the database: " + ex.getMostSpecificCause().getMessage()));
+                rejectedLines.add(p.lineNumber());
+            } catch (RuntimeException ex) {
+                LOG.error("Unexpected error processing lab result at row {}: {}",
+                    p.lineNumber(), ex.getMessage(), ex);
+                errors.add(new CsvRowError(p.lineNumber(), null,
+                    "Failed to process row: " + ex.getMessage()));
+                rejectedLines.add(p.lineNumber());
+            }
+        }
 
         return LabResultUploadResponse.builder()
             .uploadId(upload.getId())
             .totalRows(parsed.totalRows())
-            .insertedCount(toInsert.size())
-            .updatedCount(toUpdate.size())
+            .insertedCount(inserted)
+            .updatedCount(updated)
             .skippedCount(skipped)
             .rejectedCount(rejectedLines.size())
             .status(upload.getStatus())
@@ -400,6 +442,31 @@ public class LabResultUploadService {
                 "'" + value + "' is not an ISO-8601 date (YYYY-MM-DD)"));
             return null;
         }
+    }
+
+    private static CsvRowError toDbRowError(long lineNumber, DataIntegrityViolationException ex) {
+        String cause = ex.getMostSpecificCause().getMessage();
+        if (cause != null && cause.contains("duplicate key")) {
+            Matcher m = DUPLICATE_KEY_DETAIL.matcher(cause);
+            if (m.find()) {
+                String cols  = m.group(1);
+                String value = m.group(2);
+                // uq_lab_result: UNIQUE (learner_id, lab_id, attempt_number)
+                // The composite key uses FKs — surface ATTEMPT_NUMBER as the actionable field.
+                if (cols.contains("learner_id") && cols.contains("lab_id")) {
+                    return new CsvRowError(lineNumber, "ATTEMPT_NUMBER",
+                        "A result for this learner, lab, and attempt number already exists");
+                }
+                // Fallback for any other single-column constraint on this table
+                String field = cols.toUpperCase(Locale.ROOT);
+                return new CsvRowError(lineNumber, field,
+                    "'" + value + "' already exists — " + field + " must be unique");
+            }
+            return new CsvRowError(lineNumber, null,
+                "A duplicate value violates a unique constraint");
+        }
+        return new CsvRowError(lineNumber, null,
+            "Row could not be saved due to a database constraint violation");
     }
 
     private Resolution reject(
