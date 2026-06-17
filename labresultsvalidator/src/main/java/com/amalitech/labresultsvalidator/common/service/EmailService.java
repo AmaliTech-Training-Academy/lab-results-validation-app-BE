@@ -133,16 +133,21 @@ public class EmailService {
                        style="margin:0 0 24px;background-color:#F0F4F8;border-radius:6px;">
                   <tr>
                     <td style="padding:20px 24px;border-left:4px solid #08283B;border-radius:6px;">
-                      <p style="margin:0 0 14px;font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:1px;">Your Login Credentials</p>
-                      <p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.5px;">Email</p>
+                      <p style="margin:0 0 14px;font-size:11px;font-weight:700;color:#6B7280;\
+                      text-transform:uppercase;letter-spacing:1px;">Your Login Credentials</p>
+                      <p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#6B7280;\
+                      text-transform:uppercase;letter-spacing:0.5px;">Email</p>
                       <p style="margin:0 0 14px;font-size:15px;font-weight:600;color:#08283B;">%s</p>
-                      <p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.5px;">Temporary Password</p>
-                      <p style="margin:0;font-size:16px;font-weight:700;color:#08283B;font-family:'Courier New',Courier,monospace;letter-spacing:2px;">%s</p>
+                      <p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#6B7280;\
+                      text-transform:uppercase;letter-spacing:0.5px;">Temporary Password</p>
+                      <p style="margin:0;font-size:16px;font-weight:700;color:#08283B;\
+                      font-family:'Courier New',Courier,monospace;letter-spacing:2px;">%s</p>
                     </td>
                   </tr>
                 </table>
                 <p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:#374151;">
-                  <strong>Important:</strong> This is a temporary password. You will be required to change it upon your first login.
+                  <strong>Important:</strong> This is a temporary password. You will be \
+                  required to change it upon your first login.
                 </p>
                 <p style="margin:0;font-size:13px;line-height:1.6;color:#6B7280;">
                   If you were not expecting this email, please disregard it or contact your administrator.
