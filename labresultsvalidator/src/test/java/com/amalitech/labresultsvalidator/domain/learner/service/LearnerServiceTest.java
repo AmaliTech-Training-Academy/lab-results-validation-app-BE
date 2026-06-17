@@ -33,6 +33,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -320,6 +322,78 @@ class LearnerServiceTest {
 
         assertThat(result.getAcceptedCount()).isZero();
         assertThat(result.getErrors().get(0).field()).isEqualTo("COHORT_NAME");
+    }
+
+    @Test
+    void bulkUpload_withAmbiguousCohortName_rejectsThatRowWithoutAborting() {
+        LearnerCsvRow row = csvRow("Ama Owusu", "ama@test.com", "cohort 1", "Data Analytics");
+        CsvParseResult<LearnerCsvRow> parsed = new CsvParseResult<>(
+                List.of(new ParsedRow<>(2L, row)), List.of());
+
+        doReturn(parsed).when(csvParserService).parse(any(), any());
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
+        when(cohortRepository.findByNameIgnoreCase("cohort 1"))
+                .thenThrow(new IncorrectResultSizeDataAccessException(1, 2));
+
+        BulkUploadResponse result = learnerService.bulkUpload(
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
+
+        assertThat(result.getAcceptedCount()).isZero();
+        assertThat(result.getRejectedCount()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).field()).isEqualTo("COHORT_NAME");
+        assertThat(result.getErrors().get(0).message()).contains("ambiguous");
+        verify(learnerRepository, never()).save(any());
+    }
+
+    @Test
+    void bulkUpload_withDbErrorOnOneRow_rejectsThatRowAndImportsOthers() {
+        LearnerCsvRow good = csvRow("Ama Owusu", "ama@test.com", "Cohort 1", "Data Analytics");
+        LearnerCsvRow bad = csvRow("Kofi Mensah", "kofi@test.com", "Cohort 1", "Data Analytics");
+        CsvParseResult<LearnerCsvRow> parsed = new CsvParseResult<>(
+                List.of(new ParsedRow<>(2L, good), new ParsedRow<>(3L, bad)), List.of());
+
+        doReturn(parsed).when(csvParserService).parse(any(), any());
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
+        when(cohortRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.of(cohort));
+        when(specializationRepository.findByCohortIdAndNameIgnoreCase(any(), anyString()))
+                .thenReturn(Optional.of(specialization));
+        when(learnerRepository.save(any()))
+                .thenReturn(buildLearner("ama@test.com"))
+                .thenThrow(new DataAccessResourceFailureException("connection reset by peer"));
+
+        BulkUploadResponse result = learnerService.bulkUpload(
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
+
+        assertThat(result.getAcceptedCount()).isEqualTo(1);
+        assertThat(result.getRejectedCount()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).rowNumber()).isEqualTo(3L);
+        assertThat(result.getErrors().get(0).message())
+                .contains("Failed to save to the database")
+                .contains("connection reset by peer");
+    }
+
+    @Test
+    void bulkUpload_withUnexpectedErrorOnRow_rejectsThatRowAndImportsOthers() {
+        LearnerCsvRow good = csvRow("Ama Owusu", "ama@test.com", "Cohort 1", "Data Analytics");
+        LearnerCsvRow bad = csvRow("Kofi Mensah", "kofi@test.com", "Cohort 1", "Data Analytics");
+        CsvParseResult<LearnerCsvRow> parsed = new CsvParseResult<>(
+                List.of(new ParsedRow<>(2L, good), new ParsedRow<>(3L, bad)), List.of());
+
+        doReturn(parsed).when(csvParserService).parse(any(), any());
+        when(learnerRepository.findExistingEmails(any())).thenReturn(Set.of());
+        when(cohortRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.of(cohort));
+        when(specializationRepository.findByCohortIdAndNameIgnoreCase(any(), anyString()))
+                .thenReturn(Optional.of(specialization));
+        when(learnerRepository.save(any()))
+                .thenReturn(buildLearner("ama@test.com"))
+                .thenThrow(new IllegalStateException("boom"));
+
+        BulkUploadResponse result = learnerService.bulkUpload(
+                new MockMultipartFile("file", "f.csv", "text/csv", "dummy".getBytes()));
+
+        assertThat(result.getAcceptedCount()).isEqualTo(1);
+        assertThat(result.getRejectedCount()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).message()).contains("Failed to process row");
     }
 
     // ── AC-3: Roster management ───────────────────────────────────────────────
