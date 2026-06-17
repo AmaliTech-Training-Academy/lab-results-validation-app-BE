@@ -18,10 +18,14 @@ import com.amalitech.labresultsvalidator.domain.specialization.repository.Specia
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -30,12 +34,20 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class ProgramStructureUploadService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ProgramStructureUploadService.class);
+    // Matches PostgreSQL detail: "Key (column)=(value) already exists."
+    private static final Pattern DUPLICATE_KEY_DETAIL =
+        Pattern.compile("Key \\(([^)]+)\\)=\\(([^)]+)\\)");
 
     private final CsvParserService csvParserService;
     private final CsvWriterService csvWriterService;
@@ -43,8 +55,8 @@ public class ProgramStructureUploadService {
     private final SpecializationRepository specializationRepository;
     private final ModuleRepository moduleRepository;
     private final LabRepository labRepository;
+    private final TransactionTemplate transactionTemplate;
 
-    @Transactional
     public ProgramStructureUploadResponse upload(MultipartFile file) {
         CsvParseResult<ProgramStructureCsvRow> parsed = csvParserService.parse(file, ProgramStructureCsvRow.class);
         List<CsvRowError> errors = new ArrayList<>(parsed.errors());
@@ -78,7 +90,25 @@ public class ProgramStructureUploadService {
             return errorResponse(errors);
         }
 
-        return persist(parsed.validRows(), cohortCache);
+        // Persist inside an explicit transaction so any DB failure rolls back atomically
+        // and the exception reaches our catch block (rather than inside @Transactional
+        // where catching it would leave the session in a broken state).
+        try {
+            return transactionTemplate.execute(status -> persist(parsed.validRows(), cohortCache));
+        } catch (DataIntegrityViolationException ex) {
+            LOG.error("DB constraint violation during program structure persist: {}",
+                ex.getMostSpecificCause().getMessage(), ex);
+            return errorResponse(List.of(toDbRowError(0L, ex)));
+        } catch (DataAccessException ex) {
+            LOG.error("Database error during program structure persist: {}",
+                ex.getMostSpecificCause().getMessage(), ex);
+            return errorResponse(List.of(new CsvRowError(0, null,
+                "Failed to save to the database: " + ex.getMostSpecificCause().getMessage())));
+        } catch (RuntimeException ex) {
+            LOG.error("Unexpected error during program structure persist: {}", ex.getMessage(), ex);
+            return errorResponse(List.of(new CsvRowError(0, null,
+                "Unexpected error: " + ex.getMessage())));
+        }
     }
 
     public void downloadTemplate(HttpServletResponse response) throws IOException {
@@ -278,6 +308,60 @@ public class ProgramStructureUploadService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static CsvRowError toDbRowError(long lineNumber, DataIntegrityViolationException ex) {
+        String cause = ex.getMostSpecificCause().getMessage();
+        if (cause != null && cause.contains("duplicate key")) {
+            Matcher m = DUPLICATE_KEY_DETAIL.matcher(cause);
+            if (m.find()) {
+                String cols = m.group(1);
+                String vals = m.group(2);
+                // uq_lab_title:        UNIQUE (module_id, title)
+                if (cols.contains("module_id") && cols.contains("title")) {
+                    return new CsvRowError(lineNumber, "LAB_TITLE",
+                        "Lab title '" + rightOf(vals) + "' already exists in this module");
+                }
+                // uq_module_name:      UNIQUE (specialization_id, name)
+                if (cols.contains("specialization_id") && cols.contains("name")) {
+                    return new CsvRowError(lineNumber, "MODULE_NAME",
+                        "Module name '" + rightOf(vals) + "' already exists in this specialization");
+                }
+                // uq_module_sequence:  UNIQUE (specialization_id, sequence) — auto-assigned by the
+                // service, so this would be a programming error rather than a user error.
+                if (cols.contains("specialization_id") && cols.contains("sequence")) {
+                    return new CsvRowError(lineNumber, "MODULE_NAME",
+                        "A module sequence conflict was detected in this specialization");
+                }
+                // uq_specialization_code: UNIQUE (cohort_id, code)
+                if (cols.contains("cohort_id") && cols.contains("code")) {
+                    return new CsvRowError(lineNumber, "SPECIALIZATION_CODE",
+                        "Specialization code '" + rightOf(vals) + "' already exists in this cohort");
+                }
+                // uq_specialization_name: UNIQUE (cohort_id, name)
+                if (cols.contains("cohort_id") && cols.contains("name")) {
+                    return new CsvRowError(lineNumber, "SPECIALIZATION_NAME",
+                        "Specialization '" + rightOf(vals) + "' already exists in this cohort");
+                }
+                // Fallback for any unforeseen single-column constraint
+                String field = cols.toUpperCase(Locale.ROOT);
+                return new CsvRowError(lineNumber, field,
+                    "'" + vals + "' already exists — " + field + " must be unique");
+            }
+            return new CsvRowError(lineNumber, null,
+                "A duplicate value violates a unique constraint");
+        }
+        return new CsvRowError(lineNumber, null,
+            "Row could not be saved due to a database constraint violation");
+    }
+
+    /**
+     * For a composite PostgreSQL value string like {@code "some-uuid, Data Analytics"},
+     * returns the human-readable part after the first {@code ", "}.
+     */
+    private static String rightOf(String compositeValue) {
+        int idx = compositeValue.indexOf(", ");
+        return idx >= 0 ? compositeValue.substring(idx + 2).trim() : compositeValue.trim();
     }
 
     private User currentUser() {

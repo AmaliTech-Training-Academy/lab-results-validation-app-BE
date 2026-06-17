@@ -37,6 +37,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -132,7 +134,7 @@ class LabResultUploadServiceTest {
         assertThatThrownBy(() -> service.bulkUpload(file()))
             .isInstanceOf(MalformedCsvException.class);
 
-        verify(labResultRepository, never()).saveAll(any());
+        verify(labResultRepository, never()).save(any());
         verify(csvUploadRepository, never()).save(any());
     }
 
@@ -414,6 +416,69 @@ class LabResultUploadServiceTest {
         assertThat(result.getUpdatedCount()).isEqualTo(1);
         assertThat(result.getSkippedCount()).isEqualTo(1);
         assertThat(result.getRejectedCount()).isZero();
+    }
+
+    // ── DB error handling ──────────────────────────────────────────────────────
+
+    @Test
+    void bulkUpload_withDbConstraintViolationOnSave_rejectsThatRowAndSavesOthers() {
+        LabResultCsvRow row1 = validRow();
+        LabResultCsvRow row2 = row("other@test.com", "Cohort 1", "Data Analytics",
+            "Module 1", "Lab 1", "15", "20", "1", "2026-05-30", "Grader");
+        doReturn(parsed(row1, row2)).when(csvParserService).parse(any(), any());
+
+        RuntimeException cause = new RuntimeException(
+            "ERROR: duplicate key value violates unique constraint\n"
+            + "  Detail: Key (learner_id)=(some-uuid) already exists.");
+        when(labResultRepository.save(any()))
+            .thenReturn(null)
+            .thenThrow(new DataIntegrityViolationException("constraint violation", cause));
+
+        LabResultUploadResponse result = service.bulkUpload(file());
+
+        assertThat(result.getInsertedCount()).isEqualTo(1);
+        assertThat(result.getRejectedCount()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).rowNumber()).isEqualTo(3L);
+    }
+
+    @Test
+    void bulkUpload_withDbAccessErrorOnSave_rejectsThatRowAndSavesOthers() {
+        LabResultCsvRow row1 = validRow();
+        LabResultCsvRow row2 = row("other@test.com", "Cohort 1", "Data Analytics",
+            "Module 1", "Lab 1", "15", "20", "1", "2026-05-30", "Grader");
+        doReturn(parsed(row1, row2)).when(csvParserService).parse(any(), any());
+
+        when(labResultRepository.save(any()))
+            .thenReturn(null)
+            .thenThrow(new DataAccessResourceFailureException("connection reset by peer"));
+
+        LabResultUploadResponse result = service.bulkUpload(file());
+
+        assertThat(result.getInsertedCount()).isEqualTo(1);
+        assertThat(result.getRejectedCount()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).rowNumber()).isEqualTo(3L);
+        assertThat(result.getErrors().get(0).message())
+            .contains("Failed to save to the database")
+            .contains("connection reset by peer");
+    }
+
+    @Test
+    void bulkUpload_withUnexpectedErrorOnSave_rejectsThatRowAndSavesOthers() {
+        LabResultCsvRow row1 = validRow();
+        LabResultCsvRow row2 = row("other@test.com", "Cohort 1", "Data Analytics",
+            "Module 1", "Lab 1", "15", "20", "1", "2026-05-30", "Grader");
+        doReturn(parsed(row1, row2)).when(csvParserService).parse(any(), any());
+
+        when(labResultRepository.save(any()))
+            .thenReturn(null)
+            .thenThrow(new IllegalStateException("unexpected boom"));
+
+        LabResultUploadResponse result = service.bulkUpload(file());
+
+        assertThat(result.getInsertedCount()).isEqualTo(1);
+        assertThat(result.getRejectedCount()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).rowNumber()).isEqualTo(3L);
+        assertThat(result.getErrors().get(0).message()).contains("Failed to process row");
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
