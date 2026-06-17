@@ -27,7 +27,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -216,49 +218,26 @@ public class LearnerService {
                 continue;
             }
 
-            LearnerCsvRow r = v.row();
-            String email = r.getEmail().toLowerCase(Locale.ROOT);
-
-            if (existingEmails.contains(email)) {
-                errors.add(new CsvRowError(v.lineNumber(), "EMAIL",
-                        "Email '" + email + "' already exists"));
-                continue;
-            }
-
-            Optional<Cohort> cohortOpt =
-                    cohortRepository.findByNameIgnoreCase(r.getCohortName());
-            if (cohortOpt.isEmpty()) {
-                errors.add(new CsvRowError(v.lineNumber(), "COHORT_NAME",
-                        "Cohort '" + r.getCohortName() + "' not found"));
-                continue;
-            }
-
-            Optional<Specialization> specOpt = specializationRepository
-                    .findByCohortIdAndNameIgnoreCase(
-                            cohortOpt.get().getId(), r.getSpecializationName());
-            if (specOpt.isEmpty()) {
-                errors.add(new CsvRowError(v.lineNumber(), "SPECIALIZATION_NAME",
-                        "Specialization '" + r.getSpecializationName()
-                                + "' not found in cohort '" + r.getCohortName() + "'"));
-                continue;
-            }
-
-            Learner learner = Learner.builder()
-                    .fullName(r.getFullName())
-                    .email(email)
-                    .cohort(cohortOpt.get())
-                    .specialization(specOpt.get())
-                    .status(LearnerStatus.ACTIVE)
-                    .build();
-            learner.setCreatedBy(actor.getId());
-            learner.setUpdatedBy(actor.getId());
-
+            // A single bad row must never abort the whole upload: any failure is
+            // captured as a row-level error so the rest of the file still imports.
             try {
-                learnerRepository.save(learner);
-                savedCount++;
+                if (importRow(v, existingEmails, actor, errors)) {
+                    savedCount++;
+                }
             } catch (DataIntegrityViolationException ex) {
-                LOG.debug("DB error saving learner at row {}: {}", v.lineNumber(), ex.getMessage(), ex);
+                LOG.debug("DB constraint violation saving learner at row {}: {}",
+                        v.lineNumber(), ex.getMessage(), ex);
                 errors.add(toDbRowError(v.lineNumber(), ex));
+            } catch (DataAccessException ex) {
+                LOG.error("Database error saving learner at row {}: {}",
+                        v.lineNumber(), ex.getMostSpecificCause().getMessage(), ex);
+                errors.add(new CsvRowError(v.lineNumber(), null,
+                        "Failed to save to the database: " + ex.getMostSpecificCause().getMessage()));
+            } catch (RuntimeException ex) {
+                LOG.error("Unexpected error processing learner at row {}: {}",
+                        v.lineNumber(), ex.getMessage(), ex);
+                errors.add(new CsvRowError(v.lineNumber(), null,
+                        "Failed to process row: " + ex.getMessage()));
             }
         }
 
@@ -371,6 +350,72 @@ public class LearnerService {
             .createdAt(learner.getCreatedAt())
             .updatedAt(learner.getUpdatedAt())
             .build();
+    }
+
+    /**
+     * Resolve a single field-valid row's cohort + specialization and persist it.
+     *
+     * @return {@code true} if the learner was saved; {@code false} if the row was rejected with a
+     *         row-level error (added to {@code errors}). Database/transaction exceptions are left to
+     *         propagate so the caller can record them per row without aborting the batch.
+     */
+    private boolean importRow(ParsedValid v, Set<String> existingEmails,
+            User actor, List<CsvRowError> errors) {
+        LearnerCsvRow r = v.row();
+        long line = v.lineNumber();
+        String email = r.getEmail().toLowerCase(Locale.ROOT);
+
+        if (existingEmails.contains(email)) {
+            errors.add(new CsvRowError(line, "EMAIL", "Email '" + email + "' already exists"));
+            return false;
+        }
+
+        Cohort cohort;
+        try {
+            Optional<Cohort> cohortOpt = cohortRepository.findByNameIgnoreCase(r.getCohortName());
+            if (cohortOpt.isEmpty()) {
+                errors.add(new CsvRowError(line, "COHORT_NAME",
+                        "Cohort '" + r.getCohortName() + "' not found"));
+                return false;
+            }
+            cohort = cohortOpt.get();
+        } catch (IncorrectResultSizeDataAccessException ex) {
+            errors.add(new CsvRowError(line, "COHORT_NAME",
+                    "Cohort name '" + r.getCohortName() + "' is ambiguous — multiple cohorts match "
+                            + "(check for case or spacing variants)"));
+            return false;
+        }
+
+        Specialization specialization;
+        try {
+            Optional<Specialization> specOpt = specializationRepository
+                    .findByCohortIdAndNameIgnoreCase(cohort.getId(), r.getSpecializationName());
+            if (specOpt.isEmpty()) {
+                errors.add(new CsvRowError(line, "SPECIALIZATION_NAME",
+                        "Specialization '" + r.getSpecializationName()
+                                + "' not found in cohort '" + r.getCohortName() + "'"));
+                return false;
+            }
+            specialization = specOpt.get();
+        } catch (IncorrectResultSizeDataAccessException ex) {
+            errors.add(new CsvRowError(line, "SPECIALIZATION_NAME",
+                    "Specialization name '" + r.getSpecializationName() + "' is ambiguous in cohort '"
+                            + r.getCohortName() + "' — multiple match"));
+            return false;
+        }
+
+        Learner learner = Learner.builder()
+                .fullName(r.getFullName())
+                .email(email)
+                .cohort(cohort)
+                .specialization(specialization)
+                .status(LearnerStatus.ACTIVE)
+                .build();
+        learner.setCreatedBy(actor.getId());
+        learner.setUpdatedBy(actor.getId());
+
+        learnerRepository.save(learner);
+        return true;
     }
 
     private static CsvRowError toDbRowError(long lineNumber, DataIntegrityViolationException ex) {
