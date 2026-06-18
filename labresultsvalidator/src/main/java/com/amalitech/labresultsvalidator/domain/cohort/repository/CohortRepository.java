@@ -15,6 +15,8 @@ import java.util.UUID;
 public interface CohortRepository extends JpaRepository<Cohort, UUID> {
     boolean existsByName(String name);
 
+    boolean existsByNameAndIdNot(String name, UUID id);
+
     Optional<Cohort> findByNameIgnoreCase(String name);
 
     Page<Cohort> findAll(Pageable pageable);

@@ -6,13 +6,16 @@ import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityEx
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.UpdateCohortRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -60,19 +63,52 @@ public class CohortService {
         return PagedResponse.of(page);
     }
 
+    @Transactional
+    public CohortResponse updateCohort(UUID id, UpdateCohortRequest request) {
+        Cohort cohort = cohortRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Cohort with id '" + id + "' not found"));
+
+        if (request.getName() != null) {
+            String newName = request.getName().strip();
+            if (!cohort.getName().equalsIgnoreCase(newName)
+                    && cohortRepository.existsByNameAndIdNot(newName, id)) {
+                throw new DuplicateResourceException(
+                        "Cohort with name '" + newName + "' already exists");
+            }
+            cohort.setName(newName);
+        }
+
+        LocalDate effectiveStart = request.getStartDate() != null ? request.getStartDate() : cohort.getStartDate();
+        LocalDate effectiveEnd   = request.getEndDate()   != null ? request.getEndDate()   : cohort.getEndDate();
+
+        if (!effectiveEnd.isAfter(effectiveStart)) {
+            throw new IllegalArgumentException("End date must be after start date");
+        }
+
+        if (request.getStartDate() != null) cohort.setStartDate(request.getStartDate());
+        if (request.getEndDate()   != null) cohort.setEndDate(request.getEndDate());
+        if (request.getActive()    != null) cohort.setActive(request.getActive());
+
+        cohort.setUpdatedBy(currentUser().getId());
+
+        return mapToResponse(cohortRepository.save(cohort));
+    }
+
     public void deleteCohort(UUID id) {
         Cohort cohort = cohortRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Cohort with id '" + id + "' not found"));
 
         if (cohortRepository.hasActiveModules(cohort.getId())) {
-            throw new DuplicateResourceException(
+            throw new UnprocessableEntityException(
                     "Cannot delete cohort '" + cohort.getName() + "' — it has active modules");
         }
 
         cohortRepository.delete(cohort);
     }
 
+    @Transactional
     public CohortResponse lockCohort(UUID id) {
         Cohort cohort = cohortRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -85,6 +121,7 @@ public class CohortService {
         return mapToResponse(cohortRepository.save(cohort));
     }
 
+    @Transactional
     public CohortResponse unlockCohort(UUID id) {
         Cohort cohort = cohortRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(

@@ -207,13 +207,13 @@ class CohortServiceTest {
     }
 
     @Test
-    void deleteCohort_whenCohortHasActiveModules_throwsDuplicateResourceException() {
+    void deleteCohort_whenCohortHasActiveModules_throwsUnprocessableEntityException() {
         Cohort cohort = buildCohort("Cohort 12");
         when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(cohort));
         when(cohortRepository.hasActiveModules(cohort.getId())).thenReturn(true);
 
         assertThatThrownBy(() -> cohortService.deleteCohort(cohort.getId()))
-                .isInstanceOf(DuplicateResourceException.class)
+                .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("Cohort 12");
 
         verify(cohortRepository, never()).delete(any());
