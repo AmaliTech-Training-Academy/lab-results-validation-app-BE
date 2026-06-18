@@ -5,6 +5,7 @@ import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultUploadResponse;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -48,6 +52,7 @@ class LabResultControllerTest {
         mockMvc = MockMvcBuilders
             .standaloneSetup(labResultController)
             .setControllerAdvice(new GlobalExceptionHandler())
+            .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
             .build();
     }
 
@@ -131,34 +136,36 @@ class LabResultControllerTest {
             .gradedBy("Dr. Smith")
             .build();
 
-        when(labResultUploadService.getLabResultsByModule(moduleId)).thenReturn(List.of(result));
+        when(labResultUploadService.getLabResultsByModule(eq(moduleId), any()))
+            .thenReturn(PagedResponse.of(new PageImpl<>(List.of(result))));
 
         mockMvc.perform(get(BASE_URL + "/modules/" + moduleId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data[0].learnerEmail").value("jane@test.com"))
-            .andExpect(jsonPath("$.data[0].learnerName").value("Jane Doe"))
-            .andExpect(jsonPath("$.data[0].labTitle").value("Lab 1"))
-            .andExpect(jsonPath("$.data[0].attemptNumber").value(1))
-            .andExpect(jsonPath("$.data[0].gradedBy").value("Dr. Smith"));
+            .andExpect(jsonPath("$.data.content[0].learnerEmail").value("jane@test.com"))
+            .andExpect(jsonPath("$.data.content[0].learnerName").value("Jane Doe"))
+            .andExpect(jsonPath("$.data.content[0].labTitle").value("Lab 1"))
+            .andExpect(jsonPath("$.data.content[0].attemptNumber").value(1))
+            .andExpect(jsonPath("$.data.content[0].gradedBy").value("Dr. Smith"));
     }
 
     @Test
     void getResultsByModule_withNoResults_returns200WithEmptyList() throws Exception {
         UUID moduleId = UUID.randomUUID();
-        when(labResultUploadService.getLabResultsByModule(moduleId)).thenReturn(List.of());
+        when(labResultUploadService.getLabResultsByModule(eq(moduleId), any()))
+            .thenReturn(PagedResponse.of(new PageImpl<>(List.of())));
 
         mockMvc.perform(get(BASE_URL + "/modules/" + moduleId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data").isArray())
-            .andExpect(jsonPath("$.data").isEmpty());
+            .andExpect(jsonPath("$.data.content").isArray())
+            .andExpect(jsonPath("$.data.content").isEmpty());
     }
 
     @Test
     void getResultsByModule_withUnknownModule_returns404() throws Exception {
         UUID unknownId = UUID.randomUUID();
-        when(labResultUploadService.getLabResultsByModule(unknownId))
+        when(labResultUploadService.getLabResultsByModule(eq(unknownId), any()))
             .thenThrow(new ResourceNotFoundException("Module not found with ID: " + unknownId));
 
         mockMvc.perform(get(BASE_URL + "/modules/" + unknownId))

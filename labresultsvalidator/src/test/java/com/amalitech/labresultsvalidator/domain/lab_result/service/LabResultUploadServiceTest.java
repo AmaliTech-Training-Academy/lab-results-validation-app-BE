@@ -8,6 +8,7 @@ import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.csv.ParsedRow;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
 import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadRepository;
@@ -44,6 +45,10 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.web.multipart.MultipartFile;
+
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -579,10 +584,13 @@ class LabResultUploadServiceTest {
             .gradedBy("Dr. Smith")
             .build();
 
+        Pageable pageable = PageRequest.of(0, 20);
         when(moduleRepository.existsById(moduleId)).thenReturn(true);
-        when(labResultRepository.findAllByModuleId(moduleId)).thenReturn(List.of(labResult));
+        when(labResultRepository.findAllByModuleId(eq(moduleId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(labResult)));
 
-        List<LabResultResponse> results = service.getLabResultsByModule(moduleId);
+        PagedResponse<LabResultResponse> response = service.getLabResultsByModule(moduleId, pageable);
+        List<LabResultResponse> results = response.getContent();
 
         assertThat(results).hasSize(1);
         LabResultResponse r = results.get(0);
@@ -599,9 +607,10 @@ class LabResultUploadServiceTest {
     void getLabResultsByModule_withNoResults_returnsEmptyList() {
         UUID moduleId = module.getId();
         when(moduleRepository.existsById(moduleId)).thenReturn(true);
-        when(labResultRepository.findAllByModuleId(moduleId)).thenReturn(List.of());
+        when(labResultRepository.findAllByModuleId(eq(moduleId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
 
-        assertThat(service.getLabResultsByModule(moduleId)).isEmpty();
+        assertThat(service.getLabResultsByModule(moduleId, PageRequest.of(0, 20)).getContent()).isEmpty();
     }
 
     @Test
@@ -609,7 +618,7 @@ class LabResultUploadServiceTest {
         UUID unknownId = UUID.randomUUID();
         when(moduleRepository.existsById(unknownId)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.getLabResultsByModule(unknownId))
+        assertThatThrownBy(() -> service.getLabResultsByModule(unknownId, PageRequest.of(0, 20)))
             .isInstanceOf(ResourceNotFoundException.class)
             .hasMessageContaining(unknownId.toString());
     }
