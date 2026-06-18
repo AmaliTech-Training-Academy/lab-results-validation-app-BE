@@ -107,7 +107,11 @@ public class LabResultUploadService {
         String sha256 = Sha256Util.sha256Hex(readBytes(file));
         csvUploadRepository.findByFileSha256(sha256).ifPresent(prior -> {
             throw new DuplicateResourceException(
-                "This file was already uploaded on " + prior.getUploadedAt() + ".");
+                "A file with identical content was already uploaded on "
+                    + prior.getUploadedAt()
+                    + " (filename: \"" + prior.getFilename() + "\"). "
+                    + "Renaming the file does not count as a new upload — "
+                    + "the content must change for it to be processed again.");
         });
 
         CsvParseResult<LabResultCsvRow> parsed = csvParserService.parse(file, LabResultCsvRow.class);
@@ -133,7 +137,16 @@ public class LabResultUploadService {
             if (inFileDuplicates.contains(v.lineNumber())) {
                 continue;
             }
-            Resolution resolution = reconcile(v, actor, adminBypass, errors, rejectedLines);
+            Resolution resolution;
+            try {
+                resolution = reconcile(v, actor, adminBypass, errors, rejectedLines);
+            } catch (Exception ex) {
+                LOG.error("Unexpected error reconciling row {}: {}", v.lineNumber(), ex.getMessage(), ex);
+                errors.add(new CsvRowError(v.lineNumber(), null,
+                    "Unexpected error processing row: " + ex.getMessage()));
+                rejectedLines.add(v.lineNumber());
+                continue;
+            }
             switch (resolution.kind()) {
                 case INSERT -> pending.add(new PendingSave(v.lineNumber(), ResolutionKind.INSERT, resolution.result()));
                 case UPDATE -> pending.add(new PendingSave(v.lineNumber(), ResolutionKind.UPDATE, resolution.result()));
@@ -144,20 +157,12 @@ public class LabResultUploadService {
             }
         }
 
-        int preInserted = (int) pending.stream().filter(p -> p.kind() == ResolutionKind.INSERT).count();
-        int preUpdated = (int) pending.stream().filter(p -> p.kind() == ResolutionKind.UPDATE).count();
-
         CsvUpload upload = csvUploadRepository.save(CsvUpload.builder()
             .uploadedByUser(actor)
             .filename(filename(file))
             .fileSha256(sha256)
             .uploadedAt(OffsetDateTime.now())
             .totalRows(parsed.totalRows())
-            .acceptedRows(preInserted + preUpdated)
-            .rejectedRows(rejectedLines.size())
-            .status(UploadStatus.COMPLETED)
-            .errorReportJson(buildReport(parsed.totalRows(), preInserted, preUpdated,
-                skipped, rejectedLines.size(), errors))
             .build());
 
         // Save each row individually so a single DB failure is captured as a row-level
@@ -193,6 +198,14 @@ public class LabResultUploadService {
                 rejectedLines.add(p.lineNumber());
             }
         }
+
+        upload.setAcceptedRows(inserted + updated);
+        upload.setRejectedRows(rejectedLines.size());
+        upload.setStatus((inserted + updated == 0 && parsed.totalRows() > 0)
+            ? UploadStatus.FAILED : UploadStatus.COMPLETED);
+        upload.setErrorReportJson(buildReport(parsed.totalRows(), inserted, updated,
+            skipped, rejectedLines.size(), errors));
+        csvUploadRepository.save(upload);
 
         return LabResultUploadResponse.builder()
             .uploadId(upload.getId())
@@ -245,6 +258,10 @@ public class LabResultUploadService {
             BigDecimal score = parseDecimal(r.getScore(), line, "SCORE", errors);
             BigDecimal maxScore = parseDecimal(r.getMaxScore(), line, "MAX_SCORE", errors);
             if (score == null || maxScore == null) {
+                ok = false;
+            } else if (maxScore.signum() <= 0) {
+                errors.add(new CsvRowError(line, "MAX_SCORE", "V4",
+                    "MAX_SCORE must be greater than 0, got " + maxScore));
                 ok = false;
             } else if (score.signum() < 0 || score.compareTo(maxScore) > 0) {
                 errors.add(new CsvRowError(line, "SCORE", "V5",
@@ -488,7 +505,7 @@ public class LabResultUploadService {
 
     private String dupKey(ValidatedRow v) {
         LabResultCsvRow r = v.raw();
-        return String.join("",
+        return String.join("\u0000",
             r.getLearnerEmail().trim().toLowerCase(Locale.ROOT),
             r.getCohortName().trim().toLowerCase(Locale.ROOT),
             r.getSpecializationName().trim().toLowerCase(Locale.ROOT),
