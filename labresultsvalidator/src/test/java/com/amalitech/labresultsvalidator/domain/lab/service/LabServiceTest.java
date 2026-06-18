@@ -101,6 +101,7 @@ class LabServiceTest {
     void createLab_whenDuplicateTitleInModule_throwsDuplicateResourceException() {
         CreateLabRequest request = buildCreateRequest(module.getId(), "Lab 1", BigDecimal.TEN);
         when(moduleRepository.findById(module.getId())).thenReturn(Optional.of(module));
+        when(moduleRepository.findCohortIsLockedById(module.getId())).thenReturn(Optional.of(false));
         when(labRepository.existsByModuleIdAndTitle(module.getId(), "Lab 1")).thenReturn(true);
 
         assertThatThrownBy(() -> labService.createLab(request))
@@ -111,9 +112,23 @@ class LabServiceTest {
     }
 
     @Test
+    void createLab_whenCohortIsLocked_throwsUnprocessableEntityException() {
+        CreateLabRequest request = buildCreateRequest(module.getId(), "Lab 1", BigDecimal.TEN);
+        when(moduleRepository.findById(module.getId())).thenReturn(Optional.of(module));
+        when(moduleRepository.findCohortIsLockedById(module.getId())).thenReturn(Optional.of(true));
+
+        assertThatThrownBy(() -> labService.createLab(request))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("locked");
+
+        verify(labRepository, never()).save(any());
+    }
+
+    @Test
     void createLab_success_savesAndReturnsMappedResponse() {
         CreateLabRequest request = buildCreateRequest(module.getId(), "Lab 1", new BigDecimal("100.00"));
         when(moduleRepository.findById(module.getId())).thenReturn(Optional.of(module));
+        when(moduleRepository.findCohortIsLockedById(module.getId())).thenReturn(Optional.of(false));
         when(labRepository.existsByModuleIdAndTitle(module.getId(), "Lab 1")).thenReturn(false);
 
         UUID labId = UUID.randomUUID();

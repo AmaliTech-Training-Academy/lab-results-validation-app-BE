@@ -19,6 +19,7 @@ public class CohortResponse {
     private LocalDate startDate;
     private LocalDate endDate;
     private boolean active;
+    private boolean locked;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 }

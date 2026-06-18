@@ -37,6 +37,11 @@ public class LabService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Module with id '" + request.getModuleId() + "' not found"));
 
+        boolean locked = moduleRepository.findCohortIsLockedById(request.getModuleId()).orElse(false);
+        if (locked) {
+            throw new UnprocessableEntityException("Cohort is locked and cannot be modified");
+        }
+
         if (labRepository.existsByModuleIdAndTitle(request.getModuleId(), request.getTitle())) {
             throw new DuplicateResourceException(
                     "Lab with title '" + request.getTitle() + "' already exists in this module");
