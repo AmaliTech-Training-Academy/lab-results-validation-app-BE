@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.user.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorResponse;
@@ -20,6 +21,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -188,12 +193,15 @@ class UserServiceTest {
     // --- listInstructors ---
 
     @Test
-    void listInstructors_whenNoneExist_returnsEmptyList() {
-        when(userRepository.findAllByRole(UserRole.INSTRUCTOR)).thenReturn(Collections.emptyList());
+    void listInstructors_whenNoneExist_returnsEmptyPage() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable))
+                .thenReturn(Page.empty(pageable));
 
-        List<UserResponseDTO> result = userService.listInstructors();
+        PagedResponse<UserResponseDTO> result = userService.listInstructors(pageable);
 
-        assertThat(result).isEmpty();
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
     }
 
     @Test
@@ -205,13 +213,16 @@ class UserServiceTest {
                 .id(id2).email("i2@test.com").passwordHash("h")
                 .role(UserRole.INSTRUCTOR).isActive(true).mustChangePassword(false).build();
 
-        when(userRepository.findAllByRole(UserRole.INSTRUCTOR)).thenReturn(List.of(i1, i2));
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<User> page = new PageImpl<>(List.of(i1, i2), pageable, 2);
+        when(userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable)).thenReturn(page);
         when(assignmentRepository.findAllByUserIdIn(any())).thenReturn(Collections.emptyList());
 
-        List<UserResponseDTO> result = userService.listInstructors();
+        PagedResponse<UserResponseDTO> result = userService.listInstructors(pageable);
 
-        assertThat(result).hasSize(2);
-        assertThat(result).extracting(UserResponseDTO::getEmail)
+        assertThat(result.getContent()).hasSize(2);
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent()).extracting(UserResponseDTO::getEmail)
                 .containsExactlyInAnyOrder("instructor@test.com", "i2@test.com");
     }
 
@@ -219,7 +230,10 @@ class UserServiceTest {
     void listInstructors_groupsModulesByInstructor() {
         UUID instructorId = UUID.randomUUID();
         User instructor = buildInstructor(instructorId);
-        when(userRepository.findAllByRole(UserRole.INSTRUCTOR)).thenReturn(List.of(instructor));
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<User> page = new PageImpl<>(List.of(instructor), pageable, 1);
+        when(userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable)).thenReturn(page);
 
         com.amalitech.labresultsvalidator.domain.module.entity.Module module =
                 com.amalitech.labresultsvalidator.domain.module.entity.Module.builder()
@@ -238,10 +252,11 @@ class UserServiceTest {
 
         when(assignmentRepository.findAllByUserIdIn(any())).thenReturn(List.of(assignment));
 
-        List<UserResponseDTO> result = userService.listInstructors();
+        PagedResponse<UserResponseDTO> result = userService.listInstructors(pageable);
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getAssignedModules()).hasSize(1);
-        assertThat(result.get(0).getAssignedModules().get(0).getModuleName()).isEqualTo("Module A");
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getAssignedModules()).hasSize(1);
+        assertThat(result.getContent().get(0).getAssignedModules().get(0).getModuleName())
+                .isEqualTo("Module A");
     }
 }
