@@ -92,7 +92,7 @@ class LabResultUploadServiceTest {
         admin = User.builder().id(UUID.randomUUID()).email("admin@test.com")
             .passwordHash("h").role(UserRole.ADMIN).build();
 
-        cohort = Cohort.builder().id(UUID.randomUUID()).name("Cohort 1").active(true).build();
+        cohort = Cohort.builder().id(UUID.randomUUID()).name("Cohort 1").active(true).locked(true).build();
         specialization = Specialization.builder().id(UUID.randomUUID())
             .name("Data Analytics").cohort(cohort).build();
         module = Module.builder().id(UUID.randomUUID()).name("Module 1")
@@ -340,6 +340,38 @@ class LabResultUploadServiceTest {
         assertThat(result.getInsertedCount()).isEqualTo(1);
         assertThat(result.getRejectedCount()).isZero();
         verify(userModuleAssignmentRepository, never()).existsByUserIdAndModuleId(any(), any());
+    }
+
+    // ── Cohort-lock gate (V18) ────────────────────────────────────────────────
+
+    @Test
+    void bulkUpload_whenCohortNotLocked_instructorIsRejectedV18() {
+        Cohort unlocked = Cohort.builder()
+            .id(UUID.randomUUID()).name("Cohort 1").active(true).locked(false).build();
+        Learner unlockedLearner = Learner.builder()
+            .id(UUID.randomUUID()).fullName("Jane Doe").email("jane@test.com")
+            .cohort(unlocked).specialization(specialization).status(LearnerStatus.ACTIVE).build();
+        when(learnerRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.of(unlockedLearner));
+        doReturn(parsed(validRow())).when(csvParserService).parse(any(), any());
+
+        assertSingleError(service.bulkUpload(file()), "COHORT_NAME", "V18");
+    }
+
+    @Test
+    void bulkUpload_whenCohortNotLocked_adminBypasses() {
+        setActor(admin);
+        Cohort unlocked = Cohort.builder()
+            .id(UUID.randomUUID()).name("Cohort 1").active(true).locked(false).build();
+        Learner unlockedLearner = Learner.builder()
+            .id(UUID.randomUUID()).fullName("Jane Doe").email("jane@test.com")
+            .cohort(unlocked).specialization(specialization).status(LearnerStatus.ACTIVE).build();
+        when(learnerRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.of(unlockedLearner));
+        doReturn(parsed(validRow())).when(csvParserService).parse(any(), any());
+
+        LabResultUploadResponse result = service.bulkUpload(file());
+
+        assertThat(result.getInsertedCount()).isEqualTo(1);
+        assertThat(result.getRejectedCount()).isZero();
     }
 
     // ── Reconcile against DB (V17): insert / update / skip ──────────────────────

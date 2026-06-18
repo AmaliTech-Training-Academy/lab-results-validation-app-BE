@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.module.service;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
 import com.amalitech.labresultsvalidator.domain.module.dto.CreateModuleRequest;
 import com.amalitech.labresultsvalidator.domain.module.dto.ModuleResponse;
@@ -37,6 +38,9 @@ class ModuleServiceTest {
 
     @Mock
     private SpecializationRepository specializationRepository;
+
+    @Mock
+    private CohortRepository cohortRepository;
 
     @InjectMocks
     private ModuleService moduleService;
@@ -85,6 +89,7 @@ class ModuleServiceTest {
     void createModule_withValidCohortSpecCombo_returnsPopulatedResponse() {
         when(specializationRepository.findByIdAndCohortId(SPEC_ID, COHORT_ID))
                 .thenReturn(Optional.of(buildSpecialization()));
+        when(cohortRepository.findIsLockedById(COHORT_ID)).thenReturn(Optional.of(false));
         when(moduleRepository.countBySpecializationId(SPEC_ID)).thenReturn(0);
         when(moduleRepository.save(any(Module.class))).thenReturn(buildModule());
 
@@ -113,12 +118,24 @@ class ModuleServiceTest {
     void createModule_sequenceIsCountPlusOne() {
         when(specializationRepository.findByIdAndCohortId(SPEC_ID, COHORT_ID))
                 .thenReturn(Optional.of(buildSpecialization()));
+        when(cohortRepository.findIsLockedById(COHORT_ID)).thenReturn(Optional.of(false));
         when(moduleRepository.countBySpecializationId(SPEC_ID)).thenReturn(4);
         when(moduleRepository.save(any(Module.class))).thenAnswer(inv -> inv.getArgument(0));
 
         moduleService.createModule(buildCreateRequest());
 
         verify(moduleRepository).save(argThat(m -> m.getSequence() == 5));
+    }
+
+    @Test
+    void createModule_whenCohortIsLocked_throwsUnprocessableEntityException() {
+        when(specializationRepository.findByIdAndCohortId(SPEC_ID, COHORT_ID))
+                .thenReturn(Optional.of(buildSpecialization()));
+        when(cohortRepository.findIsLockedById(COHORT_ID)).thenReturn(Optional.of(true));
+
+        assertThatThrownBy(() -> moduleService.createModule(buildCreateRequest()))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("locked");
     }
 
     // ─────────────────────── getModules ──────────────────────────────────────

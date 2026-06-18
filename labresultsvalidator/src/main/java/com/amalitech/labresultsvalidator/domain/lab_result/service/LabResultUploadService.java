@@ -59,7 +59,8 @@ import java.util.UUID;
  *
  * <p>Structural problems (V1–V2) abort the whole file via {@link MalformedCsvException}. Every data
  * row is then graded independently: field-level checks (V3–V8), in-file duplicate detection (V16),
- * and referential/consistency checks (V9–V15) against reference data. Surviving rows are reconciled
+ * referential/consistency checks (V9–V15) against reference data, and a cohort-lock gate (V18).
+ * Surviving rows are reconciled
  * against the {@code (learner, lab, attempt)} unique key (V17): a new key is inserted, a changed
  * value updates the existing result in place (instructors may correct a score), and an identical row
  * is skipped. Each upload is recorded in {@code csv_uploads} for audit, and a byte-identical
@@ -272,6 +273,11 @@ public class LabResultUploadService {
             return reject(errors, rejectedLines, line, "COHORT_NAME", "V10",
                 "Cohort '" + r.getCohortName() + "' does not match the learner's enrolled cohort '"
                     + learner.getCohort().getName() + "'");
+        }
+        if (!adminBypass && !learner.getCohort().isLocked()) {
+            return reject(errors, rejectedLines, line, "COHORT_NAME", "V18",
+                "Cohort '" + learner.getCohort().getName()
+                    + "' is not locked — results cannot be uploaded until the cohort is locked");
         }
         if (!learner.getSpecialization().getName().equalsIgnoreCase(r.getSpecializationName().trim())) {
             return reject(errors, rejectedLines, line, "SPECIALIZATION_NAME", "V11",

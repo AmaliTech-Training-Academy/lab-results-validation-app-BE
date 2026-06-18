@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.specialization.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
@@ -149,6 +150,25 @@ class SpecializationServiceTest {
         assertThatThrownBy(() -> specializationService.createSpecialization(request))
                 .isInstanceOf(DuplicateResourceException.class)
                 .hasMessageContaining("Software Engineering");
+
+        verify(specializationRepository, never()).save(any());
+    }
+
+    @Test
+    void createSpecialization_whenCohortIsLocked_throwsUnprocessableEntityException() {
+        Cohort locked = Cohort.builder()
+                .id(cohort.getId())
+                .name("Cohort 12")
+                .startDate(LocalDate.of(2025, 1, 1))
+                .endDate(LocalDate.of(2025, 6, 30))
+                .active(true)
+                .locked(true)
+                .build();
+        when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(locked));
+
+        assertThatThrownBy(() -> specializationService.createSpecialization(request))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("locked");
 
         verify(specializationRepository, never()).save(any());
     }

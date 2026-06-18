@@ -67,6 +67,11 @@ public class ProgramStructureUploadService {
             return errorResponse(errors);
         }
 
+        errors.addAll(validateCohortsNotLocked(parsed.validRows(), cohortCache));
+        if (!errors.isEmpty()) {
+            return errorResponse(errors);
+        }
+
         errors.addAll(validateSpecCodeConsistency(parsed.validRows()));
         errors.addAll(validateNoDuplicateLabs(parsed.validRows()));
         if (!errors.isEmpty()) {
@@ -145,6 +150,19 @@ public class ProgramStructureUploadService {
                 errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME",
                     "Cohort '" + name + "' not found — create the cohort first"));
             }
+        }
+        return errors;
+    }
+
+    private List<CsvRowError> validateCohortsNotLocked(List<ParsedRow<ProgramStructureCsvRow>> rows,
+                                                        Map<String, Optional<Cohort>> cohortCache) {
+        List<CsvRowError> errors = new ArrayList<>();
+        for (ParsedRow<ProgramStructureCsvRow> row : rows) {
+            String name = row.data().getCohortName().trim();
+            cohortCache.get(name)
+                    .filter(Cohort::isLocked)
+                    .ifPresent(c -> errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME",
+                            "Cohort '" + name + "' is locked and cannot be modified")));
         }
         return errors;
     }
