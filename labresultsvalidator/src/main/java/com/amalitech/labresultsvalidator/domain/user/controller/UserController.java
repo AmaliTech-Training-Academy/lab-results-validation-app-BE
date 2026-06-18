@@ -1,12 +1,14 @@
 package com.amalitech.labresultsvalidator.domain.user.controller;
 
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorResponse;
 import com.amalitech.labresultsvalidator.domain.user.dto.UpdateUserRequest;
 import com.amalitech.labresultsvalidator.domain.user.dto.UserResponseDTO;
 import com.amalitech.labresultsvalidator.domain.user.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -14,6 +16,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,7 +30,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "User Management", description = "Admin operations for managing user accounts")
@@ -108,8 +112,9 @@ public class UserController {
 
     @Operation(
         summary = "List instructors",
-        description = "Returns all INSTRUCTOR accounts with their email, active status, "
-            + "and assigned modules. Restricted to ADMIN and SUPER_ADMIN roles."
+        description = "Returns a paginated list of INSTRUCTOR accounts with their email, active status, "
+            + "and assigned modules. Default: page 0, size 10, sorted by email ASC. "
+            + "Restricted to ADMIN and SUPER_ADMIN roles."
     )
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -126,8 +131,11 @@ public class UserController {
     @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/instructors")
     @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
-    public ResponseEntity<ApiResponse<List<UserResponseDTO>>> listInstructors() {
-        List<UserResponseDTO> instructors = userService.listInstructors();
+    public ResponseEntity<ApiResponse<PagedResponse<UserResponseDTO>>> listInstructors(
+            @Parameter(hidden = true)
+            @PageableDefault(size = 10, sort = "email",
+                direction = Sort.Direction.ASC) Pageable pageable) {
+        PagedResponse<UserResponseDTO> instructors = userService.listInstructors(pageable);
         return ResponseEntity.ok(
                 ApiResponse.success("Instructors retrieved successfully", instructors)
         );
