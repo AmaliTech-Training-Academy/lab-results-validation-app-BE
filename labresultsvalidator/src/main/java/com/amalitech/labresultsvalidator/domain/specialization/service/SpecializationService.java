@@ -7,12 +7,14 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.specialization.dto.CreateSpecializationRequest;
 import com.amalitech.labresultsvalidator.domain.specialization.dto.SpecializationResponse;
+import com.amalitech.labresultsvalidator.domain.specialization.dto.UpdateSpecializationRequest;
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.specialization.repository.SpecializationRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -63,6 +65,40 @@ public class SpecializationService {
         return mapToResponse(saved);
     }
 
+    @Transactional
+    public SpecializationResponse updateSpecialization(UUID id, UpdateSpecializationRequest request) {
+        Specialization specialization = specializationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Specialization with id '" + id + "' not found"));
+
+        if (specialization.getCohort().isLocked()) {
+            throw new UnprocessableEntityException(
+                    "Cohort '" + specialization.getCohort().getName() + "' is locked and cannot be modified");
+        }
+
+        String newName = request.getName();
+        String newCode = request.getCode().toUpperCase();
+        UUID cohortId = specialization.getCohort().getId();
+
+        if (!specialization.getName().equalsIgnoreCase(newName)
+                && specializationRepository.existsByCohortIdAndNameAndIdNot(cohortId, newName, id)) {
+            throw new DuplicateResourceException(
+                    "Specialization with name '" + newName + "' already exists in this cohort");
+        }
+
+        if (!specialization.getCode().equalsIgnoreCase(newCode)
+                && specializationRepository.existsByCohortIdAndCodeAndIdNot(cohortId, newCode, id)) {
+            throw new DuplicateResourceException(
+                    "Specialization with code '" + newCode + "' already exists in this cohort");
+        }
+
+        specialization.setName(newName);
+        specialization.setCode(newCode);
+        specialization.setUpdatedBy(currentUser().getId());
+
+        return mapToResponse(specializationRepository.save(specialization));
+    }
+
     public Page<SpecializationResponse> listSpecializations(UUID cohortId, Pageable pageable) {
         if (cohortId != null) {
             return specializationRepository.findAllByCohortIdOrderByNameAsc(cohortId, pageable)
@@ -70,6 +106,10 @@ public class SpecializationService {
         }
         return specializationRepository.findAllByOrderByNameAsc(pageable)
                 .map(this::mapToResponse);
+    }
+
+    private User currentUser() {
+        return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
 
     private SpecializationResponse mapToResponse(Specialization specialization) {

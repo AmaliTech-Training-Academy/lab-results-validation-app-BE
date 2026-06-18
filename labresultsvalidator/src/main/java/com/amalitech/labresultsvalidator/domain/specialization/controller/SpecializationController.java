@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.specialization.controller;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.specialization.dto.CreateSpecializationRequest;
 import com.amalitech.labresultsvalidator.domain.specialization.dto.SpecializationResponse;
+import com.amalitech.labresultsvalidator.domain.specialization.dto.UpdateSpecializationRequest;
 import com.amalitech.labresultsvalidator.domain.specialization.service.SpecializationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -18,7 +19,9 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -66,6 +69,35 @@ public class SpecializationController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Specialization created successfully", response));
+    }
+
+    @Operation(
+        summary = "Update a specialization",
+        description = "Updates a specialization's name and code. "
+                + "Both must remain unique within the cohort. Blocked if the cohort is locked."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Specialization updated successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "Validation error",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "Specialization not found",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409", description = "Name or code already in use in this cohort",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "422", description = "Cohort is locked",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<SpecializationResponse>> updateSpecialization(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateSpecializationRequest request) {
+        SpecializationResponse response = specializationService.updateSpecialization(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Specialization updated successfully", response));
     }
 
     @Operation(
