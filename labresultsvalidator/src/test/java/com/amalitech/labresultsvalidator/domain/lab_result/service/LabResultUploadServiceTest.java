@@ -65,6 +65,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -173,7 +174,7 @@ class LabResultUploadServiceTest {
         assertThat(result.getErrors()).isEmpty();
 
         ArgumentCaptor<CsvUpload> captor = ArgumentCaptor.forClass(CsvUpload.class);
-        verify(csvUploadRepository).save(captor.capture());
+        verify(csvUploadRepository, times(2)).save(captor.capture());
         assertThat(captor.getValue().getTotalRows()).isEqualTo(1);
         assertThat(captor.getValue().getAcceptedRows()).isEqualTo(1);
         assertThat(captor.getValue().getRejectedRows()).isZero();
