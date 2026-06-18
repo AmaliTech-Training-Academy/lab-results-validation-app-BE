@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.user_module_assignment.controller;
 
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignModuleRequest;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignModuleResponse;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignedModuleResponse;
@@ -12,6 +13,9 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -105,10 +109,11 @@ public class UserModuleAssignmentController {
     })
     @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN') or hasRole('INSTRUCTOR')")
     @GetMapping("/{instructorId}/modules")
-    public ResponseEntity<ApiResponse<List<AssignedModuleResponse>>> getInstructorModules(
-            @PathVariable UUID instructorId) {
+    public ResponseEntity<ApiResponse<PagedResponse<AssignedModuleResponse>>> getInstructorModules(
+            @PathVariable UUID instructorId,
+            @PageableDefault(size = 20) Pageable pageable) {
 
-        List<AssignedModuleResponse> response = userModuleAssignmentService.getInstructorModules(instructorId);
+        PagedResponse<AssignedModuleResponse> response = userModuleAssignmentService.getInstructorModules(instructorId, pageable);
         return ResponseEntity.ok(
                 ApiResponse.success("Assigned modules retrieved successfully", response));
     }

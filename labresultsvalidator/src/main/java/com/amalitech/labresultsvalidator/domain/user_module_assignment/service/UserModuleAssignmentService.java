@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.user_module_assignment.service;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.module.entity.Module;
 import com.amalitech.labresultsvalidator.domain.module.repository.ModuleRepository;
@@ -18,6 +19,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Pageable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -136,7 +138,7 @@ public class UserModuleAssignmentService {
                 .toList();
     }
 
-    public List<AssignedModuleResponse> getInstructorModules(UUID instructorId) {
+    public PagedResponse<AssignedModuleResponse> getInstructorModules(UUID instructorId, Pageable pageable) {
         User instructor = userRepository.findByIdAndIsActiveTrue(instructorId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Instructor not found with ID: " + instructorId));
@@ -146,14 +148,12 @@ public class UserModuleAssignmentService {
                     "User with ID " + instructorId + " is not an instructor");
         }
 
-        return userModuleAssignmentRepository
-                .findAllByUserId(instructorId)
-                .stream()
+        return PagedResponse.of(userModuleAssignmentRepository
+                .findAllByUserId(instructorId, pageable)
                 .map(a -> AssignedModuleResponse.builder()
                         .moduleId(a.getModule().getId())
                         .moduleName(a.getModule().getName())
                         .specializationName(a.getModule().getSpecialization().getName())
-                        .build())
-                .toList();
+                        .build()));
     }
 }
