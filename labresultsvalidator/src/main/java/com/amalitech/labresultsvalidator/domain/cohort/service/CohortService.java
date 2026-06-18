@@ -86,9 +86,15 @@ public class CohortService {
             throw new IllegalArgumentException("End date must be after start date");
         }
 
-        if (request.getStartDate() != null) cohort.setStartDate(request.getStartDate());
-        if (request.getEndDate()   != null) cohort.setEndDate(request.getEndDate());
-        if (request.getActive()    != null) cohort.setActive(request.getActive());
+        if (request.getStartDate() != null) {
+            cohort.setStartDate(request.getStartDate());
+        }
+        if (request.getEndDate() != null) {
+            cohort.setEndDate(request.getEndDate());
+        }
+        if (request.getActive() != null) {
+            cohort.setActive(request.getActive());
+        }
 
         cohort.setUpdatedBy(currentUser().getId());
 

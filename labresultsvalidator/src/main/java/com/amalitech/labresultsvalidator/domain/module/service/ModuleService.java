@@ -60,7 +60,8 @@ public class ModuleService {
         Page<Module> page;
 
         if (specializationId != null && cohortId != null) {
-            page = moduleRepository.findAllBySpecializationIdAndSpecializationCohortId(specializationId, cohortId, pageable);
+            page = moduleRepository.findAllBySpecializationIdAndSpecializationCohortId(
+                    specializationId, cohortId, pageable);
         } else if (specializationId != null) {
             page = moduleRepository.findAllBySpecializationId(specializationId, pageable);
         } else if (cohortId != null) {
