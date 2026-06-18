@@ -1,7 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.module.dto;
 
 import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class PatchModuleRequest {
 
-    @NotNull(message = "Status is required")
+    @Size(max = 200, message = "Module name must not exceed 200 characters")
+    private String name;
+
     private ModuleStatus status;
 }
