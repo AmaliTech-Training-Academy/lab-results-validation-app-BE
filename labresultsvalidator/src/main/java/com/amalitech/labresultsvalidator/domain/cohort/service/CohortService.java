@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.cohort.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
@@ -22,10 +23,14 @@ import org.springframework.stereotype.Service;
 public class CohortService {
     private final CohortRepository cohortRepository;
 
-    public CohortResponse createCohort(CreateCohortRequest request) {
-        User currentUser = (User) SecurityContextHolder
+    private User currentUser() {
+        return (User) SecurityContextHolder
                 .getContext().getAuthentication()
                 .getPrincipal();
+    }
+
+    public CohortResponse createCohort(CreateCohortRequest request) {
+        User currentUser = currentUser();
 
         if (cohortRepository.existsByName(request.getName())) {
             throw new DuplicateResourceException(
@@ -78,6 +83,30 @@ public class CohortService {
         cohortRepository.delete(cohort);
     }
 
+    public CohortResponse lockCohort(UUID id) {
+        Cohort cohort = cohortRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Cohort with id '" + id + "' not found"));
+        if (cohort.isLocked()) {
+            throw new UnprocessableEntityException("Cohort is already locked");
+        }
+        cohort.setLocked(true);
+        cohort.setUpdatedBy(currentUser().getId());
+        return mapToResponse(cohortRepository.save(cohort));
+    }
+
+    public CohortResponse unlockCohort(UUID id) {
+        Cohort cohort = cohortRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Cohort with id '" + id + "' not found"));
+        if (!cohort.isLocked()) {
+            throw new UnprocessableEntityException("Cohort is already unlocked");
+        }
+        cohort.setLocked(false);
+        cohort.setUpdatedBy(currentUser().getId());
+        return mapToResponse(cohortRepository.save(cohort));
+    }
+
     private CohortResponse mapToResponse(Cohort cohort) {
         return CohortResponse.builder()
                 .id(cohort.getId())
@@ -85,8 +114,11 @@ public class CohortService {
                 .startDate(cohort.getStartDate())
                 .endDate(cohort.getEndDate())
                 .active(cohort.isActive())
+                .locked(cohort.isLocked())
                 .createdAt(cohort.getCreatedAt())
                 .updatedAt(cohort.getUpdatedAt())
                 .build();
     }
+
+
 }

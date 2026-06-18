@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.specialization.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.specialization.dto.CreateSpecializationRequest;
@@ -33,6 +34,11 @@ public class SpecializationService {
         Cohort cohort = cohortRepository.findById(request.getCohortId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Cohort with id '" + request.getCohortId() + "' not found"));
+
+        if (cohort.isLocked()) {
+            throw new UnprocessableEntityException(
+                    "Cohort '" + cohort.getName() + "' is locked and cannot be modified");
+        }
 
         if (specializationRepository.existsByCohortIdAndName(request.getCohortId(), request.getName())) {
             throw new DuplicateResourceException(

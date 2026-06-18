@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.module.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
 import com.amalitech.labresultsvalidator.domain.module.dto.CreateModuleRequest;
 import com.amalitech.labresultsvalidator.domain.module.dto.ModuleResponse;
@@ -24,12 +25,19 @@ public class ModuleService {
 
     private final ModuleRepository moduleRepository;
     private final SpecializationRepository specializationRepository;
+    private final CohortRepository cohortRepository;
 
     public ModuleResponse createModule(CreateModuleRequest request) {
         Specialization specialization = specializationRepository
                 .findByIdAndCohortId(request.getSpecializationId(), request.getCohortId())
                 .orElseThrow(() -> new UnprocessableEntityException(
                         "Cohort and specialization combination does not exist"));
+
+        boolean locked = cohortRepository.findIsLockedById(request.getCohortId()).orElse(false);
+        if (locked) {
+            throw new UnprocessableEntityException(
+                    "Cohort is locked and cannot be modified");
+        }
 
         int nextSequence = moduleRepository.countBySpecializationId(specialization.getId()) + 1;
 

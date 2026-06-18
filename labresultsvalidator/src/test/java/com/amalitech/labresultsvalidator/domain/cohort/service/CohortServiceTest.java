@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.cohort.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
@@ -280,6 +281,85 @@ class CohortServiceTest {
         verify(cohortRepository, never()).save(any());
     }
 
+    // ── lockCohort ────────────────────────────────────────────────────────────
+
+    @Test
+    void lockCohort_whenCohortNotFound_throwsResourceNotFoundException() {
+        UUID id = UUID.randomUUID();
+        when(cohortRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> cohortService.lockCohort(id))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(id.toString());
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void lockCohort_whenAlreadyLocked_throwsUnprocessableEntityException() {
+        Cohort locked = buildLockedCohort("Cohort 12");
+        when(cohortRepository.findById(locked.getId())).thenReturn(Optional.of(locked));
+
+        assertThatThrownBy(() -> cohortService.lockCohort(locked.getId()))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("already locked");
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void lockCohort_whenUnlocked_setsLockedTrueAndPersists() {
+        Cohort cohort = buildCohort("Cohort 12");
+        when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(cohort));
+        when(cohortRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CohortResponse response = cohortService.lockCohort(cohort.getId());
+
+        ArgumentCaptor<Cohort> captor = ArgumentCaptor.forClass(Cohort.class);
+        verify(cohortRepository).save(captor.capture());
+        assertThat(captor.getValue().isLocked()).isTrue();
+        assertThat(response.isLocked()).isTrue();
+    }
+
+    // ── unlockCohort ──────────────────────────────────────────────────────────
+
+    @Test
+    void unlockCohort_whenCohortNotFound_throwsResourceNotFoundException() {
+        UUID id = UUID.randomUUID();
+        when(cohortRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> cohortService.unlockCohort(id))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(id.toString());
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void unlockCohort_whenAlreadyUnlocked_throwsUnprocessableEntityException() {
+        Cohort cohort = buildCohort("Cohort 12");
+        when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(cohort));
+
+        assertThatThrownBy(() -> cohortService.unlockCohort(cohort.getId()))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("already unlocked");
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void unlockCohort_whenLocked_setsLockedFalseAndPersists() {
+        Cohort locked = buildLockedCohort("Cohort 12");
+        when(cohortRepository.findById(locked.getId())).thenReturn(Optional.of(locked));
+        when(cohortRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CohortResponse response = cohortService.unlockCohort(locked.getId());
+
+        ArgumentCaptor<Cohort> captor = ArgumentCaptor.forClass(Cohort.class);
+        verify(cohortRepository).save(captor.capture());
+        assertThat(captor.getValue().isLocked()).isFalse();
+        assertThat(response.isLocked()).isFalse();
+    }
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private Cohort buildCohort(String name) {
@@ -289,6 +369,20 @@ class CohortServiceTest {
                 .startDate(LocalDate.of(2025, 1, 1))
                 .endDate(LocalDate.of(2025, 6, 30))
                 .active(true)
+                .build();
+        cohort.setCreatedBy(currentUser.getId());
+        cohort.setUpdatedBy(currentUser.getId());
+        return cohort;
+    }
+
+    private Cohort buildLockedCohort(String name) {
+        Cohort cohort = Cohort.builder()
+                .id(UUID.randomUUID())
+                .name(name)
+                .startDate(LocalDate.of(2025, 1, 1))
+                .endDate(LocalDate.of(2025, 6, 30))
+                .active(true)
+                .locked(true)
                 .build();
         cohort.setCreatedBy(currentUser.getId());
         cohort.setUpdatedBy(currentUser.getId());

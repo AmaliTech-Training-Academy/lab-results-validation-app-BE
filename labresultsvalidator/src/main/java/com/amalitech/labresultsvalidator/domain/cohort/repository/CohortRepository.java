@@ -16,6 +16,7 @@ public interface CohortRepository extends JpaRepository<Cohort, UUID> {
     boolean existsByName(String name);
 
     Optional<Cohort> findByNameIgnoreCase(String name);
+
     Page<Cohort> findAll(Pageable pageable);
     @Query("""
         SELECT COUNT(m) > 0
@@ -24,4 +25,7 @@ public interface CohortRepository extends JpaRepository<Cohort, UUID> {
         AND m.specialization.cohort.active = true
         """)
     boolean hasActiveModules(@Param("cohortId") UUID cohortId);
+
+    @Query("SELECT c.locked FROM Cohort c WHERE c.id = :id")
+    Optional<Boolean> findIsLockedById(@Param("id") UUID id);
 }
