@@ -5,6 +5,7 @@ import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundExcep
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.UpdateCohortStatusRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
@@ -53,6 +54,15 @@ public class CohortService {
         Page<CohortResponse> page = cohortRepository.findAll(pageable)
                 .map(this::mapToResponse);
         return PagedResponse.of(page);
+    }
+
+    public CohortResponse updateCohortStatus(UUID id, UpdateCohortStatusRequest request) {
+        Cohort cohort = cohortRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Cohort with id '" + id + "' not found"));
+
+        cohort.setActive(request.getActive());
+        return mapToResponse(cohortRepository.save(cohort));
     }
 
     public void deleteCohort(UUID id) {

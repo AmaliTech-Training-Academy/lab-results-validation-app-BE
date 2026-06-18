@@ -5,6 +5,7 @@ import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundExcep
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.UpdateCohortStatusRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
@@ -216,6 +217,67 @@ class CohortServiceTest {
                 .hasMessageContaining("Cohort 12");
 
         verify(cohortRepository, never()).delete(any());
+    }
+
+    // ── updateCohortStatus ────────────────────────────────────────────────────
+
+    @Test
+    void updateCohortStatus_activate_setsActiveTrueAndReturnsResponse() {
+        Cohort cohort = Cohort.builder()
+                .id(UUID.randomUUID())
+                .name("Cohort 12")
+                .startDate(LocalDate.of(2025, 1, 1))
+                .endDate(LocalDate.of(2025, 6, 30))
+                .active(false)
+                .build();
+        cohort.setCreatedBy(currentUser.getId());
+        cohort.setUpdatedBy(currentUser.getId());
+
+        UpdateCohortStatusRequest statusRequest = new UpdateCohortStatusRequest();
+        setField(statusRequest, "active", true);
+
+        when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(cohort));
+        when(cohortRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CohortResponse response = cohortService.updateCohortStatus(cohort.getId(), statusRequest);
+
+        assertThat(response.isActive()).isTrue();
+        ArgumentCaptor<Cohort> captor = ArgumentCaptor.forClass(Cohort.class);
+        verify(cohortRepository).save(captor.capture());
+        assertThat(captor.getValue().isActive()).isTrue();
+    }
+
+    @Test
+    void updateCohortStatus_deactivate_setsActiveFalseAndReturnsResponse() {
+        Cohort cohort = buildCohort("Cohort 12");
+
+        UpdateCohortStatusRequest statusRequest = new UpdateCohortStatusRequest();
+        setField(statusRequest, "active", false);
+
+        when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(cohort));
+        when(cohortRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CohortResponse response = cohortService.updateCohortStatus(cohort.getId(), statusRequest);
+
+        assertThat(response.isActive()).isFalse();
+        ArgumentCaptor<Cohort> captor = ArgumentCaptor.forClass(Cohort.class);
+        verify(cohortRepository).save(captor.capture());
+        assertThat(captor.getValue().isActive()).isFalse();
+    }
+
+    @Test
+    void updateCohortStatus_whenCohortNotFound_throwsResourceNotFoundException() {
+        UUID id = UUID.randomUUID();
+        UpdateCohortStatusRequest statusRequest = new UpdateCohortStatusRequest();
+        setField(statusRequest, "active", true);
+
+        when(cohortRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> cohortService.updateCohortStatus(id, statusRequest))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(id.toString());
+
+        verify(cohortRepository, never()).save(any());
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
