@@ -8,6 +8,7 @@ import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.csv.ParsedRow;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.common.utils.Sha256Util;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
@@ -44,6 +45,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -558,12 +561,12 @@ public class LabResultUploadService {
         BigDecimal score, BigDecimal maxScore, short attemptNumber, LocalDate submittedOn) {
     }
 
-    public List<LabResultResponse> getLabResultsByModule(UUID moduleId) {
+    public PagedResponse<LabResultResponse> getLabResultsByModule(UUID moduleId, Pageable pageable) {
         if (!moduleRepository.existsById(moduleId)) {
             throw new ResourceNotFoundException("Module not found with ID: " + moduleId);
         }
-        return labResultRepository.findAllByModuleId(moduleId)
-                .stream()
+        Page<LabResultResponse> page = labResultRepository
+                .findAllByModuleId(moduleId, pageable)
                 .map(r -> LabResultResponse.builder()
                         .id(r.getId())
                         .learnerEmail(r.getLearner().getEmail())
@@ -575,7 +578,7 @@ public class LabResultUploadService {
                         .attemptNumber(r.getAttemptNumber())
                         .submittedOn(r.getSubmittedOn())
                         .gradedBy(r.getGradedBy())
-                        .build())
-                .toList();
+                        .build());
+        return PagedResponse.of(page);
     }
 }

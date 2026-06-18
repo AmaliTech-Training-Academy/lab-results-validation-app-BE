@@ -65,6 +65,19 @@ public class ProgramStructureUploadController {
                 + "SPECIALIZATION_CODE, MODULE_NAME, LAB_TITLE")
             @RequestParam("file") MultipartFile file) {
         ProgramStructureUploadResponse result = programStructureUploadService.upload(file);
-        return ResponseEntity.ok(ApiResponse.success("Program structure upload complete", result));
+
+        if (result.getErrors() != null && !result.getErrors().isEmpty()) {
+            return ResponseEntity.unprocessableEntity()
+                .body(ApiResponse.<ProgramStructureUploadResponse>builder()
+                    .success(false)
+                    .message("Program structure upload failed — no data was imported")
+                    .data(result)
+                    .build());
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(
+            String.format("Program structure upload complete — %d specialization(s), %d module(s), %d lab(s) created",
+                result.getSpecializationsCreated(), result.getModulesCreated(), result.getLabsCreated()),
+            result));
     }
 }

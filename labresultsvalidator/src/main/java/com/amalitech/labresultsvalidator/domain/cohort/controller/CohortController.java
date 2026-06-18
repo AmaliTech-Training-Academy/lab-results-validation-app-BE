@@ -4,6 +4,7 @@ import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.UpdateCohortRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -79,6 +80,31 @@ public class CohortController {
     }
 
     @Operation(
+            summary = "Update a cohort",
+            description = "Updates a cohort's name, dates, and active flag. Name must remain unique."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "Cohort updated successfully"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "Validation error or end date before start date",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "Cohort not found",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "Cohort name already in use",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @PatchMapping("/{id}")
+    public ResponseEntity<ApiResponse<CohortResponse>> updateCohort(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateCohortRequest request) {
+        CohortResponse response = cohortService.updateCohort(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Cohort updated successfully", response));
+    }
+
+    @Operation(
             summary = "Delete a cohort",
             description = "Deletes a cohort. Blocked with 409 if active modules exist."
     )
@@ -89,7 +115,7 @@ public class CohortController {
                     responseCode = "404", description = "Cohort not found",
                     content = @Content(schema = @Schema(implementation = ApiResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "Cohort has active modules",
+                    responseCode = "422", description = "Cohort has active modules",
                     content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
     @DeleteMapping("/{id}")

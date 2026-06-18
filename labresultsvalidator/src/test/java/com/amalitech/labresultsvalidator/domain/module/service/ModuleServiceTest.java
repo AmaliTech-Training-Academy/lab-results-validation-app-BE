@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.module.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
@@ -18,6 +19,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
@@ -142,45 +147,49 @@ class ModuleServiceTest {
 
     @Test
     void getModules_withBothFilters_queriesBySpecializationAndCohort() {
-        when(moduleRepository.findAllBySpecializationIdAndSpecializationCohortId(SPEC_ID, COHORT_ID))
-                .thenReturn(List.of(buildModule()));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(moduleRepository.findAllBySpecializationIdAndSpecializationCohortId(SPEC_ID, COHORT_ID, pageable))
+                .thenReturn(new PageImpl<>(List.of(buildModule())));
 
-        List<ModuleResponse> result = moduleService.getModules(COHORT_ID, SPEC_ID);
+        PagedResponse<ModuleResponse> result = moduleService.getModules(COHORT_ID, SPEC_ID, pageable);
 
-        assertThat(result).hasSize(1);
-        verify(moduleRepository).findAllBySpecializationIdAndSpecializationCohortId(SPEC_ID, COHORT_ID);
+        assertThat(result.getContent()).hasSize(1);
+        verify(moduleRepository).findAllBySpecializationIdAndSpecializationCohortId(SPEC_ID, COHORT_ID, pageable);
     }
 
     @Test
     void getModules_withOnlySpecializationId_queriesBySpecialization() {
-        when(moduleRepository.findAllBySpecializationId(SPEC_ID))
-                .thenReturn(List.of(buildModule()));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(moduleRepository.findAllBySpecializationId(SPEC_ID, pageable))
+                .thenReturn(new PageImpl<>(List.of(buildModule())));
 
-        List<ModuleResponse> result = moduleService.getModules(null, SPEC_ID);
+        PagedResponse<ModuleResponse> result = moduleService.getModules(null, SPEC_ID, pageable);
 
-        assertThat(result).hasSize(1);
-        verify(moduleRepository).findAllBySpecializationId(SPEC_ID);
+        assertThat(result.getContent()).hasSize(1);
+        verify(moduleRepository).findAllBySpecializationId(SPEC_ID, pageable);
     }
 
     @Test
     void getModules_withOnlyCohortId_queriesByCohort() {
-        when(moduleRepository.findAllBySpecializationCohortId(COHORT_ID))
-                .thenReturn(List.of(buildModule()));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(moduleRepository.findAllBySpecializationCohortId(COHORT_ID, pageable))
+                .thenReturn(new PageImpl<>(List.of(buildModule())));
 
-        List<ModuleResponse> result = moduleService.getModules(COHORT_ID, null);
+        PagedResponse<ModuleResponse> result = moduleService.getModules(COHORT_ID, null, pageable);
 
-        assertThat(result).hasSize(1);
-        verify(moduleRepository).findAllBySpecializationCohortId(COHORT_ID);
+        assertThat(result.getContent()).hasSize(1);
+        verify(moduleRepository).findAllBySpecializationCohortId(COHORT_ID, pageable);
     }
 
     @Test
     void getModules_withNoFilters_returnsAll() {
-        when(moduleRepository.findAll()).thenReturn(List.of(buildModule()));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(moduleRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(buildModule())));
 
-        List<ModuleResponse> result = moduleService.getModules(null, null);
+        PagedResponse<ModuleResponse> result = moduleService.getModules(null, null, pageable);
 
-        assertThat(result).hasSize(1);
-        verify(moduleRepository).findAll();
+        assertThat(result.getContent()).hasSize(1);
+        verify(moduleRepository).findAll(pageable);
     }
 
     // ─────────────────────── patchModule ─────────────────────────────────────

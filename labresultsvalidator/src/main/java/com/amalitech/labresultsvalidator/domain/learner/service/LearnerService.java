@@ -7,6 +7,7 @@ import com.amalitech.labresultsvalidator.common.csv.CsvWriterService;
 import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -82,6 +83,11 @@ public class LearnerService {
         Cohort cohort = cohortRepository.findById(request.getCohortId())
             .orElseThrow(() -> new ResourceNotFoundException(
                 "Cohort with id '" + request.getCohortId() + "' not found"));
+
+        if (cohort.isLocked()) {
+            throw new UnprocessableEntityException(
+                "Cohort '" + cohort.getName() + "' is locked — learners cannot be added");
+        }
 
         Specialization specialization = specializationRepository
             .findByIdAndCohortId(request.getSpecializationId(), request.getCohortId())
@@ -288,6 +294,11 @@ public class LearnerService {
             .orElseThrow(() -> new ResourceNotFoundException(
                 "Cohort with id '" + request.getCohortId() + "' not found"));
 
+        if (cohort.isLocked()) {
+            throw new UnprocessableEntityException(
+                "Cohort '" + cohort.getName() + "' is locked — learners cannot be modified");
+        }
+
         Specialization specialization = specializationRepository
             .findByIdAndCohortId(request.getSpecializationId(), request.getCohortId())
             .orElseThrow(() -> new ResourceNotFoundException(
@@ -316,6 +327,11 @@ public class LearnerService {
 
     public void deleteLearner(UUID id) {
         Learner learner = findOrThrow(id);
+
+        if (learner.getCohort().isLocked()) {
+            throw new UnprocessableEntityException(
+                "Cohort '" + learner.getCohort().getName() + "' is locked — learners cannot be deleted");
+        }
 
         if (labResultRepository.existsByLearnerId(id)) {
             throw new DuplicateResourceException(
@@ -379,6 +395,11 @@ public class LearnerService {
                 return false;
             }
             cohort = cohortOpt.get();
+            if (cohort.isLocked()) {
+                errors.add(new CsvRowError(line, "COHORT_NAME",
+                    "Cohort '" + r.getCohortName() + "' is locked — learners cannot be added"));
+                return false;
+            }
         } catch (IncorrectResultSizeDataAccessException ex) {
             errors.add(new CsvRowError(line, "COHORT_NAME",
                     "Cohort name '" + r.getCohortName() + "' is ambiguous — multiple cohorts match "

@@ -18,6 +18,10 @@ public interface SpecializationRepository extends JpaRepository<Specialization, 
 
     boolean existsByCohortIdAndCode(UUID cohortId, String code);
 
+    boolean existsByCohortIdAndNameAndIdNot(UUID cohortId, String name, UUID id);
+
+    boolean existsByCohortIdAndCodeAndIdNot(UUID cohortId, String code, UUID id);
+
     @EntityGraph(attributePaths = {"cohort"})
     Optional<Specialization> findByIdAndCohortId(UUID id, UUID cohortId);
 

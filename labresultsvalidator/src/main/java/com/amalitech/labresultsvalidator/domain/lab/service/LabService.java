@@ -66,6 +66,11 @@ public class LabService {
         Lab lab = labRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Lab with id '" + id + "' not found"));
 
+        boolean locked = moduleRepository.findCohortIsLockedById(lab.getModule().getId()).orElse(false);
+        if (locked) {
+            throw new UnprocessableEntityException("Cohort is locked and cannot be modified");
+        }
+
         if (lab.isImmutable()) {
             throw new UnprocessableEntityException("Lab is immutable and cannot be modified");
         }

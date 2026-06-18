@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.module.controller;
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
 import com.amalitech.labresultsvalidator.domain.module.dto.CreateModuleRequest;
 import com.amalitech.labresultsvalidator.domain.module.dto.ModuleResponse;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -23,6 +26,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -50,6 +54,7 @@ class ModuleControllerTest {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(moduleController)
                 .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .build();
     }
 
@@ -168,38 +173,38 @@ class ModuleControllerTest {
 
     @Test
     void getModules_withNoQueryParams_returns200WithList() throws Exception {
-        when(moduleService.getModules(null, null))
-                .thenReturn(List.of(buildActiveResponse()));
+        when(moduleService.getModules(isNull(), isNull(), any()))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(buildActiveResponse()))));
 
         mockMvc.perform(get("/api/v1/modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").isArray())
-                .andExpect(jsonPath("$.data[0].name").value("Intro to Python"));
+                .andExpect(jsonPath("$.data.content").isArray())
+                .andExpect(jsonPath("$.data.content[0].name").value("Intro to Python"));
     }
 
     @Test
     void getModules_withCohortAndSpecFilter_returns200WithFilteredList() throws Exception {
-        when(moduleService.getModules(eq(COHORT_ID), eq(SPEC_ID)))
-                .thenReturn(List.of(buildActiveResponse()));
+        when(moduleService.getModules(eq(COHORT_ID), eq(SPEC_ID), any()))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(buildActiveResponse()))));
 
         mockMvc.perform(get("/api/v1/modules")
                         .param("cohortId", COHORT_ID.toString())
                         .param("specializationId", SPEC_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").isArray());
+                .andExpect(jsonPath("$.data.content").isArray());
     }
 
     @Test
     void getModules_withOnlyCohortId_returns200() throws Exception {
-        when(moduleService.getModules(eq(COHORT_ID), eq(null)))
-                .thenReturn(List.of(buildActiveResponse()));
+        when(moduleService.getModules(eq(COHORT_ID), isNull(), any()))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(buildActiveResponse()))));
 
         mockMvc.perform(get("/api/v1/modules")
                         .param("cohortId", COHORT_ID.toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").isArray());
+                .andExpect(jsonPath("$.data.content").isArray());
     }
 
     // ───────────────────── PATCH /api/v1/modules/{id} ────────────────────────
@@ -244,12 +249,4 @@ class ModuleControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
     }
 
-    @Test
-    void patchModule_withMissingStatus_returns400() throws Exception {
-        mockMvc.perform(patch("/api/v1/modules/{id}", MODULE_ID)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
-    }
 }

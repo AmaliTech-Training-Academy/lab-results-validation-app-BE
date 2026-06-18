@@ -1,6 +1,8 @@
 package com.amalitech.labresultsvalidator.domain.lab_result.repository;
 
 import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -26,4 +28,8 @@ public interface LabResultRepository extends JpaRepository<LabResult, UUID> {
     @EntityGraph(attributePaths = {"learner", "lab"})
     @Query("SELECT r FROM LabResult r WHERE r.lab.module.id = :moduleId")
     List<LabResult> findAllByModuleId(@Param("moduleId") UUID moduleId);
+
+    @EntityGraph(attributePaths = {"learner", "lab"})
+    @Query("SELECT r FROM LabResult r WHERE r.lab.module.id = :moduleId")
+    Page<LabResult> findAllByModuleId(@Param("moduleId") UUID moduleId, Pageable pageable);
 }

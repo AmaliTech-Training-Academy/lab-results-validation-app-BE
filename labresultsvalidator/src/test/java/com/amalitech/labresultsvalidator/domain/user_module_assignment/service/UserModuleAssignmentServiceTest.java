@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.user_module_assignment.service;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.module.entity.Module;
 import com.amalitech.labresultsvalidator.domain.module.repository.ModuleRepository;
@@ -26,6 +27,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +39,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -223,7 +229,7 @@ class UserModuleAssignmentServiceTest {
     void getInstructorModules_whenInstructorNotFound_throwsResourceNotFoundException() {
         when(userRepository.findByIdAndIsActiveTrue(instructorId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> assignmentService.getInstructorModules(instructorId))
+        assertThatThrownBy(() -> assignmentService.getInstructorModules(instructorId, PageRequest.of(0, 20)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -234,33 +240,37 @@ class UserModuleAssignmentServiceTest {
                 .role(UserRole.ADMIN).isActive(true).mustChangePassword(false).build();
         when(userRepository.findByIdAndIsActiveTrue(instructorId)).thenReturn(Optional.of(admin));
 
-        assertThatThrownBy(() -> assignmentService.getInstructorModules(instructorId))
+        assertThatThrownBy(() -> assignmentService.getInstructorModules(instructorId, PageRequest.of(0, 20)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void getInstructorModules_success_returnsMappedModules() {
+        Pageable pageable = PageRequest.of(0, 20);
         UserModuleAssignment assignment = UserModuleAssignment.builder()
                 .id(UUID.randomUUID()).user(instructor).module(module).build();
         when(userRepository.findByIdAndIsActiveTrue(instructorId)).thenReturn(Optional.of(instructor));
-        when(userModuleAssignmentRepository.findAllByUserId(instructorId)).thenReturn(List.of(assignment));
+        when(userModuleAssignmentRepository.findAllByUserId(eq(instructorId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(assignment)));
 
-        List<AssignedModuleResponse> result = assignmentService.getInstructorModules(instructorId);
+        PagedResponse<AssignedModuleResponse> result = assignmentService.getInstructorModules(instructorId, pageable);
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getModuleId()).isEqualTo(moduleId);
-        assertThat(result.get(0).getModuleName()).isEqualTo("Module A");
-        assertThat(result.get(0).getSpecializationName()).isEqualTo("Backend");
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getModuleId()).isEqualTo(moduleId);
+        assertThat(result.getContent().get(0).getModuleName()).isEqualTo("Module A");
+        assertThat(result.getContent().get(0).getSpecializationName()).isEqualTo("Backend");
     }
 
     @Test
     void getInstructorModules_whenNoAssignments_returnsEmptyList() {
+        Pageable pageable = PageRequest.of(0, 20);
         when(userRepository.findByIdAndIsActiveTrue(instructorId)).thenReturn(Optional.of(instructor));
-        when(userModuleAssignmentRepository.findAllByUserId(instructorId)).thenReturn(Collections.emptyList());
+        when(userModuleAssignmentRepository.findAllByUserId(eq(instructorId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(Collections.emptyList()));
 
-        List<AssignedModuleResponse> result = assignmentService.getInstructorModules(instructorId);
+        PagedResponse<AssignedModuleResponse> result = assignmentService.getInstructorModules(instructorId, pageable);
 
-        assertThat(result).isEmpty();
+        assertThat(result.getContent()).isEmpty();
     }
 
     private AssignModuleRequest buildRequest(List<UUID> moduleIds) {
