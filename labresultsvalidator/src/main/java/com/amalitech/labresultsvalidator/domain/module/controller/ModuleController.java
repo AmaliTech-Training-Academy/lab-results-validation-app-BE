@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.module.controller;
 
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.module.dto.CreateModuleRequest;
 import com.amalitech.labresultsvalidator.domain.module.dto.ModuleResponse;
 import com.amalitech.labresultsvalidator.domain.module.dto.PatchModuleRequest;
@@ -12,6 +13,9 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,7 +28,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "Modules", description = "Manage modules scoped to cohort and specialization")
@@ -69,10 +72,11 @@ public class ModuleController {
     })
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR')")
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ModuleResponse>>> getModules(
+    public ResponseEntity<ApiResponse<PagedResponse<ModuleResponse>>> getModules(
             @RequestParam(required = false) UUID cohortId,
-            @RequestParam(required = false) UUID specializationId) {
-        List<ModuleResponse> response = moduleService.getModules(cohortId, specializationId);
+            @RequestParam(required = false) UUID specializationId,
+            @PageableDefault(size = 20, sort = "sequence", direction = Sort.Direction.ASC) Pageable pageable) {
+        PagedResponse<ModuleResponse> response = moduleService.getModules(cohortId, specializationId, pageable);
         return ResponseEntity.ok(ApiResponse.success("Modules retrieved successfully", response));
     }
 

@@ -1,7 +1,9 @@
 package com.amalitech.labresultsvalidator.domain.module.service;
 
+import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.enums.ModuleStatus;
 import com.amalitech.labresultsvalidator.domain.module.dto.CreateModuleRequest;
@@ -12,10 +14,11 @@ import com.amalitech.labresultsvalidator.domain.module.repository.ModuleReposito
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.specialization.repository.SpecializationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -53,27 +56,46 @@ public class ModuleService {
     }
 
     @Transactional(readOnly = true)
-    public List<ModuleResponse> getModules(UUID cohortId, UUID specializationId) {
-        List<Module> modules;
+    public PagedResponse<ModuleResponse> getModules(UUID cohortId, UUID specializationId, Pageable pageable) {
+        Page<Module> page;
 
         if (specializationId != null && cohortId != null) {
-            modules = moduleRepository.findAllBySpecializationIdAndSpecializationCohortId(specializationId, cohortId);
+            page = moduleRepository.findAllBySpecializationIdAndSpecializationCohortId(specializationId, cohortId, pageable);
         } else if (specializationId != null) {
-            modules = moduleRepository.findAllBySpecializationId(specializationId);
+            page = moduleRepository.findAllBySpecializationId(specializationId, pageable);
         } else if (cohortId != null) {
-            modules = moduleRepository.findAllBySpecializationCohortId(cohortId);
+            page = moduleRepository.findAllBySpecializationCohortId(cohortId, pageable);
         } else {
-            modules = moduleRepository.findAll();
+            page = moduleRepository.findAll(pageable);
         }
 
-        return modules.stream().map(this::toResponse).toList();
+        return PagedResponse.of(page.map(this::toResponse));
     }
 
     public ModuleResponse patchModule(UUID id, PatchModuleRequest request) {
         Module module = moduleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Module not found with ID: " + id));
 
-        module.setStatus(request.getStatus());
+        boolean locked = moduleRepository.findCohortIsLockedById(id).orElse(false);
+        if (locked) {
+            throw new UnprocessableEntityException("Cohort is locked and cannot be modified");
+        }
+
+        if (request.getName() != null) {
+            String newName = request.getName().strip();
+            if (!newName.equalsIgnoreCase(module.getName())
+                    && moduleRepository.existsBySpecializationIdAndNameAndIdNot(
+                            module.getSpecialization().getId(), newName, id)) {
+                throw new DuplicateResourceException(
+                        "Module with name '" + newName + "' already exists in this specialization");
+            }
+            module.setName(newName);
+        }
+
+        if (request.getStatus() != null) {
+            module.setStatus(request.getStatus());
+        }
+
         module = moduleRepository.save(module);
         return toResponse(module);
     }
