@@ -14,7 +14,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -113,7 +112,8 @@ public class UserModuleAssignmentController {
             @PathVariable UUID instructorId,
             @PageableDefault(size = 20) Pageable pageable) {
 
-        PagedResponse<AssignedModuleResponse> response = userModuleAssignmentService.getInstructorModules(instructorId, pageable);
+        PagedResponse<AssignedModuleResponse> response =
+                userModuleAssignmentService.getInstructorModules(instructorId, pageable);
         return ResponseEntity.ok(
                 ApiResponse.success("Assigned modules retrieved successfully", response));
     }

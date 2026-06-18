@@ -33,7 +33,8 @@ public interface ModuleRepository extends JpaRepository<Module, UUID> {
     List<Module> findAllBySpecializationIdAndSpecializationCohortId(UUID specializationId, UUID cohortId);
 
     @EntityGraph(attributePaths = {"specialization", "specialization.cohort"})
-    Page<Module> findAllBySpecializationIdAndSpecializationCohortId(UUID specializationId, UUID cohortId, Pageable pageable);
+    Page<Module> findAllBySpecializationIdAndSpecializationCohortId(
+            UUID specializationId, UUID cohortId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"specialization", "specialization.cohort"})
     List<Module> findAllBySpecializationCohortId(UUID cohortId);
