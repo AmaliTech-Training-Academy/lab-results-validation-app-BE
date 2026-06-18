@@ -16,6 +16,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * All public methods MUST carry {@code @Async("emailTaskExecutor")} so that no caller
@@ -43,9 +45,6 @@ public class EmailService {
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
-
-    @Value("${app.base-url}")
-    private String baseUrl;
 
     private volatile String template;
 
@@ -80,14 +79,25 @@ public class EmailService {
 
     // ── Shared internal dispatcher ────────────────────────────────────────────
 
+    private static final Map<String, String> INLINE_IMAGES = new LinkedHashMap<>();
+
+    static {
+        INLINE_IMAGES.put("logo-header", "static/images/email/logo-header.png");
+        INLINE_IMAGES.put("header-art",  "static/images/email/header-art.png");
+        INLINE_IMAGES.put("logo-dark",   "static/images/email/logo-dark.png");
+    }
+
     private void dispatch(String to, String subject, String htmlBody) {
         MimeMessage message = mailSender.createMimeMessage();
         try {
-            MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
             helper.setFrom(fromEmail);
             helper.setTo(to);
             helper.setSubject(subject);
             helper.setText(htmlBody, true);
+            for (Map.Entry<String, String> entry : INLINE_IMAGES.entrySet()) {
+                helper.addInline(entry.getKey(), new ClassPathResource(entry.getValue()));
+            }
             mailSender.send(message);
         } catch (MessagingException e) {
             throw new RuntimeException("Failed to send email to " + to, e);
@@ -98,7 +108,6 @@ public class EmailService {
 
     private String buildHtmlEmail(String content, String ctaUrl, String ctaLabel) {
         return getTemplate()
-            .replace("{{BASE_URL}}", baseUrl)
             .replace("{{CONTENT}}", content)
             .replace("{{CTA_URL}}", ctaUrl)
             .replace("{{CTA_LABEL}}", ctaLabel);

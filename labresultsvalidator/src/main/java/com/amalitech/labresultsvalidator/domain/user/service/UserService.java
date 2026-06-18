@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.user.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.common.utils.PasswordGenerator;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.user.dto.ProvisionInstructorRequest;
@@ -15,6 +16,8 @@ import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.Assig
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.repository.UserModuleAssignmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -105,17 +108,14 @@ public class UserService {
                 .build();
     }
 
-    public List<UserResponseDTO> listInstructors() {
-        List<User> instructors = userRepository.findAllByRole(UserRole.INSTRUCTOR);
+    public PagedResponse<UserResponseDTO> listInstructors(Pageable pageable) {
+        Page<User> userPage = userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable);
 
-        if (instructors.isEmpty()) {
-            return Collections.emptyList();
-        }
+        List<UUID> ids = userPage.getContent().stream().map(User::getId).toList();
 
-        List<UUID> ids = instructors.stream().map(User::getId).toList();
-
-        Map<UUID, List<AssignedModuleResponse>> modulesByUser =
-            assignmentRepository.findAllByUserIdIn(ids).stream()
+        Map<UUID, List<AssignedModuleResponse>> modulesByUser = ids.isEmpty()
+            ? Collections.emptyMap()
+            : assignmentRepository.findAllByUserIdIn(ids).stream()
                 .collect(Collectors.groupingBy(
                     a -> a.getUser().getId(),
                     Collectors.mapping(
@@ -128,13 +128,13 @@ public class UserService {
                     )
                 ));
 
-        return instructors.stream()
-            .map(u -> UserResponseDTO.builder()
-                .id(u.getId())
-                .email(u.getEmail())
-                .active(u.isActive())
-                .assignedModules(modulesByUser.getOrDefault(u.getId(), Collections.emptyList()))
-                .build())
-            .toList();
+        Page<UserResponseDTO> dtoPage = userPage.map(u -> UserResponseDTO.builder()
+            .id(u.getId())
+            .email(u.getEmail())
+            .active(u.isActive())
+            .assignedModules(modulesByUser.getOrDefault(u.getId(), Collections.emptyList()))
+            .build());
+
+        return PagedResponse.of(dtoPage);
     }
 }
