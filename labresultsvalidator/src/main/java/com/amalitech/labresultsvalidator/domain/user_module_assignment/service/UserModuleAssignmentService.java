@@ -126,6 +126,17 @@ public class UserModuleAssignmentService {
         List<UserModuleAssignment> toRemove = existing.stream()
                 .filter(a -> toRemoveIds.contains(a.getModule().getId()))
                 .toList();
+
+        // Block removal if any module belongs to a locked cohort
+        toRemove.forEach(a -> {
+            Module module = a.getModule();
+            boolean locked = moduleRepository.findCohortIsLockedById(module.getId()).orElse(false);
+            if (locked) {
+                throw new UnprocessableEntityException(
+                        "Module '" + module.getName() + "' belongs to a locked cohort");
+            }
+        });
+
         userModuleAssignmentRepository.deleteAll(toRemove);
 
         return existing.stream()
