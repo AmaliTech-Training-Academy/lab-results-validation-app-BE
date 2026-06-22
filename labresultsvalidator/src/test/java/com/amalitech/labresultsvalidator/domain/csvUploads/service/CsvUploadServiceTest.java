@@ -73,7 +73,7 @@ class CsvUploadServiceTest {
         Page<CsvUpload> page = new PageImpl<>(List.of(upload), PageRequest.of(0, 10), 1);
         when(csvUploadRepository.findAllByOrderByUploadedAtDesc(any(Pageable.class))).thenReturn(page);
 
-        PagedResponse<CsvUploadResponse> result = csvUploadService.ListUploads(PageRequest.of(0, 10));
+        PagedResponse<CsvUploadResponse> result = csvUploadService.listUploads(PageRequest.of(0, 10));
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getId()).isEqualTo(id);
@@ -87,7 +87,7 @@ class CsvUploadServiceTest {
         Page<CsvUpload> empty = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
         when(csvUploadRepository.findAllByOrderByUploadedAtDesc(any(Pageable.class))).thenReturn(empty);
 
-        PagedResponse<CsvUploadResponse> result = csvUploadService.ListUploads(PageRequest.of(0, 10));
+        PagedResponse<CsvUploadResponse> result = csvUploadService.listUploads(PageRequest.of(0, 10));
 
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getTotalElements()).isZero();

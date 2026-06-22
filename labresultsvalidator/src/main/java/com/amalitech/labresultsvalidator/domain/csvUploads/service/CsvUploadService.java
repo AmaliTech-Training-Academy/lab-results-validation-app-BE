@@ -18,7 +18,7 @@ public class CsvUploadService {
 
     private final CsvUploadRepository csvUploadRepository;
 
-    public PagedResponse<CsvUploadResponse> ListUploads(Pageable pageable) {
+    public PagedResponse<CsvUploadResponse> listUploads(Pageable pageable) {
         return PagedResponse.of(
             csvUploadRepository.findAllByOrderByUploadedAtDesc(pageable)
                 .map(this::mapToResponse)

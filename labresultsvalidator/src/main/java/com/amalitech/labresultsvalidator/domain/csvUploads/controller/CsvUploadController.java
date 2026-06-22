@@ -47,7 +47,7 @@ public class CsvUploadController {
     public ResponseEntity<ApiResponse<PagedResponse<CsvUploadResponse>>> listUploads(
             @PageableDefault(size = 10, sort = "uploadedAt",
                     direction = Sort.Direction.DESC) Pageable pageable) {
-        PagedResponse<CsvUploadResponse> response = csvUploadService.ListUploads(pageable);
+        PagedResponse<CsvUploadResponse> response = csvUploadService.listUploads(pageable);
         return ResponseEntity.ok(ApiResponse.success("CSV uploads retrieved successfully", response));
     }
 

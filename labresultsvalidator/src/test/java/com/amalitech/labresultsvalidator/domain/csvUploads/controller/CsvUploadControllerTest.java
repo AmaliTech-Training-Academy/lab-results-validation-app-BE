@@ -76,7 +76,7 @@ class CsvUploadControllerTest {
         CsvUploadResponse dto = buildResponse(id);
         PagedResponse<CsvUploadResponse> paged = PagedResponse.of(
                 new PageImpl<>(List.of(dto), PageRequest.of(0, 10), 1));
-        when(csvUploadService.ListUploads(any(Pageable.class))).thenReturn(paged);
+        when(csvUploadService.listUploads(any(Pageable.class))).thenReturn(paged);
 
         mockMvc.perform(get(BASE_URL))
                 .andExpect(status().isOk())
@@ -92,7 +92,7 @@ class CsvUploadControllerTest {
     void listUploads_whenEmpty_returns200WithEmptyContent() throws Exception {
         PagedResponse<CsvUploadResponse> empty = PagedResponse.of(
                 new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
-        when(csvUploadService.ListUploads(any(Pageable.class))).thenReturn(empty);
+        when(csvUploadService.listUploads(any(Pageable.class))).thenReturn(empty);
 
         mockMvc.perform(get(BASE_URL))
                 .andExpect(status().isOk())
