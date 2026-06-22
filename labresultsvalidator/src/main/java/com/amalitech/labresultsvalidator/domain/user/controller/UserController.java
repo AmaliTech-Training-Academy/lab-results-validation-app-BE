@@ -133,7 +133,7 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<PagedResponse<UserResponseDTO>>> listInstructors(
             @Parameter(hidden = true)
-            @PageableDefault(size = 10, sort = "email",
+            @PageableDefault(size = 10, sort = "createdAt",
                 direction = Sort.Direction.ASC) Pageable pageable) {
         PagedResponse<UserResponseDTO> instructors = userService.listInstructors(pageable);
         return ResponseEntity.ok(
