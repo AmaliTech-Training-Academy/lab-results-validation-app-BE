@@ -14,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,6 +42,7 @@ public class CsvUploadController {
                     responseCode = "401", description = "Unauthorized",
                     content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<CsvUploadResponse>>> listUploads(
             @PageableDefault(size = 10, sort = "uploadedAt",
@@ -60,6 +62,7 @@ public class CsvUploadController {
                     responseCode = "404", description = "Upload not found",
                     content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<CsvUploadResponse>> getUploadById(@PathVariable UUID id) {
         CsvUploadResponse response = csvUploadService.getUploadById(id);
@@ -77,6 +80,7 @@ public class CsvUploadController {
                     responseCode = "404", description = "Upload not found or no error report available",
                     content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/{id}/error-report")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getErrorReport(@PathVariable UUID id) {
         Map<String, Object> report = csvUploadService.getErrorReport(id);
