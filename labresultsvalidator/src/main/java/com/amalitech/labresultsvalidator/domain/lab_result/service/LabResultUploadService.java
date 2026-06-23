@@ -18,6 +18,7 @@ import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.lab.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.lab.repository.LabRepository;
+import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultCorrectionRow;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultCsvRow;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultUploadResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
@@ -199,12 +200,14 @@ public class LabResultUploadService {
             }
         }
 
+        List<Map<String, Object>> rejectedRows = buildRejectedRows(parsed, errors, rejectedLines);
+
         upload.setAcceptedRows(inserted + updated);
         upload.setRejectedRows(rejectedLines.size());
         upload.setStatus((inserted + updated == 0 && parsed.totalRows() > 0)
             ? UploadStatus.FAILED : UploadStatus.COMPLETED);
         upload.setErrorReportJson(buildReport(parsed.totalRows(), inserted, updated,
-            skipped, rejectedLines.size(), errors));
+            skipped, rejectedLines.size(), errors, rejectedRows));
         csvUploadRepository.save(upload);
 
         return LabResultUploadResponse.builder()
@@ -230,6 +233,33 @@ public class LabResultUploadService {
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
             "attachment; filename=\"lab_results_upload_template.csv\"");
         csvWriterService.writeTemplate(response.getWriter(), LabResultCsvRow.class);
+    }
+
+    /**
+     * Stream a corrections-only CSV for a previous upload: the original columns of every rejected
+     * row plus a trailing {@code ERROR_MESSAGE} column. The instructor fixes these rows and
+     * re-uploads. An upload with no rejected rows yields a header-only file.
+     *
+     * @param uploadId the {@code csv_uploads} record to export rejected rows from
+     * @param response the servlet response to write the file to
+     * @throws ResourceNotFoundException if no upload exists with that id (→ 404)
+     * @throws IOException               if the response writer cannot be obtained
+     */
+    public void downloadCorrections(UUID uploadId, HttpServletResponse response) throws IOException {
+        CsvUpload upload = csvUploadRepository.findById(uploadId)
+            .orElseThrow(() -> new ResourceNotFoundException("Upload not found with ID: " + uploadId));
+
+        List<LabResultCorrectionRow> rows = extractCorrectionRows(upload);
+
+        response.setContentType("text/csv");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+            "attachment; filename=\"corrections_" + uploadId + ".csv\"");
+        if (rows.isEmpty()) {
+            // OpenCSV writes nothing for an empty bean list, so emit the header explicitly.
+            csvWriterService.writeTemplate(response.getWriter(), LabResultCorrectionRow.class);
+        } else {
+            csvWriterService.write(response.getWriter(), rows, LabResultCorrectionRow.class);
+        }
     }
 
     // ── Stage 2: field-level validation (V3–V8) ───────────────────────────────
@@ -515,7 +545,8 @@ public class LabResultUploadService {
     }
 
     private Map<String, Object> buildReport(
-            int total, int inserted, int updated, int skipped, int rejected, List<CsvRowError> errors) {
+            int total, int inserted, int updated, int skipped, int rejected,
+            List<CsvRowError> errors, List<Map<String, Object>> rejectedRows) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("totalRows", total);
         summary.put("inserted", inserted);
@@ -526,7 +557,108 @@ public class LabResultUploadService {
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("summary", summary);
         report.put("errors", errors);
+        report.put("rejectedRows", rejectedRows);
         return report;
+    }
+
+    // ── Corrections-only CSV: assemble (on upload) and read back (on download) ───
+
+    /** CSV column names of the corrections file, used as the stable keys in the persisted report. */
+    private static final String COL_LEARNER_EMAIL = "LEARNER_EMAIL";
+    private static final String COL_COHORT_NAME = "COHORT_NAME";
+    private static final String COL_SPECIALIZATION_NAME = "SPECIALIZATION_NAME";
+    private static final String COL_MODULE_NAME = "MODULE_NAME";
+    private static final String COL_LAB_TITLE = "LAB_TITLE";
+    private static final String COL_SCORE = "SCORE";
+    private static final String COL_MAX_SCORE = "MAX_SCORE";
+    private static final String COL_ATTEMPT_NUMBER = "ATTEMPT_NUMBER";
+    private static final String COL_SUBMITTED_ON = "SUBMITTED_ON";
+    private static final String COL_GRADED_BY = "GRADED_BY";
+    private static final String COL_ERROR_MESSAGE = "ERROR_MESSAGE";
+
+    /**
+     * Build one denormalized record per rejected line — the row's original column values plus an
+     * aggregated {@code ERROR_MESSAGE} — ready to be persisted in the report and later streamed as
+     * the corrections CSV. Rows that bound successfully but failed validation carry their original
+     * values; a row that failed CSV binding has no bean, so its data columns are left blank while
+     * still reporting why it was rejected.
+     */
+    private List<Map<String, Object>> buildRejectedRows(
+            CsvParseResult<LabResultCsvRow> parsed, List<CsvRowError> errors, Set<Long> rejectedLines) {
+        Map<Long, LabResultCsvRow> boundByLine = new HashMap<>();
+        for (ParsedRow<LabResultCsvRow> pr : parsed.validRows()) {
+            boundByLine.put(pr.lineNumber(), pr.data());
+        }
+
+        Map<Long, List<CsvRowError>> errorsByLine = new HashMap<>();
+        for (CsvRowError e : errors) {
+            errorsByLine.computeIfAbsent(e.rowNumber(), k -> new ArrayList<>()).add(e);
+        }
+
+        List<Map<String, Object>> rejectedRows = new ArrayList<>();
+        for (Long line : rejectedLines.stream().sorted().toList()) {
+            LabResultCsvRow r = boundByLine.get(line);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put(COL_LEARNER_EMAIL, r == null ? null : r.getLearnerEmail());
+            row.put(COL_COHORT_NAME, r == null ? null : r.getCohortName());
+            row.put(COL_SPECIALIZATION_NAME, r == null ? null : r.getSpecializationName());
+            row.put(COL_MODULE_NAME, r == null ? null : r.getModuleName());
+            row.put(COL_LAB_TITLE, r == null ? null : r.getLabTitle());
+            row.put(COL_SCORE, r == null ? null : r.getScore());
+            row.put(COL_MAX_SCORE, r == null ? null : r.getMaxScore());
+            row.put(COL_ATTEMPT_NUMBER, r == null ? null : r.getAttemptNumber());
+            row.put(COL_SUBMITTED_ON, r == null ? null : r.getSubmittedOn());
+            row.put(COL_GRADED_BY, r == null ? null : r.getGradedBy());
+            row.put(COL_ERROR_MESSAGE, formatErrorMessage(errorsByLine.get(line)));
+            rejectedRows.add(row);
+        }
+        return rejectedRows;
+    }
+
+    /** Join all of a line's errors into one cell, prefixing each with its field when known. */
+    private static String formatErrorMessage(List<CsvRowError> lineErrors) {
+        if (lineErrors == null || lineErrors.isEmpty()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        for (CsvRowError e : lineErrors) {
+            parts.add(e.field() == null || e.field().isBlank()
+                ? e.message()
+                : e.field() + ": " + e.message());
+        }
+        return String.join(" | ", parts);
+    }
+
+    /** Re-hydrate the persisted rejected rows of an upload into corrections-CSV beans. */
+    private List<LabResultCorrectionRow> extractCorrectionRows(CsvUpload upload) {
+        Map<String, Object> report = upload.getErrorReportJson();
+        if (report == null || !(report.get("rejectedRows") instanceof List<?> rows)) {
+            return List.of();
+        }
+        List<LabResultCorrectionRow> corrections = new ArrayList<>();
+        for (Object item : rows) {
+            if (item instanceof Map<?, ?> row) {
+                corrections.add(LabResultCorrectionRow.builder()
+                    .learnerEmail(cell(row, COL_LEARNER_EMAIL))
+                    .cohortName(cell(row, COL_COHORT_NAME))
+                    .specializationName(cell(row, COL_SPECIALIZATION_NAME))
+                    .moduleName(cell(row, COL_MODULE_NAME))
+                    .labTitle(cell(row, COL_LAB_TITLE))
+                    .score(cell(row, COL_SCORE))
+                    .maxScore(cell(row, COL_MAX_SCORE))
+                    .attemptNumber(cell(row, COL_ATTEMPT_NUMBER))
+                    .submittedOn(cell(row, COL_SUBMITTED_ON))
+                    .gradedBy(cell(row, COL_GRADED_BY))
+                    .errorMessage(cell(row, COL_ERROR_MESSAGE))
+                    .build());
+            }
+        }
+        return corrections;
+    }
+
+    private static String cell(Map<?, ?> row, String key) {
+        Object value = row.get(key);
+        return value == null ? null : value.toString();
     }
 
     private byte[] readBytes(MultipartFile file) {

@@ -17,6 +17,7 @@ import com.amalitech.labresultsvalidator.domain.enums.LearnerStatus;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.lab.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.lab.repository.LabRepository;
+import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultCorrectionRow;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultCsvRow;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultUploadResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
@@ -45,15 +46,20 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -64,6 +70,7 @@ import static org.mockito.ArgumentMatchers.anyShort;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -263,6 +270,89 @@ class LabResultUploadServiceTest {
         assertThat(result.getInsertedCount()).isZero();
         assertThat(result.getRejectedCount()).isEqualTo(2);
         assertThat(result.getErrors()).extracting(CsvRowError::rule).allMatch("V16"::equals);
+    }
+
+    // ── Corrections-only CSV (rejected rows + ERROR_MESSAGE) ────────────────────
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void bulkUpload_withRejectedRow_persistsRejectedRowsInReport() {
+        LabResultCsvRow row = validRow();
+        row.setLearnerEmail("not-an-email");
+        doReturn(parsed(row)).when(csvParserService).parse(any(), any());
+
+        service.bulkUpload(file());
+
+        ArgumentCaptor<CsvUpload> captor = ArgumentCaptor.forClass(CsvUpload.class);
+        verify(csvUploadRepository, times(2)).save(captor.capture());
+        Map<String, Object> report = captor.getValue().getErrorReportJson();
+
+        List<Map<String, Object>> rejectedRows =
+            (List<Map<String, Object>>) report.get("rejectedRows");
+        assertThat(rejectedRows).hasSize(1);
+        Map<String, Object> rejected = rejectedRows.get(0);
+        assertThat(rejected.get("LEARNER_EMAIL")).isEqualTo("not-an-email");
+        assertThat(rejected.get("COHORT_NAME")).isEqualTo("Cohort 1");
+        assertThat(rejected.get("SCORE")).isEqualTo("18");
+        assertThat((String) rejected.get("ERROR_MESSAGE")).contains("LEARNER_EMAIL");
+    }
+
+    @Test
+    void downloadCorrections_withUnknownId_throwsResourceNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(csvUploadRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.downloadCorrections(unknownId, mock(HttpServletResponse.class)))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining(unknownId.toString());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void downloadCorrections_streamsPersistedRejectedRows() throws Exception {
+        UUID uploadId = UUID.randomUUID();
+        Map<String, Object> rejected = new LinkedHashMap<>();
+        rejected.put("LEARNER_EMAIL", "not-an-email");
+        rejected.put("COHORT_NAME", "Cohort 1");
+        rejected.put("SCORE", "18");
+        rejected.put("ERROR_MESSAGE", "LEARNER_EMAIL: 'not-an-email' is not a valid email address");
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("rejectedRows", List.of(rejected));
+        CsvUpload upload = CsvUpload.builder().id(uploadId).errorReportJson(report).build();
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.of(upload));
+
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+        service.downloadCorrections(uploadId, response);
+
+        verify(response).setContentType("text/csv");
+        verify(response).setHeader(eq("Content-Disposition"),
+            eq("attachment; filename=\"corrections_" + uploadId + ".csv\""));
+        ArgumentCaptor<List<LabResultCorrectionRow>> captor = ArgumentCaptor.forClass(List.class);
+        verify(csvWriterService).write(any(), captor.capture(), eq(LabResultCorrectionRow.class));
+        assertThat(captor.getValue()).hasSize(1);
+        LabResultCorrectionRow written = captor.getValue().get(0);
+        assertThat(written.getLearnerEmail()).isEqualTo("not-an-email");
+        assertThat(written.getCohortName()).isEqualTo("Cohort 1");
+        assertThat(written.getScore()).isEqualTo("18");
+        assertThat(written.getErrorMessage())
+            .isEqualTo("LEARNER_EMAIL: 'not-an-email' is not a valid email address");
+    }
+
+    @Test
+    void downloadCorrections_withNoRejectedRows_streamsHeaderOnly() throws Exception {
+        UUID uploadId = UUID.randomUUID();
+        CsvUpload upload = CsvUpload.builder().id(uploadId).build();
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.of(upload));
+
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+        service.downloadCorrections(uploadId, response);
+
+        verify(csvWriterService).writeTemplate(any(), eq(LabResultCorrectionRow.class));
+        verify(csvWriterService, never()).write(any(), any(), eq(LabResultCorrectionRow.class));
     }
 
     // ── Referential (V9–V15) ─────────────────────────────────────────────────────

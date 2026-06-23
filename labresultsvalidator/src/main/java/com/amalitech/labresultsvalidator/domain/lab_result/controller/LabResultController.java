@@ -91,6 +91,25 @@ public class LabResultController {
         labResultUploadService.downloadTemplate(response);
     }
 
+    @Operation(summary = "Download corrections-only CSV",
+        description = "For a previous upload, returns a CSV containing only the rejected rows with "
+            + "their original columns plus a trailing ERROR_MESSAGE column explaining each failure. "
+            + "Fix the listed rows and re-upload — the extra ERROR_MESSAGE column is ignored on upload. "
+            + "An upload with no rejected rows yields a header-only file.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Corrections CSV file"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "No upload found with that id",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @PreAuthorize("hasAnyRole('INSTRUCTOR', 'ADMIN', 'SUPER_ADMIN')")
+    @GetMapping("/uploads/{uploadId}/corrections")
+    public void downloadCorrections(
+            @PathVariable UUID uploadId, HttpServletResponse response) throws IOException {
+        labResultUploadService.downloadCorrections(uploadId, response);
+    }
+
     @Operation(summary = "Get lab results for a module",
         description = "Returns all uploaded lab results for a given module.")
     @ApiResponses({
