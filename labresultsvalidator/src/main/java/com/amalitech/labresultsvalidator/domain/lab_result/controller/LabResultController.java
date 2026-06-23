@@ -91,6 +91,23 @@ public class LabResultController {
         labResultUploadService.downloadTemplate(response);
     }
 
+    @Operation(summary = "Get a past upload report",
+        description = "Returns the upload report for a previous CSV upload made by the authenticated instructor.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Upload report retrieved successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "No upload found with that id",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @PreAuthorize("hasRole('INSTRUCTOR')")
+    @GetMapping("/uploads/{uploadId}")
+    public ResponseEntity<ApiResponse<LabResultUploadResponse>> getUploadReport(
+            @PathVariable UUID uploadId) {
+        LabResultUploadResponse response = labResultUploadService.getUploadReport(uploadId);
+        return ResponseEntity.ok(ApiResponse.success("Upload report retrieved successfully", response));
+    }
+
     @Operation(summary = "Download corrections-only CSV",
         description = "For a previous upload, returns a CSV containing only the rejected rows with "
             + "their original columns plus a trailing ERROR_MESSAGE column explaining each failure. "

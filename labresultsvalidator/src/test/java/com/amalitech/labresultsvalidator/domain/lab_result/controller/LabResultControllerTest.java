@@ -141,6 +141,44 @@ class LabResultControllerTest {
     }
 
     @Test
+    void getUploadReport_returns200WithReport() throws Exception {
+        UUID uploadId = UUID.randomUUID();
+        LabResultUploadResponse response = LabResultUploadResponse.builder()
+            .uploadId(uploadId)
+            .totalRows(5)
+            .insertedCount(4)
+            .updatedCount(0)
+            .skippedCount(0)
+            .rejectedCount(1)
+            .status(UploadStatus.PARTIAL)
+            .errors(List.of(new CsvRowError(3L, "SCORE", "V5", "Score 25 must be between 0 and max_score 20")))
+            .build();
+        when(labResultUploadService.getUploadReport(eq(uploadId))).thenReturn(response);
+
+        mockMvc.perform(get(BASE_URL + "/uploads/" + uploadId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.uploadId").value(uploadId.toString()))
+            .andExpect(jsonPath("$.data.status").value("PARTIAL"))
+            .andExpect(jsonPath("$.data.insertedCount").value(4))
+            .andExpect(jsonPath("$.data.rejectedCount").value(1))
+            .andExpect(jsonPath("$.data.errors[0].rowNumber").value(3))
+            .andExpect(jsonPath("$.data.errors[0].field").value("SCORE"))
+            .andExpect(jsonPath("$.data.errors[0].rule").value("V5"));
+    }
+
+    @Test
+    void getUploadReport_withUnknownId_returns404() throws Exception {
+        UUID uploadId = UUID.randomUUID();
+        when(labResultUploadService.getUploadReport(eq(uploadId)))
+            .thenThrow(new ResourceNotFoundException("Upload not found with ID: " + uploadId));
+
+        mockMvc.perform(get(BASE_URL + "/uploads/" + uploadId))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
     void getResultsByModule_withKnownModule_returns200WithResults() throws Exception {
         UUID moduleId = UUID.randomUUID();
         UUID labId = UUID.randomUUID();
