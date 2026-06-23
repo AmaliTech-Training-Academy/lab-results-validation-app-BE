@@ -28,6 +28,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -118,6 +119,26 @@ class LabResultControllerTest {
             .andExpect(status().isOk());
     }
 
+
+    @Test
+    void downloadCorrections_returns200() throws Exception {
+        UUID uploadId = UUID.randomUUID();
+        doNothing().when(labResultUploadService).downloadCorrections(eq(uploadId), any());
+
+        mockMvc.perform(get(BASE_URL + "/uploads/" + uploadId + "/corrections"))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void downloadCorrections_withUnknownId_returns404() throws Exception {
+        UUID uploadId = UUID.randomUUID();
+        doThrow(new ResourceNotFoundException("Upload not found with ID: " + uploadId))
+            .when(labResultUploadService).downloadCorrections(eq(uploadId), any());
+
+        mockMvc.perform(get(BASE_URL + "/uploads/" + uploadId + "/corrections"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.success").value(false));
+    }
 
     @Test
     void getResultsByModule_withKnownModule_returns200WithResults() throws Exception {
