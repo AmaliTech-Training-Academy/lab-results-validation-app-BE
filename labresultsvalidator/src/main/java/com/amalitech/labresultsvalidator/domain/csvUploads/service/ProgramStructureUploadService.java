@@ -131,10 +131,12 @@ public class ProgramStructureUploadService {
                 errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME", "V3", "COHORT_NAME is required"));
             }
             if (isBlank(r.getSpecializationName())) {
-                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "V3", "SPECIALIZATION_NAME is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "V3",
+                    "SPECIALIZATION_NAME is required"));
             }
             if (isBlank(r.getSpecializationCode())) {
-                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE", "V3", "SPECIALIZATION_CODE is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE", "V3",
+                    "SPECIALIZATION_CODE is required"));
             }
             if (isBlank(r.getModuleName())) {
                 errors.add(new CsvRowError(row.lineNumber(), "MODULE_NAME", "V3", "MODULE_NAME is required"));
@@ -159,7 +161,8 @@ public class ProgramStructureUploadService {
                 errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "V4", "MAX_SCORE must be greater than zero"));
             }
         } catch (NumberFormatException e) {
-            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "V4", "'" + r.getMaxScore() + "' is not a valid number"));
+            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "V4",
+                "'" + r.getMaxScore() + "' is not a valid number"));
         }
     }
 
