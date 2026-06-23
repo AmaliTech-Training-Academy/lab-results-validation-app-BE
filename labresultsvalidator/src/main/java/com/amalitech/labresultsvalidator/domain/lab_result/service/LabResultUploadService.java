@@ -25,7 +25,9 @@ import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.lab_result.repository.LabResultRepository;
 import com.amalitech.labresultsvalidator.domain.learner.entity.Learner;
 import com.amalitech.labresultsvalidator.domain.learner.repository.LearnerRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.module.entity.Module;
+import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.module.repository.ModuleRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.entity.UserModuleAssignment;
@@ -254,26 +256,45 @@ public class LabResultUploadService {
             return;
         }
 
+        List<UserModuleAssignment> assignments =
+                userModuleAssignmentRepository.findAllByUserId(currentUser.getId());
+
+        List<Lab> labs = assignments.isEmpty() ? List.of() :
+                labRepository.findAllByModuleIdIn(
+                        assignments.stream().map(a -> a.getModule().getId()).toList());
+
         CSVWriter csv = new CSVWriter(response.getWriter());
 
         csv.writeNext(new String[]{
             "LEARNER_EMAIL", "COHORT_NAME", "SPECIALIZATION_NAME", "MODULE_NAME",
             "LAB_TITLE", "SCORE", "MAX_SCORE", "ATTEMPT_NUMBER", "SUBMITTED_ON", "GRADED_BY"
         });
-        csv.writeNext(new String[]{
-            "learner@example.com", "Cohort 12", "SWE", "Python Basics",
-            "Lab 1: Variables", "85.5", "100.00", "1", "2026-01-15", "John Doe"
-        });
 
-        List<UserModuleAssignment> assignments =
-                userModuleAssignmentRepository.findAllByUserId(currentUser.getId());
+        if (!labs.isEmpty()) {
+            Lab first = labs.get(0);
+            Module mod = first.getModule();
+            Specialization spec = mod.getSpecialization();
+            Cohort cohort = spec.getCohort();
+            csv.writeNext(new String[]{
+                "learner@example.com",
+                cohort.getName(),
+                spec.getName(),
+                mod.getName(),
+                first.getTitle(),
+                first.getMaxScore().toPlainString(),
+                first.getMaxScore().toPlainString(),
+                "1",
+                LocalDate.now().toString(),
+                currentUser.getEmail()
+            });
+        } else {
+            csv.writeNext(new String[]{
+                "learner@example.com", "Cohort Name", "Specialization Name", "Module Name",
+                "Lab Title", "85.5", "100.00", "1", LocalDate.now().toString(), "Instructor Name"
+            });
+        }
 
-        if (!assignments.isEmpty()) {
-            List<UUID> moduleIds = assignments.stream()
-                    .map(a -> a.getModule().getId())
-                    .toList();
-            List<Lab> labs = labRepository.findAllByModuleIdIn(moduleIds);
-
+        if (!labs.isEmpty()) {
             csv.writeNext(new String[]{""});
             csv.writeNext(new String[]{
                 "# === REFERENCE: Use EXACT values below (do not upload these rows) ==="
