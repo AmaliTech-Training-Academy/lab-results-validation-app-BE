@@ -31,7 +31,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 @Tag(name = "Lab Results",
-    description = "Bulk upload of lab results — INSTRUCTOR (scoped to assigned modules) and ADMIN")
+    description = "Bulk upload of lab results — INSTRUCTOR only (scoped to assigned modules)")
 @RestController
 @RequestMapping("/api/v1/lab-results")
 @RequiredArgsConstructor
@@ -55,7 +55,7 @@ public class LabResultController {
             responseCode = "422", description = "Whole-file structural failure (missing headers, too large, etc.)",
             content = @Content(schema = @Schema(implementation = ApiResponse.class)))
     })
-    @PreAuthorize("hasAnyRole('INSTRUCTOR', 'ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasRole('INSTRUCTOR')")
     @PostMapping(value = "/bulk", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<LabResultUploadResponse>> bulkUpload(
             @Parameter(description = "CSV file — use GET /template to download the correct format")
@@ -85,7 +85,7 @@ public class LabResultController {
         description = "Returns a header-only CSV file with the correct column names for bulk upload.")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
         responseCode = "200", description = "CSV template file")
-    @PreAuthorize("hasAnyRole('INSTRUCTOR', 'ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasRole('INSTRUCTOR')")
     @GetMapping("/template")
     public void downloadTemplate(HttpServletResponse response) throws IOException {
         labResultUploadService.downloadTemplate(response);
