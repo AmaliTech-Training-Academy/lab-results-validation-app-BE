@@ -152,4 +152,40 @@ class CsvParserServiceTest {
         assertThat(row.getCohortName()).isEqualTo("Cohort X");
         assertThat(row.getSpecializationName()).isEqualTo("DevOps");
     }
+
+    @Test
+    void parse_whenRequiredFieldValueIsEmpty_errorHasCorrectFieldAndRule() {
+        // EMAIL is required=true; leaving it blank triggers CsvRequiredFieldEmptyException
+        String csv = "FULL_NAME,EMAIL,COHORT_NAME,SPECIALIZATION_NAME\nAlice,,Cohort A,Backend";
+        MockMultipartFile file = new MockMultipartFile("file", "test.csv", CONTENT_TYPE_CSV,
+                csv.getBytes(StandardCharsets.UTF_8));
+
+        CsvParseResult<LearnerCsvRow> result = csvParserService.parse(file, LearnerCsvRow.class);
+
+        assertThat(result.errors()).hasSize(1);
+        CsvRowError error = result.errors().get(0);
+        assertThat(error.field()).isEqualTo("EMAIL");
+        assertThat(error.rule()).isEqualTo("V3");
+        assertThat(error.rowNumber()).isEqualTo(2L);
+    }
+
+    @Test
+    void parse_whenMultipleRequiredFieldValuesEmpty_eachErrorHasFieldAndRule() {
+        // First row: EMAIL empty; second row: COHORT_NAME empty
+        String csv = "FULL_NAME,EMAIL,COHORT_NAME,SPECIALIZATION_NAME\n"
+                + "Alice,,Cohort A,Backend\n"
+                + "Bob,bob@test.com,,Backend";
+        MockMultipartFile file = new MockMultipartFile("file", "test.csv", CONTENT_TYPE_CSV,
+                csv.getBytes(StandardCharsets.UTF_8));
+
+        CsvParseResult<LearnerCsvRow> result = csvParserService.parse(file, LearnerCsvRow.class);
+
+        assertThat(result.errors()).hasSize(2);
+        assertThat(result.errors()).allSatisfy(e -> {
+            assertThat(e.rule()).isEqualTo("V3");
+            assertThat(e.field()).isNotNull();
+        });
+        assertThat(result.errors()).extracting(CsvRowError::field)
+                .containsExactlyInAnyOrder("EMAIL", "COHORT_NAME");
+    }
 }

@@ -148,7 +148,7 @@ public class LearnerService {
 
             String fullName = r.getFullName() == null ? null : r.getFullName().strip();
             if (fullName == null || fullName.isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "FULL_NAME", "Full name is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "FULL_NAME", "V3", "FULL_NAME is required"));
                 rowOk = false;
             } else if (fullName.length() > 255) {
                 errors.add(new CsvRowError(row.lineNumber(), "FULL_NAME",
@@ -158,10 +158,10 @@ public class LearnerService {
 
             String rawEmail = r.getEmail() == null ? null : r.getEmail().strip();
             if (rawEmail == null || rawEmail.isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "EMAIL", "Email is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "EMAIL", "V3", "EMAIL is required"));
                 rowOk = false;
             } else if (!EMAIL_PATTERN.matcher(rawEmail).matches()) {
-                errors.add(new CsvRowError(row.lineNumber(), "EMAIL",
+                errors.add(new CsvRowError(row.lineNumber(), "EMAIL", "V8",
                         "'" + rawEmail + "' is not a valid email address"));
                 rowOk = false;
             } else if (rawEmail.length() > 254) {
@@ -173,16 +173,16 @@ public class LearnerService {
 
             String cohortName = r.getCohortName() == null ? null : r.getCohortName().strip();
             if (cohortName == null || cohortName.isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME",
-                        "Cohort name is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME", "V3",
+                        "COHORT_NAME is required"));
                 rowOk = false;
             }
 
             String specName = r.getSpecializationName() == null
                     ? null : r.getSpecializationName().strip();
             if (specName == null || specName.isBlank()) {
-                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME",
-                        "Specialization name is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "V3",
+                        "SPECIALIZATION_NAME is required"));
                 rowOk = false;
             }
 
@@ -205,7 +205,7 @@ public class LearnerService {
             if (entry.getValue().size() > 1) {
                 entry.getValue().forEach(duplicateLines::add);
                 entry.getValue().forEach(ln -> errors.add(new CsvRowError(
-                        ln, "EMAIL",
+                        ln, "EMAIL", "V16",
                         "Duplicate email within this file: " + entry.getKey())));
             }
         }
