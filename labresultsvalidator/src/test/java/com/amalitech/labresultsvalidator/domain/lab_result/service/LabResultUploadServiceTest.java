@@ -28,6 +28,7 @@ import com.amalitech.labresultsvalidator.domain.module.entity.Module;
 import com.amalitech.labresultsvalidator.domain.module.repository.ModuleRepository;
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
+import com.amalitech.labresultsvalidator.domain.user_module_assignment.entity.UserModuleAssignment;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.repository.UserModuleAssignmentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -712,6 +714,59 @@ class LabResultUploadServiceTest {
         assertThatThrownBy(() -> service.getLabResultsByModule(unknownId, PageRequest.of(0, 20)))
             .isInstanceOf(ResourceNotFoundException.class)
             .hasMessageContaining(unknownId.toString());
+    }
+
+    // ── downloadTemplate ─────────────────────────────────────────────────────
+
+    @Test
+    void downloadTemplate_forInstructor_includesHeaderExampleRowAndLegend() throws Exception {
+        UserModuleAssignment assignment = UserModuleAssignment.builder()
+                .id(UUID.randomUUID())
+                .user(instructor)
+                .module(module)
+                .build();
+
+        when(userModuleAssignmentRepository.findAllByUserId(instructor.getId()))
+                .thenReturn(List.of(assignment));
+        when(labRepository.findAllByModuleIdIn(List.of(module.getId())))
+                .thenReturn(List.of(lab));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadTemplate(response);
+        String csv = response.getContentAsString();
+
+        assertThat(csv).contains("LEARNER_EMAIL");
+        assertThat(csv).contains("learner@example.com");
+        assertThat(csv).contains("REFERENCE");
+        assertThat(csv).contains("Module 1");
+        assertThat(csv).contains("Lab 1");
+        assertThat(csv).contains("20.00");
+    }
+
+    @Test
+    void downloadTemplate_forInstructor_withNoAssignments_omitsLegend() throws Exception {
+        when(userModuleAssignmentRepository.findAllByUserId(instructor.getId()))
+                .thenReturn(List.of());
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadTemplate(response);
+        String csv = response.getContentAsString();
+
+        assertThat(csv).contains("LEARNER_EMAIL");
+        assertThat(csv).contains("learner@example.com");
+        assertThat(csv).doesNotContain("REFERENCE");
+        verify(labRepository, never()).findAllByModuleIdIn(any());
+    }
+
+    @Test
+    void downloadTemplate_forAdmin_delegatesToGenericTemplate() throws Exception {
+        setActor(admin);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadTemplate(response);
+
+        verify(csvWriterService).writeTemplate(any(PrintWriter.class), eq(LabResultCsvRow.class));
+        verify(userModuleAssignmentRepository, never()).findAllByUserId(any());
     }
 
     private void setActor(User user) {
