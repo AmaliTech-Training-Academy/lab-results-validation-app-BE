@@ -2,9 +2,11 @@ package com.amalitech.labresultsvalidator.domain.csvUploads.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadFilterRequest;
 import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
 import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadRepository;
+import org.springframework.data.jpa.domain.Specification;
 import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
@@ -71,9 +73,9 @@ class CsvUploadServiceTest {
         UUID id = UUID.randomUUID();
         CsvUpload upload = buildUpload(id, null);
         Page<CsvUpload> page = new PageImpl<>(List.of(upload), PageRequest.of(0, 10), 1);
-        when(csvUploadRepository.findAllByOrderByUploadedAtDesc(any(Pageable.class))).thenReturn(page);
+        when(csvUploadRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
 
-        PagedResponse<CsvUploadResponse> result = csvUploadService.listUploads(PageRequest.of(0, 10));
+        PagedResponse<CsvUploadResponse> result = csvUploadService.listUploads(new CsvUploadFilterRequest(), PageRequest.of(0, 10));
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getId()).isEqualTo(id);
@@ -85,9 +87,9 @@ class CsvUploadServiceTest {
     @Test
     void listUploads_whenNoUploads_returnsEmptyPage() {
         Page<CsvUpload> empty = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
-        when(csvUploadRepository.findAllByOrderByUploadedAtDesc(any(Pageable.class))).thenReturn(empty);
+        when(csvUploadRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(empty);
 
-        PagedResponse<CsvUploadResponse> result = csvUploadService.listUploads(PageRequest.of(0, 10));
+        PagedResponse<CsvUploadResponse> result = csvUploadService.listUploads(new CsvUploadFilterRequest(), PageRequest.of(0, 10));
 
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getTotalElements()).isZero();

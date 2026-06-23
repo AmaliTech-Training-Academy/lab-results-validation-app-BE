@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.csvUploads.controller;
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadFilterRequest;
 import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.service.CsvUploadService;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,7 +77,7 @@ class CsvUploadControllerTest {
         CsvUploadResponse dto = buildResponse(id);
         PagedResponse<CsvUploadResponse> paged = PagedResponse.of(
                 new PageImpl<>(List.of(dto), PageRequest.of(0, 10), 1));
-        when(csvUploadService.listUploads(any(Pageable.class))).thenReturn(paged);
+        when(csvUploadService.listUploads(any(CsvUploadFilterRequest.class), any(Pageable.class))).thenReturn(paged);
 
         mockMvc.perform(get(BASE_URL))
                 .andExpect(status().isOk())
@@ -92,7 +93,7 @@ class CsvUploadControllerTest {
     void listUploads_whenEmpty_returns200WithEmptyContent() throws Exception {
         PagedResponse<CsvUploadResponse> empty = PagedResponse.of(
                 new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
-        when(csvUploadService.listUploads(any(Pageable.class))).thenReturn(empty);
+        when(csvUploadService.listUploads(any(CsvUploadFilterRequest.class), any(Pageable.class))).thenReturn(empty);
 
         mockMvc.perform(get(BASE_URL))
                 .andExpect(status().isOk())

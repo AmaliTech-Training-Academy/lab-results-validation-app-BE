@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.csvUploads.controller;
 
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadFilterRequest;
 import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.service.CsvUploadService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,7 +35,10 @@ public class CsvUploadController {
 
     @Operation(
             summary = "List all CSV uploads",
-            description = "Returns a paginated list of all CSV uploads, newest first."
+            description = "Returns a paginated, filtered list of CSV uploads. "
+                    + "Supports filtering by date range (startDate/endDate), "
+                    + "instructor email (uploadedByEmail), status, "
+                    + "and a search term matched against filename or upload ID."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -45,9 +50,10 @@ public class CsvUploadController {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<CsvUploadResponse>>> listUploads(
+            @ModelAttribute CsvUploadFilterRequest filter,
             @PageableDefault(size = 10, sort = "uploadedAt",
                     direction = Sort.Direction.DESC) Pageable pageable) {
-        PagedResponse<CsvUploadResponse> response = csvUploadService.listUploads(pageable);
+        PagedResponse<CsvUploadResponse> response = csvUploadService.listUploads(filter, pageable);
         return ResponseEntity.ok(ApiResponse.success("CSV uploads retrieved successfully", response));
     }
 
