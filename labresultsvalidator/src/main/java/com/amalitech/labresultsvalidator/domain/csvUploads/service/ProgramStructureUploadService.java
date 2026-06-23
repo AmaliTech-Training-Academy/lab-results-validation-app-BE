@@ -128,19 +128,21 @@ public class ProgramStructureUploadService {
         for (ParsedRow<ProgramStructureCsvRow> row : rows) {
             ProgramStructureCsvRow r = row.data();
             if (isBlank(r.getCohortName())) {
-                errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME", "Cohort name is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "COHORT_NAME", "V3", "COHORT_NAME is required"));
             }
             if (isBlank(r.getSpecializationName())) {
-                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "Specialization name is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_NAME", "V3",
+                    "SPECIALIZATION_NAME is required"));
             }
             if (isBlank(r.getSpecializationCode())) {
-                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE", "Specialization code is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "SPECIALIZATION_CODE", "V3",
+                    "SPECIALIZATION_CODE is required"));
             }
             if (isBlank(r.getModuleName())) {
-                errors.add(new CsvRowError(row.lineNumber(), "MODULE_NAME", "Module name is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "MODULE_NAME", "V3", "MODULE_NAME is required"));
             }
             if (isBlank(r.getLabTitle())) {
-                errors.add(new CsvRowError(row.lineNumber(), "LAB_TITLE", "Lab title is required"));
+                errors.add(new CsvRowError(row.lineNumber(), "LAB_TITLE", "V3", "LAB_TITLE is required"));
             }
             validateMaxScore(row, r, errors);
         }
@@ -150,16 +152,17 @@ public class ProgramStructureUploadService {
     private void validateMaxScore(ParsedRow<ProgramStructureCsvRow> row, ProgramStructureCsvRow r,
                                   List<CsvRowError> errors) {
         if (isBlank(r.getMaxScore())) {
-            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score is required"));
+            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "V3", "MAX_SCORE is required"));
             return;
         }
         try {
             BigDecimal score = new BigDecimal(r.getMaxScore().trim());
             if (score.compareTo(BigDecimal.ZERO) <= 0) {
-                errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score must be greater than zero"));
+                errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "V4", "MAX_SCORE must be greater than zero"));
             }
         } catch (NumberFormatException e) {
-            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "Max score must be a valid number"));
+            errors.add(new CsvRowError(row.lineNumber(), "MAX_SCORE", "V4",
+                "'" + r.getMaxScore() + "' is not a valid number"));
         }
     }
 

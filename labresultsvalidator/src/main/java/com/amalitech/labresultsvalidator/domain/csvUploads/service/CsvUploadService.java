@@ -2,9 +2,11 @@ package com.amalitech.labresultsvalidator.domain.csvUploads.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadFilterRequest;
 import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
 import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadRepository;
+import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadSpecification;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -18,9 +20,9 @@ public class CsvUploadService {
 
     private final CsvUploadRepository csvUploadRepository;
 
-    public PagedResponse<CsvUploadResponse> listUploads(Pageable pageable) {
+    public PagedResponse<CsvUploadResponse> listUploads(CsvUploadFilterRequest filter, Pageable pageable) {
         return PagedResponse.of(
-            csvUploadRepository.findAllByOrderByUploadedAtDesc(pageable)
+            csvUploadRepository.findAll(CsvUploadSpecification.withFilters(filter), pageable)
                 .map(this::mapToResponse)
         );
     }

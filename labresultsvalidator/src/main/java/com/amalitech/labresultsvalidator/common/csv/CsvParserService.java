@@ -6,6 +6,7 @@ import com.opencsv.bean.CsvToBean;
 import com.opencsv.bean.CsvToBeanBuilder;
 import com.opencsv.bean.HeaderColumnNameMappingStrategy;
 import com.opencsv.exceptions.CsvException;
+import com.opencsv.exceptions.CsvRequiredFieldEmptyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -154,6 +155,18 @@ public class CsvParserService {
     }
 
     private CsvRowError toRowError(CsvException exception) {
+        if (exception instanceof CsvRequiredFieldEmptyException required) {
+            java.lang.reflect.Field destField = required.getDestinationField();
+            String column = null;
+            if (destField != null) {
+                CsvBindByName binding = destField.getAnnotation(CsvBindByName.class);
+                column = (binding != null && !binding.column().isBlank())
+                    ? binding.column().toUpperCase(Locale.ROOT)
+                    : destField.getName().toUpperCase(Locale.ROOT);
+            }
+            return new CsvRowError(exception.getLineNumber(), column, "V3",
+                column != null ? column + " is required" : exception.getLocalizedMessage());
+        }
         return new CsvRowError(exception.getLineNumber(), null, exception.getLocalizedMessage());
     }
 }
