@@ -2,6 +2,8 @@ package com.amalitech.labresultsvalidator.domain.lab_result.controller;
 
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadFilterRequest;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultUploadResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.service.LabResultUploadService;
@@ -13,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -20,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -109,6 +113,28 @@ public class LabResultController {
     public void downloadLabTemplate(
             @PathVariable UUID labId, HttpServletResponse response) throws IOException {
         labResultUploadService.downloadLabTemplate(labId, response);
+    }
+
+    @Operation(summary = "List my CSV uploads",
+        description = "Returns a paginated list of CSV uploads made by the authenticated instructor. "
+            + "Supports filtering by date range (startDate/endDate), status, and a search term "
+            + "matched against filename or upload ID. The uploadedByEmail filter is ignored — "
+            + "results are always scoped to the calling user.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "Uploads retrieved successfully"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "401", description = "Unauthorized",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @PreAuthorize("hasRole('INSTRUCTOR')")
+    @GetMapping("/uploads")
+    public ResponseEntity<ApiResponse<PagedResponse<CsvUploadResponse>>> listMyUploads(
+            @ModelAttribute CsvUploadFilterRequest filter,
+            @ParameterObject @PageableDefault(size = 10, sort = "uploadedAt",
+                    direction = Sort.Direction.DESC) Pageable pageable) {
+        PagedResponse<CsvUploadResponse> response = labResultUploadService.listMyUploads(filter, pageable);
+        return ResponseEntity.ok(ApiResponse.success("Uploads retrieved successfully", response));
     }
 
     @Operation(summary = "Get a past upload report",

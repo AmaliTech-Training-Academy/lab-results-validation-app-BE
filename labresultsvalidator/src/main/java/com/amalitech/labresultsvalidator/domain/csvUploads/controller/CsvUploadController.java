@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -51,7 +52,7 @@ public class CsvUploadController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<CsvUploadResponse>>> listUploads(
             @ModelAttribute CsvUploadFilterRequest filter,
-            @PageableDefault(size = 10, sort = "uploadedAt",
+            @ParameterObject @PageableDefault(size = 10, sort = "uploadedAt",
                     direction = Sort.Direction.DESC) Pageable pageable) {
         PagedResponse<CsvUploadResponse> response = csvUploadService.listUploads(filter, pageable);
         return ResponseEntity.ok(ApiResponse.success("CSV uploads retrieved successfully", response));

@@ -12,8 +12,11 @@ import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityEx
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.common.utils.Sha256Util;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadFilterRequest;
+import com.amalitech.labresultsvalidator.domain.csvUploads.dto.CsvUploadResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
 import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadRepository;
+import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadSpecification;
 import com.amalitech.labresultsvalidator.domain.enums.LearnerStatus;
 import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
@@ -366,6 +369,37 @@ public class LabResultUploadService {
         } else {
             csvWriterService.write(response.getWriter(), rows, LabResultCorrectionRow.class);
         }
+    }
+
+    /**
+     * List all CSV uploads made by the authenticated instructor, with optional filters.
+     * The {@code uploadedByEmail} field on the filter is ignored — results are always
+     * scoped to the calling user.
+     */
+    public PagedResponse<CsvUploadResponse> listMyUploads(
+            CsvUploadFilterRequest filter, Pageable pageable) {
+        User actor = currentUser();
+        return PagedResponse.of(
+            csvUploadRepository.findAll(
+                CsvUploadSpecification.withFiltersForOwner(filter, actor.getId()), pageable)
+                .map(this::mapUploadToResponse)
+        );
+    }
+
+    private CsvUploadResponse mapUploadToResponse(CsvUpload upload) {
+        return CsvUploadResponse.builder()
+            .id(upload.getId())
+            .uploadedByEmail(upload.getUploadedByUser().getEmail())
+            .filename(upload.getFilename())
+            .fileSha256(upload.getFileSha256())
+            .uploadedAt(upload.getUploadedAt())
+            .totalRows(upload.getTotalRows())
+            .acceptedRows(upload.getAcceptedRows())
+            .rejectedRows(upload.getRejectedRows())
+            .status(upload.getStatus() != null ? upload.getStatus().name() : null)
+            .createdAt(upload.getCreatedAt())
+            .updatedAt(upload.getUpdatedAt())
+            .build();
     }
 
     /**
