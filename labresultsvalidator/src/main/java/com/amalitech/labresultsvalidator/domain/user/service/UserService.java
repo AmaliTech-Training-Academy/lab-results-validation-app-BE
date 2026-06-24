@@ -109,7 +109,8 @@ public class UserService {
                 .build();
     }
 
-    public PagedResponse<UserResponseDTO> listInstructors(String email, Boolean active, UUID moduleId, Pageable pageable) {
+    public PagedResponse<UserResponseDTO> listInstructors(
+            String email, Boolean active, UUID moduleId, Pageable pageable) {
         Page<User> userPage = userRepository.findAll(UserSpecification.withFilters(email, active, moduleId), pageable);
 
         List<UUID> ids = userPage.getContent().stream().map(User::getId).toList();
