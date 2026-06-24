@@ -14,6 +14,7 @@ import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
 import com.amalitech.labresultsvalidator.domain.csvUploads.repository.CsvUploadRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.enums.LearnerStatus;
+import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.lab.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.lab.repository.LabRepository;
@@ -28,6 +29,7 @@ import com.amalitech.labresultsvalidator.domain.module.entity.Module;
 import com.amalitech.labresultsvalidator.domain.module.repository.ModuleRepository;
 import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
+import com.amalitech.labresultsvalidator.domain.user_module_assignment.entity.UserModuleAssignment;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.repository.UserModuleAssignmentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +43,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -742,6 +745,211 @@ class LabResultUploadServiceTest {
         assertThatThrownBy(() -> service.getLabResultsByModule(unknownId, PageRequest.of(0, 20)))
             .isInstanceOf(ResourceNotFoundException.class)
             .hasMessageContaining(unknownId.toString());
+    }
+
+    // ── bulkUpload status (COMPLETED / PARTIAL / FAILED) ─────────────────────────
+
+    @Test
+    void bulkUpload_withAllValidRows_hasCompletedStatus() {
+        doReturn(parsed(validRow())).when(csvParserService).parse(any(), any());
+
+        assertThat(service.bulkUpload(file()).getStatus()).isEqualTo(UploadStatus.COMPLETED);
+    }
+
+    @Test
+    void bulkUpload_withSomeRejectedRows_hasPartialStatus() {
+        LabResultCsvRow invalid = validRow();
+        invalid.setScore("999");
+        doReturn(parsed(validRow(), invalid)).when(csvParserService).parse(any(), any());
+
+        assertThat(service.bulkUpload(file()).getStatus()).isEqualTo(UploadStatus.PARTIAL);
+    }
+
+    @Test
+    void bulkUpload_withAllRejectedRows_hasFailedStatus() {
+        LabResultCsvRow row = validRow();
+        row.setScore("999");
+        doReturn(parsed(row)).when(csvParserService).parse(any(), any());
+
+        assertThat(service.bulkUpload(file()).getStatus()).isEqualTo(UploadStatus.FAILED);
+    }
+
+    // ── getUploadReport ──────────────────────────────────────────────────────────
+
+    @Test
+    void getUploadReport_withCompletedUpload_returnsCompletedStatus() {
+        UUID uploadId = UUID.randomUUID();
+        CsvUpload upload = upload(instructor, 8, 7, 0, reportMap(5, 2, 0, 0));
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.of(upload));
+
+        LabResultUploadResponse result = service.getUploadReport(uploadId);
+
+        assertThat(result.getStatus()).isEqualTo(UploadStatus.COMPLETED);
+        assertThat(result.getInsertedCount()).isEqualTo(5);
+        assertThat(result.getUpdatedCount()).isEqualTo(2);
+        assertThat(result.getSkippedCount()).isZero();
+        assertThat(result.getRejectedCount()).isZero();
+        assertThat(result.getErrors()).isEmpty();
+    }
+
+    @Test
+    void getUploadReport_withPartialUpload_returnsPartialStatusAndErrors() {
+        UUID uploadId = UUID.randomUUID();
+        Map<String, Object> errorEntry = new LinkedHashMap<>();
+        errorEntry.put("rowNumber", 3);
+        errorEntry.put("field", "SCORE");
+        errorEntry.put("rule", "V5");
+        errorEntry.put("message", "Score 25 must be between 0 and max_score 20");
+
+        CsvUpload upload = upload(instructor, 5, 4, 1, reportMap(4, 0, 0, 1, List.of(errorEntry)));
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.of(upload));
+
+        LabResultUploadResponse result = service.getUploadReport(uploadId);
+
+        assertThat(result.getStatus()).isEqualTo(UploadStatus.PARTIAL);
+        assertThat(result.getInsertedCount()).isEqualTo(4);
+        assertThat(result.getRejectedCount()).isEqualTo(1);
+        assertThat(result.getErrors()).hasSize(1);
+        CsvRowError err = result.getErrors().get(0);
+        assertThat(err.rowNumber()).isEqualTo(3L);
+        assertThat(err.field()).isEqualTo("SCORE");
+        assertThat(err.rule()).isEqualTo("V5");
+        assertThat(err.message()).isEqualTo("Score 25 must be between 0 and max_score 20");
+    }
+
+    @Test
+    void getUploadReport_withFailedUpload_returnsFailedStatus() {
+        UUID uploadId = UUID.randomUUID();
+        CsvUpload upload = upload(instructor, 5, 0, 5, reportMap(0, 0, 0, 5));
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.of(upload));
+
+        LabResultUploadResponse result = service.getUploadReport(uploadId);
+
+        assertThat(result.getStatus()).isEqualTo(UploadStatus.FAILED);
+        assertThat(result.getInsertedCount()).isZero();
+        assertThat(result.getRejectedCount()).isEqualTo(5);
+    }
+
+    @Test
+    void getUploadReport_withUnknownId_throwsResourceNotFound() {
+        UUID uploadId = UUID.randomUUID();
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getUploadReport(uploadId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining(uploadId.toString());
+    }
+
+    @Test
+    void getUploadReport_whenOwnedByOtherInstructor_throwsResourceNotFound() {
+        UUID uploadId = UUID.randomUUID();
+        User other = User.builder().id(UUID.randomUUID()).email("other@test.com")
+            .passwordHash("h").role(UserRole.INSTRUCTOR).build();
+        CsvUpload upload = upload(other, 5, 5, 0, reportMap(5, 0, 0, 0));
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.of(upload));
+
+        assertThatThrownBy(() -> service.getUploadReport(uploadId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining(uploadId.toString());
+    }
+
+    @Test
+    void getUploadReport_withNullErrorReport_returnsEmptyErrors() {
+        UUID uploadId = UUID.randomUUID();
+        CsvUpload upload = upload(instructor, 0, 0, 0, null);
+        when(csvUploadRepository.findById(uploadId)).thenReturn(Optional.of(upload));
+
+        LabResultUploadResponse result = service.getUploadReport(uploadId);
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(result.getStatus()).isEqualTo(UploadStatus.COMPLETED);
+    }
+
+    // ── downloadTemplate ─────────────────────────────────────────────────────
+
+    @Test
+    void downloadTemplate_forInstructor_includesHeaderExampleRowAndLegend() throws Exception {
+        UserModuleAssignment assignment = UserModuleAssignment.builder()
+                .id(UUID.randomUUID())
+                .user(instructor)
+                .module(module)
+                .build();
+
+        when(userModuleAssignmentRepository.findAllByUserId(instructor.getId()))
+                .thenReturn(List.of(assignment));
+        when(labRepository.findAllByModuleIdIn(List.of(module.getId())))
+                .thenReturn(List.of(lab));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadTemplate(response);
+        String csv = response.getContentAsString();
+
+        assertThat(csv).contains("LEARNER_EMAIL");
+        assertThat(csv).contains("learner@example.com");
+        assertThat(csv).contains("REFERENCE");
+        assertThat(csv).contains("Module 1");
+        assertThat(csv).contains("Lab 1");
+        assertThat(csv).contains("20.00");
+    }
+
+    @Test
+    void downloadTemplate_forInstructor_withNoAssignments_omitsLegend() throws Exception {
+        when(userModuleAssignmentRepository.findAllByUserId(instructor.getId()))
+                .thenReturn(List.of());
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadTemplate(response);
+        String csv = response.getContentAsString();
+
+        assertThat(csv).contains("LEARNER_EMAIL");
+        assertThat(csv).contains("learner@example.com");
+        assertThat(csv).doesNotContain("REFERENCE");
+        verify(labRepository, never()).findAllByModuleIdIn(any());
+    }
+
+    @Test
+    void downloadTemplate_forAdmin_delegatesToGenericTemplate() throws Exception {
+        setActor(admin);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadTemplate(response);
+
+        verify(csvWriterService).writeTemplate(any(PrintWriter.class), eq(LabResultCsvRow.class));
+        verify(userModuleAssignmentRepository, never()).findAllByUserId(any());
+    }
+
+    private CsvUpload upload(User owner, int totalRows, int acceptedRows, int rejectedRows,
+            Map<String, Object> report) {
+        return CsvUpload.builder()
+            .id(UUID.randomUUID())
+            .uploadedByUser(owner)
+            .filename("test.csv")
+            .fileSha256(UUID.randomUUID().toString())
+            .uploadedAt(java.time.OffsetDateTime.now())
+            .totalRows(totalRows)
+            .acceptedRows(acceptedRows)
+            .rejectedRows(rejectedRows)
+            .errorReportJson(report)
+            .build();
+    }
+
+    private Map<String, Object> reportMap(int inserted, int updated, int skipped, int rejected) {
+        return reportMap(inserted, updated, skipped, rejected, List.of());
+    }
+
+    private Map<String, Object> reportMap(int inserted, int updated, int skipped, int rejected,
+            List<Map<String, Object>> errors) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("inserted", inserted);
+        summary.put("updated", updated);
+        summary.put("skipped", skipped);
+        summary.put("rejected", rejected);
+        summary.put("totalRows", inserted + updated + skipped + rejected);
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("summary", summary);
+        report.put("errors", errors);
+        report.put("rejectedRows", List.of());
+        return report;
     }
 
     private void setActor(User user) {

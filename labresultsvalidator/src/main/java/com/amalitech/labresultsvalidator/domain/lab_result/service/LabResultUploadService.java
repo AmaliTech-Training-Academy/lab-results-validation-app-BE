@@ -25,10 +25,14 @@ import com.amalitech.labresultsvalidator.domain.lab_result.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.lab_result.repository.LabResultRepository;
 import com.amalitech.labresultsvalidator.domain.learner.entity.Learner;
 import com.amalitech.labresultsvalidator.domain.learner.repository.LearnerRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.module.entity.Module;
+import com.amalitech.labresultsvalidator.domain.specialization.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.module.repository.ModuleRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
+import com.amalitech.labresultsvalidator.domain.user_module_assignment.entity.UserModuleAssignment;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.repository.UserModuleAssignmentRepository;
+import com.opencsv.CSVWriter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -204,11 +208,22 @@ public class LabResultUploadService {
 
         upload.setAcceptedRows(inserted + updated);
         upload.setRejectedRows(rejectedLines.size());
-        upload.setStatus((inserted + updated == 0 && parsed.totalRows() > 0)
-            ? UploadStatus.FAILED : UploadStatus.COMPLETED);
+        int accepted = inserted + updated;
+        UploadStatus dbStatus = (accepted == 0 && parsed.totalRows() > 0)
+            ? UploadStatus.FAILED : UploadStatus.COMPLETED;
+        upload.setStatus(dbStatus);
         upload.setErrorReportJson(buildReport(parsed.totalRows(), inserted, updated,
             skipped, rejectedLines.size(), errors, rejectedRows));
         csvUploadRepository.save(upload);
+
+        UploadStatus instructorStatus;
+        if (accepted == 0 && parsed.totalRows() > 0) {
+            instructorStatus = UploadStatus.FAILED;
+        } else if (!rejectedLines.isEmpty()) {
+            instructorStatus = UploadStatus.PARTIAL;
+        } else {
+            instructorStatus = UploadStatus.COMPLETED;
+        }
 
         return LabResultUploadResponse.builder()
             .uploadId(upload.getId())
@@ -217,7 +232,7 @@ public class LabResultUploadService {
             .updatedCount(updated)
             .skippedCount(skipped)
             .rejectedCount(rejectedLines.size())
-            .status(upload.getStatus())
+            .status(instructorStatus)
             .errors(errors)
             .build();
     }
@@ -232,7 +247,69 @@ public class LabResultUploadService {
         response.setContentType("text/csv");
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
             "attachment; filename=\"lab_results_upload_template.csv\"");
-        csvWriterService.writeTemplate(response.getWriter(), LabResultCsvRow.class);
+
+        User currentUser = (User) SecurityContextHolder.getContext()
+                .getAuthentication().getPrincipal();
+
+        if (currentUser.getRole() != UserRole.INSTRUCTOR) {
+            csvWriterService.writeTemplate(response.getWriter(), LabResultCsvRow.class);
+            return;
+        }
+
+        List<UserModuleAssignment> assignments =
+                userModuleAssignmentRepository.findAllByUserId(currentUser.getId());
+
+        List<Lab> labs = assignments.isEmpty() ? List.of() :
+                labRepository.findAllByModuleIdIn(
+                        assignments.stream().map(a -> a.getModule().getId()).toList());
+
+        CSVWriter csv = new CSVWriter(response.getWriter());
+
+        csv.writeNext(new String[]{
+            "LEARNER_EMAIL", "COHORT_NAME", "SPECIALIZATION_NAME", "MODULE_NAME",
+            "LAB_TITLE", "SCORE", "MAX_SCORE", "ATTEMPT_NUMBER", "SUBMITTED_ON", "GRADED_BY"
+        });
+
+        if (!labs.isEmpty()) {
+            Lab first = labs.get(0);
+            Module mod = first.getModule();
+            Specialization spec = mod.getSpecialization();
+            Cohort cohort = spec.getCohort();
+            csv.writeNext(new String[]{
+                "learner@example.com",
+                cohort.getName(),
+                spec.getName(),
+                mod.getName(),
+                first.getTitle(),
+                first.getMaxScore().toPlainString(),
+                first.getMaxScore().toPlainString(),
+                "1",
+                LocalDate.now().toString(),
+                currentUser.getEmail()
+            });
+        } else {
+            csv.writeNext(new String[]{
+                "learner@example.com", "Cohort Name", "Specialization Name", "Module Name",
+                "Lab Title", "85.5", "100.00", "1", LocalDate.now().toString(), "Instructor Name"
+            });
+        }
+
+        if (!labs.isEmpty()) {
+            csv.writeNext(new String[]{""});
+            csv.writeNext(new String[]{
+                "# === REFERENCE: Use EXACT values below (do not upload these rows) ==="
+            });
+            csv.writeNext(new String[]{"# MODULE_NAME", "LAB_TITLE", "MAX_SCORE"});
+            for (Lab lab : labs) {
+                csv.writeNext(new String[]{
+                    "# " + lab.getModule().getName(),
+                    lab.getTitle(),
+                    lab.getMaxScore().toPlainString()
+                });
+            }
+        }
+
+        csv.flush();
     }
 
     /**
@@ -260,6 +337,77 @@ public class LabResultUploadService {
         } else {
             csvWriterService.write(response.getWriter(), rows, LabResultCorrectionRow.class);
         }
+    }
+
+    /**
+     * Retrieve the upload report for a previous CSV upload made by the authenticated instructor.
+     *
+     * @param uploadId the upload to retrieve
+     * @return the upload report with instructor-facing status (COMPLETED / PARTIAL / FAILED)
+     * @throws ResourceNotFoundException if no upload exists with that id or it belongs to another user
+     */
+    public LabResultUploadResponse getUploadReport(UUID uploadId) {
+        User actor = currentUser();
+        CsvUpload upload = csvUploadRepository.findById(uploadId)
+            .orElseThrow(() -> new ResourceNotFoundException("Upload not found with ID: " + uploadId));
+
+        if (!upload.getUploadedByUser().getId().equals(actor.getId())) {
+            throw new ResourceNotFoundException("Upload not found with ID: " + uploadId);
+        }
+
+        Map<String, Object> report = upload.getErrorReportJson();
+
+        int inserted = 0, updated = 0, skipped = 0;
+        if (report != null && report.get("summary") instanceof Map<?, ?> summary) {
+            inserted = toInt(summary.get("inserted"));
+            updated  = toInt(summary.get("updated"));
+            skipped  = toInt(summary.get("skipped"));
+        }
+
+        List<CsvRowError> errors = List.of();
+        if (report != null && report.get("errors") instanceof List<?> rawErrors) {
+            errors = rawErrors.stream()
+                .filter(e -> e instanceof Map<?, ?>)
+                .map(e -> {
+                    Map<?, ?> m = (Map<?, ?>) e;
+                    return new CsvRowError(
+                        toLong(m.get("rowNumber")),
+                        (String) m.get("field"),
+                        (String) m.get("rule"),
+                        (String) m.get("message"));
+                })
+                .toList();
+        }
+
+        int accepted = upload.getAcceptedRows();
+        int rejected = upload.getRejectedRows();
+        UploadStatus instructorStatus;
+        if (accepted == 0 && upload.getTotalRows() > 0) {
+            instructorStatus = UploadStatus.FAILED;
+        } else if (rejected > 0) {
+            instructorStatus = UploadStatus.PARTIAL;
+        } else {
+            instructorStatus = UploadStatus.COMPLETED;
+        }
+
+        return LabResultUploadResponse.builder()
+            .uploadId(upload.getId())
+            .totalRows(upload.getTotalRows())
+            .insertedCount(inserted)
+            .updatedCount(updated)
+            .skippedCount(skipped)
+            .rejectedCount(rejected)
+            .status(instructorStatus)
+            .errors(errors)
+            .build();
+    }
+
+    private static int toInt(Object value) {
+        return value instanceof Number n ? n.intValue() : 0;
+    }
+
+    private static long toLong(Object value) {
+        return value instanceof Number n ? n.longValue() : 0L;
     }
 
     // ── Stage 2: field-level validation (V3–V8) ───────────────────────────────
