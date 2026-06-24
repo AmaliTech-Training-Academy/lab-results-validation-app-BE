@@ -8,6 +8,7 @@ import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.csv.ParsedRow;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.common.utils.Sha256Util;
@@ -90,6 +91,10 @@ public class LabResultUploadService {
     // Matches PostgreSQL detail: "Key (column)=(value) already exists."
     private static final Pattern DUPLICATE_KEY_DETAIL =
         Pattern.compile("Key \\(([^)]+)\\)=\\(([^)]+)\\)");
+    private static final String[] RESULT_HEADERS = {
+        "LEARNER_EMAIL", "COHORT_NAME", "SPECIALIZATION_NAME", "MODULE_NAME",
+        "LAB_TITLE", "SCORE", "MAX_SCORE", "ATTEMPT_NUMBER", "SUBMITTED_ON", "GRADED_BY"
+    };
 
     private final CsvParserService csvParserService;
     private final CsvWriterService csvWriterService;
@@ -216,14 +221,8 @@ public class LabResultUploadService {
             skipped, rejectedLines.size(), errors, rejectedRows));
         csvUploadRepository.save(upload);
 
-        UploadStatus instructorStatus;
-        if (accepted == 0 && parsed.totalRows() > 0) {
-            instructorStatus = UploadStatus.FAILED;
-        } else if (!rejectedLines.isEmpty()) {
-            instructorStatus = UploadStatus.PARTIAL;
-        } else {
-            instructorStatus = UploadStatus.COMPLETED;
-        }
+        UploadStatus instructorStatus =
+            resolveInstructorStatus(accepted, parsed.totalRows(), rejectedLines.size());
 
         return LabResultUploadResponse.builder()
             .uploadId(upload.getId())
@@ -265,10 +264,7 @@ public class LabResultUploadService {
 
         CSVWriter csv = new CSVWriter(response.getWriter());
 
-        csv.writeNext(new String[]{
-            "LEARNER_EMAIL", "COHORT_NAME", "SPECIALIZATION_NAME", "MODULE_NAME",
-            "LAB_TITLE", "SCORE", "MAX_SCORE", "ATTEMPT_NUMBER", "SUBMITTED_ON", "GRADED_BY"
-        });
+        csv.writeNext(RESULT_HEADERS);
 
         if (!labs.isEmpty()) {
             Lab first = labs.get(0);
@@ -294,17 +290,50 @@ public class LabResultUploadService {
             });
         }
 
-        if (!labs.isEmpty()) {
-            csv.writeNext(new String[]{""});
+        csv.flush();
+    }
+
+    public void downloadLabTemplate(UUID labId, HttpServletResponse response) throws IOException {
+        Lab lab = labRepository.findByIdWithModule(labId)
+            .orElseThrow(() -> new ResourceNotFoundException("Lab not found with ID: " + labId));
+
+        Module module = lab.getModule();
+        Specialization spec = module.getSpecialization();
+        Cohort cohort = spec.getCohort();
+
+        User actor = currentUser();
+        if (actor.getRole() == UserRole.INSTRUCTOR
+                && !userModuleAssignmentRepository.existsByUserIdAndModuleId(
+                        actor.getId(), module.getId())) {
+            throw new UnprocessableEntityException(
+                "You are not assigned to module '" + module.getName() + "'");
+        }
+
+        List<Learner> learners = learnerRepository
+            .findAllByCohortIdAndSpecializationId(cohort.getId(), spec.getId());
+
+        String safeName = lab.getTitle().replaceAll("[^a-zA-Z0-9_\\-]", "_");
+        response.setContentType("text/csv");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+            "attachment; filename=\"lab_results_" + safeName + "_template.csv\"");
+
+        CSVWriter csv = new CSVWriter(response.getWriter());
+        csv.writeNext(RESULT_HEADERS);
+
+        if (learners.isEmpty()) {
             csv.writeNext(new String[]{
-                "# === REFERENCE: Use EXACT values below (do not upload these rows) ==="
+                "learner@example.com",
+                cohort.getName(), spec.getName(), module.getName(), lab.getTitle(),
+                lab.getMaxScore().toPlainString(), lab.getMaxScore().toPlainString(),
+                "", "", actor.getEmail()
             });
-            csv.writeNext(new String[]{"# MODULE_NAME", "LAB_TITLE", "MAX_SCORE"});
-            for (Lab lab : labs) {
+        } else {
+            for (Learner learner : learners) {
                 csv.writeNext(new String[]{
-                    "# " + lab.getModule().getName(),
-                    lab.getTitle(),
-                    lab.getMaxScore().toPlainString()
+                    learner.getEmail(),
+                    cohort.getName(), spec.getName(), module.getName(), lab.getTitle(),
+                    "", lab.getMaxScore().toPlainString(),
+                    "", "", actor.getEmail()
                 });
             }
         }
@@ -381,14 +410,8 @@ public class LabResultUploadService {
 
         int accepted = upload.getAcceptedRows();
         int rejected = upload.getRejectedRows();
-        UploadStatus instructorStatus;
-        if (accepted == 0 && upload.getTotalRows() > 0) {
-            instructorStatus = UploadStatus.FAILED;
-        } else if (rejected > 0) {
-            instructorStatus = UploadStatus.PARTIAL;
-        } else {
-            instructorStatus = UploadStatus.COMPLETED;
-        }
+        UploadStatus instructorStatus =
+            resolveInstructorStatus(accepted, upload.getTotalRows(), rejected);
 
         return LabResultUploadResponse.builder()
             .uploadId(upload.getId())
@@ -841,6 +864,16 @@ public class LabResultUploadService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static UploadStatus resolveInstructorStatus(int accepted, int totalRows, int rejected) {
+        if (accepted == 0 && totalRows > 0) {
+            return UploadStatus.FAILED;
+        }
+        if (rejected > 0) {
+            return UploadStatus.PARTIAL;
+        }
+        return UploadStatus.COMPLETED;
     }
 
     private enum ResolutionKind { INSERT, UPDATE, SKIP, REJECT }

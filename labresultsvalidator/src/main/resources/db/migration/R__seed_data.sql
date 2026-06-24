@@ -40,18 +40,18 @@ ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO cohorts (
     id, name, start_date, end_date,
-    is_active, is_locked, created_at, updated_at,
+    is_active, created_at, updated_at,
     created_by, updated_by
 ) VALUES (
              'c731a6c3-b407-45c5-ae9d-6f5f155eea11',
              'Cohort 1 — Spring 2026',
              '2026-01-15',
              '2026-06-30',
-             true, true, NOW(), NOW(),
+             true, NOW(), NOW(),
              '8fe168a4-a3ae-4b08-b631-4d1c9beb77c8',
              '8fe168a4-a3ae-4b08-b631-4d1c9beb77c8'
          )
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ============================================================
 -- 3. SPECIALIZATIONS

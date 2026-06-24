@@ -5,6 +5,7 @@ import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.enums.UploadStatus;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
@@ -175,6 +176,37 @@ class LabResultControllerTest {
 
         mockMvc.perform(get(BASE_URL + "/uploads/" + uploadId))
             .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void downloadLabTemplate_returns200() throws Exception {
+        UUID labId = UUID.randomUUID();
+        doNothing().when(labResultUploadService).downloadLabTemplate(eq(labId), any());
+
+        mockMvc.perform(get(BASE_URL + "/template/" + labId))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void downloadLabTemplate_withUnknownLab_returns404() throws Exception {
+        UUID labId = UUID.randomUUID();
+        doThrow(new ResourceNotFoundException("Lab not found with ID: " + labId))
+            .when(labResultUploadService).downloadLabTemplate(eq(labId), any());
+
+        mockMvc.perform(get(BASE_URL + "/template/" + labId))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void downloadLabTemplate_whenNotAssigned_returns422() throws Exception {
+        UUID labId = UUID.randomUUID();
+        doThrow(new UnprocessableEntityException("You are not assigned to module 'Module 1'"))
+            .when(labResultUploadService).downloadLabTemplate(eq(labId), any());
+
+        mockMvc.perform(get(BASE_URL + "/template/" + labId))
+            .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.success").value(false));
     }
 

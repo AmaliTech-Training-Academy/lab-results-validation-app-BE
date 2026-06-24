@@ -5,6 +5,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -28,4 +30,8 @@ public interface LabRepository extends JpaRepository<Lab, UUID> {
 
     @EntityGraph(attributePaths = {"module", "module.specialization", "module.specialization.cohort"})
     List<Lab> findAllByModuleIdIn(Collection<UUID> moduleIds);
+
+    @EntityGraph(attributePaths = {"module", "module.specialization", "module.specialization.cohort"})
+    @Query("SELECT l FROM Lab l WHERE l.id = :labId")
+    Optional<Lab> findByIdWithModule(@Param("labId") UUID labId);
 }
