@@ -298,6 +298,36 @@ class LabResultUploadServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void bulkUpload_withBindingFailedRow_persistsRawCellValuesNotJustError() {
+        // A row that fails OpenCSV binding has no bound bean; its original cell values must still be
+        // reproduced in the corrections report from the parser's raw-cell snapshot.
+        CsvRowError binding = new CsvRowError(2L, "SCORE", "could not be parsed");
+        Map<String, String> rawCells = new LinkedHashMap<>();
+        rawCells.put("LEARNER_EMAIL", "jane@test.com");
+        rawCells.put("COHORT_NAME", "Cohort 1");
+        rawCells.put("SCORE", "not-a-number");
+        rawCells.put("GRADED_BY", "Dr. Smith");
+        CsvParseResult<LabResultCsvRow> parsed = new CsvParseResult<>(
+            List.of(), List.of(binding), Map.of(2L, rawCells));
+        doReturn(parsed).when(csvParserService).parse(any(), any());
+
+        service.bulkUpload(file());
+
+        ArgumentCaptor<CsvUpload> captor = ArgumentCaptor.forClass(CsvUpload.class);
+        verify(csvUploadRepository, times(2)).save(captor.capture());
+        List<Map<String, Object>> rejectedRows =
+            (List<Map<String, Object>>) captor.getValue().getErrorReportJson().get("rejectedRows");
+        assertThat(rejectedRows).hasSize(1);
+        Map<String, Object> rejected = rejectedRows.get(0);
+        assertThat(rejected.get("LEARNER_EMAIL")).isEqualTo("jane@test.com");
+        assertThat(rejected.get("COHORT_NAME")).isEqualTo("Cohort 1");
+        assertThat(rejected.get("SCORE")).isEqualTo("not-a-number");
+        assertThat(rejected.get("GRADED_BY")).isEqualTo("Dr. Smith");
+        assertThat((String) rejected.get("ERROR_MESSAGE")).contains("SCORE");
+    }
+
+    @Test
     void downloadCorrections_withUnknownId_throwsResourceNotFound() {
         UUID unknownId = UUID.randomUUID();
         when(csvUploadRepository.findById(unknownId)).thenReturn(Optional.empty());
