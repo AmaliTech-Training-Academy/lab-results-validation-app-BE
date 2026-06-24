@@ -85,6 +85,7 @@ class LearnerServiceTest {
                 .id(UUID.randomUUID())
                 .name("Cohort 1 — Spring 2026")
                 .active(true)
+                .locked(false)
                 .build();
 
         specialization = Specialization.builder()
