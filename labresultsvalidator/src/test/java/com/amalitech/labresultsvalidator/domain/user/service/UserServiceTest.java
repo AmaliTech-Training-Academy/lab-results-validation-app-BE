@@ -25,6 +25,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -195,10 +196,10 @@ class UserServiceTest {
     @Test
     void listInstructors_whenNoneExist_returnsEmptyPage() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable))
+        when(userRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(Page.empty(pageable));
 
-        PagedResponse<UserResponseDTO> result = userService.listInstructors(pageable);
+        PagedResponse<UserResponseDTO> result = userService.listInstructors(null, null, null, pageable);
 
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getTotalElements()).isZero();
@@ -215,10 +216,10 @@ class UserServiceTest {
 
         Pageable pageable = PageRequest.of(0, 20);
         Page<User> page = new PageImpl<>(List.of(i1, i2), pageable, 2);
-        when(userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable)).thenReturn(page);
+        when(userRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(assignmentRepository.findAllByUserIdIn(any())).thenReturn(Collections.emptyList());
 
-        PagedResponse<UserResponseDTO> result = userService.listInstructors(pageable);
+        PagedResponse<UserResponseDTO> result = userService.listInstructors(null, null, null, pageable);
 
         assertThat(result.getContent()).hasSize(2);
         assertThat(result.getTotalElements()).isEqualTo(2);
@@ -233,7 +234,7 @@ class UserServiceTest {
 
         Pageable pageable = PageRequest.of(0, 20);
         Page<User> page = new PageImpl<>(List.of(instructor), pageable, 1);
-        when(userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable)).thenReturn(page);
+        when(userRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
 
         com.amalitech.labresultsvalidator.domain.module.entity.Module module =
                 com.amalitech.labresultsvalidator.domain.module.entity.Module.builder()
@@ -252,7 +253,7 @@ class UserServiceTest {
 
         when(assignmentRepository.findAllByUserIdIn(any())).thenReturn(List.of(assignment));
 
-        PagedResponse<UserResponseDTO> result = userService.listInstructors(pageable);
+        PagedResponse<UserResponseDTO> result = userService.listInstructors(null, null, null, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getAssignedModules()).hasSize(1);

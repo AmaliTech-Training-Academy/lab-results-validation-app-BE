@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -132,10 +133,13 @@ public class UserController {
     @GetMapping("/instructors")
     @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<PagedResponse<UserResponseDTO>>> listInstructors(
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) UUID moduleId,
             @Parameter(hidden = true)
             @PageableDefault(size = 10, sort = "createdAt",
                 direction = Sort.Direction.DESC) Pageable pageable) {
-        PagedResponse<UserResponseDTO> instructors = userService.listInstructors(pageable);
+        PagedResponse<UserResponseDTO> instructors = userService.listInstructors(email, active, moduleId, pageable);
         return ResponseEntity.ok(
                 ApiResponse.success("Instructors retrieved successfully", instructors)
         );

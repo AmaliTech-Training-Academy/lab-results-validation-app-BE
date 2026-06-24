@@ -12,6 +12,7 @@ import com.amalitech.labresultsvalidator.domain.user.dto.UserResponseDTO;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.event.InstructorProvisionedEvent;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
+import com.amalitech.labresultsvalidator.domain.user.repository.UserSpecification;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.dto.AssignedModuleResponse;
 import com.amalitech.labresultsvalidator.domain.user_module_assignment.repository.UserModuleAssignmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -108,8 +109,9 @@ public class UserService {
                 .build();
     }
 
-    public PagedResponse<UserResponseDTO> listInstructors(Pageable pageable) {
-        Page<User> userPage = userRepository.findAllByRole(UserRole.INSTRUCTOR, pageable);
+    public PagedResponse<UserResponseDTO> listInstructors(
+            String email, Boolean active, UUID moduleId, Pageable pageable) {
+        Page<User> userPage = userRepository.findAll(UserSpecification.withFilters(email, active, moduleId), pageable);
 
         List<UUID> ids = userPage.getContent().stream().map(User::getId).toList();
 
