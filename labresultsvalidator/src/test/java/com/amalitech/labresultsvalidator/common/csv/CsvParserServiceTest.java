@@ -117,6 +117,25 @@ class CsvParserServiceTest {
     }
 
     @Test
+    void parse_capturesRawCellsByLineForEveryDataRow() {
+        String csv = "FULL_NAME,EMAIL,COHORT_NAME,SPECIALIZATION_NAME\n"
+                + "Alice,alice@test.com,C1,S1\n"
+                + "Bob,bob@test.com,C2,S2";
+        MockMultipartFile file = new MockMultipartFile("file", "test.csv", CONTENT_TYPE_CSV,
+                csv.getBytes(StandardCharsets.UTF_8));
+
+        CsvParseResult<LearnerCsvRow> result = csvParserService.parse(file, LearnerCsvRow.class);
+
+        assertThat(result.rawCellsByLine()).containsOnlyKeys(2L, 3L);
+        assertThat(result.rawCellsByLine().get(2L))
+                .containsEntry("FULL_NAME", "Alice")
+                .containsEntry("EMAIL", "alice@test.com")
+                .containsEntry("COHORT_NAME", "C1")
+                .containsEntry("SPECIALIZATION_NAME", "S1");
+        assertThat(result.rawCellsByLine().get(3L)).containsEntry("FULL_NAME", "Bob");
+    }
+
+    @Test
     void parse_withNullContentType_isAccepted() {
         String csv = "FULL_NAME,EMAIL,COHORT_NAME,SPECIALIZATION_NAME\nAlice,a@test.com,C1,S1";
         MockMultipartFile file = new MockMultipartFile("file", "test.csv", null,
