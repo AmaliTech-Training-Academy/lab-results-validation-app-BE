@@ -52,6 +52,8 @@ public class SecurityConfig {
                 ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/admin/instructors/*/modules")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN", "INSTRUCTOR")
+                .requestMatchers(HttpMethod.GET, "/api/v1/admin/labs")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "INSTRUCTOR")
                 .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                 .anyRequest().authenticated()
             )
