@@ -217,8 +217,14 @@ public class LabResultUploadService {
         upload.setAcceptedRows(inserted + updated);
         upload.setRejectedRows(rejectedLines.size());
         int accepted = inserted + updated;
-        UploadStatus dbStatus = (accepted == 0 && parsed.totalRows() > 0)
-            ? UploadStatus.FAILED : UploadStatus.COMPLETED;
+        UploadStatus dbStatus;
+        if (accepted == 0 && parsed.totalRows() > 0) {
+            dbStatus = UploadStatus.FAILED;
+        } else if (!rejectedLines.isEmpty()) {
+            dbStatus = UploadStatus.PARTIAL;
+        } else {
+            dbStatus = UploadStatus.COMPLETED;
+        }
         upload.setStatus(dbStatus);
         upload.setErrorReportJson(buildReport(parsed.totalRows(), inserted, updated,
             skipped, rejectedLines.size(), errors, rejectedRows));
