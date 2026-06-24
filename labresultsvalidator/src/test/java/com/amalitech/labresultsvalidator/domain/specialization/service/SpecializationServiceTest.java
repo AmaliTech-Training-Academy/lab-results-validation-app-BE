@@ -65,6 +65,7 @@ class SpecializationServiceTest {
                 .startDate(LocalDate.of(2025, 1, 1))
                 .endDate(LocalDate.of(2025, 6, 30))
                 .active(true)
+                .locked(false)
                 .build();
 
         request = new CreateSpecializationRequest();
