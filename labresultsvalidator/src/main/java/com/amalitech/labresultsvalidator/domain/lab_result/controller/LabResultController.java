@@ -91,6 +91,26 @@ public class LabResultController {
         labResultUploadService.downloadTemplate(response);
     }
 
+    @Operation(summary = "Download lab-specific CSV template",
+        description = "Returns a CSV template pre-filled with one row per learner enrolled in the "
+            + "lab's cohort and specialization. Instructors must be assigned to the lab's module.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "CSV template file"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "Lab not found",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "422", description = "Instructor not assigned to this module",
+            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    @PreAuthorize("hasRole('INSTRUCTOR')")
+    @GetMapping("/template/{labId}")
+    public void downloadLabTemplate(
+            @PathVariable UUID labId, HttpServletResponse response) throws IOException {
+        labResultUploadService.downloadLabTemplate(labId, response);
+    }
+
     @Operation(summary = "Get a past upload report",
         description = "Returns the upload report for a previous CSV upload made by the authenticated instructor.")
     @ApiResponses({

@@ -8,6 +8,7 @@ import com.amalitech.labresultsvalidator.common.csv.MalformedCsvException;
 import com.amalitech.labresultsvalidator.common.csv.ParsedRow;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.lab_result.dto.LabResultResponse;
 import com.amalitech.labresultsvalidator.domain.csvUploads.entity.CsvUpload;
@@ -838,7 +839,7 @@ class LabResultUploadServiceTest {
     // ── downloadTemplate ─────────────────────────────────────────────────────
 
     @Test
-    void downloadTemplate_forInstructor_includesHeaderExampleRowAndLegend() throws Exception {
+    void downloadTemplate_forInstructor_includesHeaderAndExampleRow() throws Exception {
         UserModuleAssignment assignment = UserModuleAssignment.builder()
                 .id(UUID.randomUUID())
                 .user(instructor)
@@ -856,7 +857,6 @@ class LabResultUploadServiceTest {
 
         assertThat(csv).contains("LEARNER_EMAIL");
         assertThat(csv).contains("learner@example.com");
-        assertThat(csv).contains("REFERENCE");
         assertThat(csv).contains("Module 1");
         assertThat(csv).contains("Lab 1");
         assertThat(csv).contains("20.00");
@@ -886,6 +886,79 @@ class LabResultUploadServiceTest {
 
         verify(csvWriterService).writeTemplate(any(PrintWriter.class), eq(LabResultCsvRow.class));
         verify(userModuleAssignmentRepository, never()).findAllByUserId(any());
+    }
+
+    // ── downloadLabTemplate ──────────────────────────────────────────────────
+
+    @Test
+    void downloadLabTemplate_withLearners_writesOneRowPerLearner() throws Exception {
+        when(labRepository.findByIdWithModule(lab.getId())).thenReturn(Optional.of(lab));
+        when(userModuleAssignmentRepository.existsByUserIdAndModuleId(instructor.getId(), module.getId()))
+            .thenReturn(true);
+        when(learnerRepository.findAllByCohortIdAndSpecializationId(cohort.getId(), specialization.getId()))
+            .thenReturn(List.of(learner));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadLabTemplate(lab.getId(), response);
+        String csv = response.getContentAsString();
+
+        assertThat(csv).contains("LEARNER_EMAIL");
+        assertThat(csv).contains("jane@test.com");
+        assertThat(csv).contains("Lab 1");
+        assertThat(csv).contains("Module 1");
+        assertThat(csv).contains("Cohort 1");
+        assertThat(csv).contains("Data Analytics");
+    }
+
+    @Test
+    void downloadLabTemplate_withNoLearners_writesExampleRow() throws Exception {
+        when(labRepository.findByIdWithModule(lab.getId())).thenReturn(Optional.of(lab));
+        when(userModuleAssignmentRepository.existsByUserIdAndModuleId(instructor.getId(), module.getId()))
+            .thenReturn(true);
+        when(learnerRepository.findAllByCohortIdAndSpecializationId(cohort.getId(), specialization.getId()))
+            .thenReturn(List.of());
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadLabTemplate(lab.getId(), response);
+        String csv = response.getContentAsString();
+
+        assertThat(csv).contains("learner@example.com");
+        assertThat(csv).contains("Lab 1");
+    }
+
+    @Test
+    void downloadLabTemplate_withUnknownLab_throwsResourceNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(labRepository.findByIdWithModule(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.downloadLabTemplate(unknownId, mock(HttpServletResponse.class)))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining(unknownId.toString());
+    }
+
+    @Test
+    void downloadLabTemplate_whenInstructorNotAssigned_throwsUnprocessableEntity() {
+        when(labRepository.findByIdWithModule(lab.getId())).thenReturn(Optional.of(lab));
+        when(userModuleAssignmentRepository.existsByUserIdAndModuleId(instructor.getId(), module.getId()))
+            .thenReturn(false);
+
+        assertThatThrownBy(() -> service.downloadLabTemplate(lab.getId(), mock(HttpServletResponse.class)))
+            .isInstanceOf(UnprocessableEntityException.class)
+            .hasMessageContaining("Module 1");
+    }
+
+    @Test
+    void downloadLabTemplate_whenAdmin_bypassesModuleAssignmentCheck() throws Exception {
+        setActor(admin);
+        when(labRepository.findByIdWithModule(lab.getId())).thenReturn(Optional.of(lab));
+        when(learnerRepository.findAllByCohortIdAndSpecializationId(cohort.getId(), specialization.getId()))
+            .thenReturn(List.of(learner));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.downloadLabTemplate(lab.getId(), response);
+
+        verify(userModuleAssignmentRepository, never()).existsByUserIdAndModuleId(admin.getId(), module.getId());
+        assertThat(response.getContentAsString()).contains("jane@test.com");
     }
 
     private CsvUpload upload(User owner, int totalRows, int acceptedRows, int rejectedRows,
