@@ -61,7 +61,7 @@ public class Cohort extends BaseEntity {
     /** Whether this cohort is locked for structural changes. */
     @Builder.Default
     @Column(name = "is_locked", nullable = false)
-    private boolean locked = false;
+    private boolean locked = true;
 
     /** Specializations offered within this cohort. */
     @OneToMany(mappedBy = "cohort",

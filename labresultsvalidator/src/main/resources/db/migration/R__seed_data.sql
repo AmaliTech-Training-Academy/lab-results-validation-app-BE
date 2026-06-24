@@ -51,7 +51,7 @@ INSERT INTO cohorts (
              '8fe168a4-a3ae-4b08-b631-4d1c9beb77c8',
              '8fe168a4-a3ae-4b08-b631-4d1c9beb77c8'
          )
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ============================================================
 -- 3. SPECIALIZATIONS

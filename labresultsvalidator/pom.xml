@@ -38,6 +38,12 @@
              CVE-2026-47691 (DNS cache poisoning / bailiwick checks).
              Fixed in 4.2.15.Final. -->
         <netty.version>4.2.15.Final</netty.version>
+        <!-- Override the Spring Boot-managed Jackson 3 (tools.jackson) line to patch
+             HIGH CVEs CVE-2026-54512 (PolymorphicTypeValidator bypass via generic type
+             parameters) and CVE-2026-54513 (array subtype allowlist bypass in
+             BasicPolymorphicTypeValidator). Fixed in 3.1.4. The Jackson 2 line is
+             pinned separately via the jackson-bom import below. -->
+        <jackson-bom.version>3.1.4</jackson-bom.version>
     </properties>
     <dependencies>
         <dependency>
@@ -143,6 +149,24 @@
             <scope>compile</scope>
         </dependency>
     </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Pin the entire Jackson 2 (com.fasterxml.jackson) family to patch HIGH
+                 CVEs CVE-2026-54512 and CVE-2026-54513 in jackson-databind. The
+                 Spring Boot-managed version (2.21.2, pulled transitively via
+                 jjwt-jackson and the jackson-dataformat/datatype artifacts) is not
+                 exposed through a single overridable property, so import the patched
+                 BOM directly. Fixed in 2.21.4. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>2.21.4</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
         <plugins>
