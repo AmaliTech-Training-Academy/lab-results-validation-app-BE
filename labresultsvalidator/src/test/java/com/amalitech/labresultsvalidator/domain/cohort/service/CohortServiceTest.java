@@ -117,6 +117,18 @@ class CohortServiceTest {
     }
 
     @Test
+    void createCohort_setsLockedTrueByDefault() {
+        when(cohortRepository.existsByName(any())).thenReturn(false);
+        when(cohortRepository.save(any())).thenReturn(buildCohort("Cohort 12"));
+
+        cohortService.createCohort(request);
+
+        ArgumentCaptor<Cohort> captor = ArgumentCaptor.forClass(Cohort.class);
+        verify(cohortRepository).save(captor.capture());
+        assertThat(captor.getValue().isLocked()).isTrue();
+    }
+
+    @Test
     void createCohort_whenNameAlreadyExists_throwsDuplicateResourceException() {
         when(cohortRepository.existsByName("Cohort 12")).thenReturn(true);
 
@@ -308,6 +320,7 @@ class CohortServiceTest {
                 .startDate(LocalDate.of(2025, 1, 1))
                 .endDate(LocalDate.of(2025, 6, 30))
                 .active(true)
+                .locked(false)
                 .build();
         cohort.setCreatedBy(currentUser.getId());
         cohort.setUpdatedBy(currentUser.getId());

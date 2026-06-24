@@ -16,9 +16,12 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -55,6 +58,7 @@ public class CsvParserService {
 
         String[] header;
         int dataRowCount;
+        Map<Long, Map<String, String>> rawCellsByLine;
         try (CSVReader probe = new CSVReader(new StringReader(content))) {
             List<String[]> records = probe.readAll();
             if (records.isEmpty()) {
@@ -62,6 +66,7 @@ public class CsvParserService {
             }
             header = records.get(0);
             dataRowCount = records.size() - 1;
+            rawCellsByLine = captureRawCells(header, records);
         } catch (IOException | CsvException e) {
             throw new MalformedCsvException("CSV file is malformed or unreadable.", e);
         }
@@ -87,7 +92,32 @@ public class CsvParserService {
                 .toList();
 
         List<ParsedRow<T>> validRows = assignLineNumbers(beans, errors, dataRowCount);
-        return new CsvParseResult<>(validRows, errors);
+        return new CsvParseResult<>(validRows, errors, rawCellsByLine);
+    }
+
+    /**
+     * Snapshot the original cell values of every data line so a caller can reconstruct a rejected
+     * row's columns even when the row failed binding and produced no bean. Line numbers are
+     * physical and 1-based (header is line 1, first data row line 2), matching
+     * {@link #assignLineNumbers} and the row numbers carried on {@link CsvRowError}. The inner map
+     * is keyed by the trimmed, upper-cased header column name; missing trailing cells map to
+     * {@code null}.
+     */
+    private Map<Long, Map<String, String>> captureRawCells(String[] header, List<String[]> records) {
+        List<String> columns = Arrays.stream(header)
+                .map(column -> column == null ? "" : column.trim().toUpperCase(Locale.ROOT))
+                .toList();
+
+        Map<Long, Map<String, String>> rawCellsByLine = new HashMap<>();
+        for (int i = 1; i < records.size(); i++) {
+            String[] cells = records.get(i);
+            Map<String, String> rowCells = new LinkedHashMap<>();
+            for (int c = 0; c < columns.size(); c++) {
+                rowCells.put(columns.get(c), c < cells.length ? cells[c] : null);
+            }
+            rawCellsByLine.put((long) (i + 1), rowCells);
+        }
+        return rawCellsByLine;
     }
 
     private void validateFile(MultipartFile file) {
