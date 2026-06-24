@@ -727,9 +727,9 @@ public class LabResultUploadService {
     /**
      * Build one denormalized record per rejected line — the row's original column values plus an
      * aggregated {@code ERROR_MESSAGE} — ready to be persisted in the report and later streamed as
-     * the corrections CSV. Rows that bound successfully but failed validation carry their original
-     * values; a row that failed CSV binding has no bean, so its data columns are left blank while
-     * still reporting why it was rejected.
+     * the corrections CSV. Rows that bound successfully carry their bound values; a row that failed
+     * CSV binding has no bean, so its original cell values are recovered from the parser's raw-cell
+     * snapshot, ensuring the corrections file always reproduces the full rejected row.
      */
     private List<Map<String, Object>> buildRejectedRows(
             CsvParseResult<LabResultCsvRow> parsed, List<CsvRowError> errors, Set<Long> rejectedLines) {
@@ -737,6 +737,7 @@ public class LabResultUploadService {
         for (ParsedRow<LabResultCsvRow> pr : parsed.validRows()) {
             boundByLine.put(pr.lineNumber(), pr.data());
         }
+        Map<Long, Map<String, String>> rawByLine = parsed.rawCellsByLine();
 
         Map<Long, List<CsvRowError>> errorsByLine = new HashMap<>();
         for (CsvRowError e : errors) {
@@ -746,17 +747,18 @@ public class LabResultUploadService {
         List<Map<String, Object>> rejectedRows = new ArrayList<>();
         for (Long line : rejectedLines.stream().sorted().toList()) {
             LabResultCsvRow r = boundByLine.get(line);
+            Map<String, String> raw = rawByLine.getOrDefault(line, Map.of());
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put(COL_LEARNER_EMAIL, r == null ? null : r.getLearnerEmail());
-            row.put(COL_COHORT_NAME, r == null ? null : r.getCohortName());
-            row.put(COL_SPECIALIZATION_NAME, r == null ? null : r.getSpecializationName());
-            row.put(COL_MODULE_NAME, r == null ? null : r.getModuleName());
-            row.put(COL_LAB_TITLE, r == null ? null : r.getLabTitle());
-            row.put(COL_SCORE, r == null ? null : r.getScore());
-            row.put(COL_MAX_SCORE, r == null ? null : r.getMaxScore());
-            row.put(COL_ATTEMPT_NUMBER, r == null ? null : r.getAttemptNumber());
-            row.put(COL_SUBMITTED_ON, r == null ? null : r.getSubmittedOn());
-            row.put(COL_GRADED_BY, r == null ? null : r.getGradedBy());
+            row.put(COL_LEARNER_EMAIL, r == null ? raw.get(COL_LEARNER_EMAIL) : r.getLearnerEmail());
+            row.put(COL_COHORT_NAME, r == null ? raw.get(COL_COHORT_NAME) : r.getCohortName());
+            row.put(COL_SPECIALIZATION_NAME, r == null ? raw.get(COL_SPECIALIZATION_NAME) : r.getSpecializationName());
+            row.put(COL_MODULE_NAME, r == null ? raw.get(COL_MODULE_NAME) : r.getModuleName());
+            row.put(COL_LAB_TITLE, r == null ? raw.get(COL_LAB_TITLE) : r.getLabTitle());
+            row.put(COL_SCORE, r == null ? raw.get(COL_SCORE) : r.getScore());
+            row.put(COL_MAX_SCORE, r == null ? raw.get(COL_MAX_SCORE) : r.getMaxScore());
+            row.put(COL_ATTEMPT_NUMBER, r == null ? raw.get(COL_ATTEMPT_NUMBER) : r.getAttemptNumber());
+            row.put(COL_SUBMITTED_ON, r == null ? raw.get(COL_SUBMITTED_ON) : r.getSubmittedOn());
+            row.put(COL_GRADED_BY, r == null ? raw.get(COL_GRADED_BY) : r.getGradedBy());
             row.put(COL_ERROR_MESSAGE, formatErrorMessage(errorsByLine.get(line)));
             rejectedRows.add(row);
         }
