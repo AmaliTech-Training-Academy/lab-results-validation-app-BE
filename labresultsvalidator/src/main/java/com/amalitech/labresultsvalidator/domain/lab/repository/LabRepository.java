@@ -28,4 +28,7 @@ public interface LabRepository extends JpaRepository<Lab, UUID> {
 
     @EntityGraph(attributePaths = {"module", "module.specialization", "module.specialization.cohort"})
     List<Lab> findAllByModuleIdIn(Collection<UUID> moduleIds);
+
+    @EntityGraph(attributePaths = {"module", "module.specialization", "module.specialization.cohort"})
+    Optional<Lab> findByIdWithModule(UUID labId);
 }
