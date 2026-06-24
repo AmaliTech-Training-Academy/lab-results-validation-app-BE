@@ -128,7 +128,9 @@ class LabResultUploadServiceTest {
             .thenReturn(Optional.of(module));
         when(labRepository.findByModuleIdAndTitleIgnoreCase(any(), anyString()))
             .thenReturn(Optional.of(lab));
-        when(userModuleAssignmentRepository.existsByUserIdAndModuleId(any(), any())).thenReturn(true);
+        UserModuleAssignment assignment = UserModuleAssignment.builder()
+            .id(UUID.randomUUID()).user(instructor).module(module).build();
+        when(userModuleAssignmentRepository.findAllByUserId(any())).thenReturn(List.of(assignment));
         when(labResultRepository.findByLearnerIdAndLabIdAndAttemptNumber(any(), any(), anyShort()))
             .thenReturn(Optional.empty());
         when(csvUploadRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -455,7 +457,7 @@ class LabResultUploadServiceTest {
 
     @Test
     void bulkUpload_whenInstructorNotAssigned_rejectsV15() {
-        when(userModuleAssignmentRepository.existsByUserIdAndModuleId(any(), any())).thenReturn(false);
+        when(userModuleAssignmentRepository.findAllByUserId(any())).thenReturn(List.of());
         doReturn(parsed(validRow())).when(csvParserService).parse(any(), any());
 
         assertSingleError(service.bulkUpload(file()), "MODULE_NAME", "V15");
@@ -464,14 +466,13 @@ class LabResultUploadServiceTest {
     @Test
     void bulkUpload_whenAdmin_bypassesV15AndInserts() {
         setActor(admin);
-        when(userModuleAssignmentRepository.existsByUserIdAndModuleId(any(), any())).thenReturn(false);
         doReturn(parsed(validRow())).when(csvParserService).parse(any(), any());
 
         LabResultUploadResponse result = service.bulkUpload(file());
 
         assertThat(result.getInsertedCount()).isEqualTo(1);
         assertThat(result.getRejectedCount()).isZero();
-        verify(userModuleAssignmentRepository, never()).existsByUserIdAndModuleId(any(), any());
+        verify(userModuleAssignmentRepository, never()).findAllByUserId(any());
     }
 
     // ── Cohort-lock gate (V18) ────────────────────────────────────────────────

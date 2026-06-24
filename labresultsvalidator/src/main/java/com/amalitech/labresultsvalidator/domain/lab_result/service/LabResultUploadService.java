@@ -140,6 +140,12 @@ public class LabResultUploadService {
         boolean adminBypass = actor.getRole() == UserRole.ADMIN
             || actor.getRole() == UserRole.SUPER_ADMIN;
 
+        Set<UUID> assignedModuleIds = adminBypass
+            ? Set.of()
+            : userModuleAssignmentRepository.findAllByUserId(actor.getId()).stream()
+                .map(a -> a.getModule().getId())
+                .collect(java.util.stream.Collectors.toSet());
+
         // Collect reconciled results paired with their source line number so that any
         // DB exception during the individual saves can be attributed to the right row.
         record PendingSave(long lineNumber, ResolutionKind kind, LabResult result) {}
@@ -152,7 +158,7 @@ public class LabResultUploadService {
             }
             Resolution resolution;
             try {
-                resolution = reconcile(v, actor, adminBypass, errors, rejectedLines);
+                resolution = reconcile(v, actor, adminBypass, assignedModuleIds, errors, rejectedLines);
             } catch (Exception ex) {
                 LOG.error("Unexpected error reconciling row {}: {}", v.lineNumber(), ex.getMessage(), ex);
                 errors.add(new CsvRowError(v.lineNumber(), null,
@@ -557,7 +563,7 @@ public class LabResultUploadService {
     // ── Stage 3b: referential checks (V9–V15) + reconcile (V17) ────────────────
 
     private Resolution reconcile(
-            ValidatedRow v, User actor, boolean adminBypass,
+            ValidatedRow v, User actor, boolean adminBypass, Set<UUID> assignedModuleIds,
             List<CsvRowError> errors, Set<Long> rejectedLines) {
         LabResultCsvRow r = v.raw();
         long line = v.lineNumber();
@@ -612,8 +618,7 @@ public class LabResultUploadService {
                     + lab.getMaxScore() + " for lab '" + lab.getTitle() + "'");
         }
 
-        if (!adminBypass
-                && !userModuleAssignmentRepository.existsByUserIdAndModuleId(actor.getId(), module.getId())) {
+        if (!adminBypass && !assignedModuleIds.contains(module.getId())) {
             return reject(errors, rejectedLines, line, "MODULE_NAME", "V15",
                 "You are not authorized to upload results for module '" + module.getName() + "'");
         }
