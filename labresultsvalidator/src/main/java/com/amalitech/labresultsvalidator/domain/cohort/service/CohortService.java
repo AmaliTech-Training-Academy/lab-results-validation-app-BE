@@ -39,10 +39,6 @@ public class CohortService {
                     "Cohort with name '" + request.getName() + "' already exists");
         }
 
-        if (!request.getEndDate().isAfter(request.getStartDate())) {
-            throw new IllegalArgumentException("End date must be after start date");
-        }
-
         Cohort cohort = Cohort.builder()
                 .name(request.getName())
                 .startDate(request.getStartDate())
@@ -68,6 +64,11 @@ public class CohortService {
         Cohort cohort = cohortRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Cohort with id '" + id + "' not found"));
+
+        if (cohort.isLocked()) {
+            throw new UnprocessableEntityException(
+                    "Cohort '" + cohort.getName() + "' is locked and cannot be edited");
+        }
 
         if (request.getName() != null) {
             String newName = request.getName().strip();

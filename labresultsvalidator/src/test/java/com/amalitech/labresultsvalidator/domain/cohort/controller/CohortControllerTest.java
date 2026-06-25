@@ -49,8 +49,8 @@ class CohortControllerTest {
         CohortResponse cohortResponse = CohortResponse.builder()
                 .id(UUID.randomUUID())
                 .name("Cohort 12")
-                .startDate(LocalDate.of(2025, 1, 1))
-                .endDate(LocalDate.of(2025, 6, 30))
+                .startDate(LocalDate.of(2027, 1, 1))
+                .endDate(LocalDate.of(2027, 6, 30))
                 .active(true)
                 .build();
 
@@ -61,8 +61,8 @@ class CohortControllerTest {
                         .content("""
                                 {
                                   "name": "Cohort 12",
-                                  "startDate": "2025-01-01",
-                                  "endDate": "2025-06-30"
+                                  "startDate": "2027-01-01",
+                                  "endDate": "2027-06-30"
                                 }
                                 """))
                 .andExpect(status().isCreated())
@@ -124,8 +124,8 @@ class CohortControllerTest {
                         .content("""
                                 {
                                   "name": "Cohort 12",
-                                  "startDate": "2025-01-01",
-                                  "endDate": "2025-06-30"
+                                  "startDate": "2027-01-01",
+                                  "endDate": "2027-06-30"
                                 }
                                 """))
                 .andExpect(status().isConflict())
@@ -135,16 +135,13 @@ class CohortControllerTest {
 
     @Test
     void createCohort_withEndDateBeforeStartDate_returns400() throws Exception {
-        when(cohortService.createCohort(any()))
-                .thenThrow(new IllegalArgumentException("End date must be after start date"));
-
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "name": "Cohort 12",
-                                  "startDate": "2025-06-30",
-                                  "endDate": "2025-01-01"
+                                  "startDate": "2027-06-30",
+                                  "endDate": "2027-01-01"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())

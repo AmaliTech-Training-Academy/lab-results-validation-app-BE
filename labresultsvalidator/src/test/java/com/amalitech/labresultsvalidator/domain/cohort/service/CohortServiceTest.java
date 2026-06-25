@@ -6,6 +6,7 @@ import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityEx
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.UpdateCohortRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
@@ -140,27 +141,31 @@ class CohortServiceTest {
     }
 
     @Test
-    void createCohort_whenEndDateEqualsStartDate_throwsIllegalArgumentException() {
+    void createCohort_whenEndDateEqualsStartDate_delegatesToSave() {
         setField(request, "endDate", LocalDate.of(2025, 1, 1));
+        Cohort saved = buildCohort("Cohort 12");
         when(cohortRepository.existsByName(any())).thenReturn(false);
+        when(cohortRepository.save(any())).thenReturn(saved);
 
-        assertThatThrownBy(() -> cohortService.createCohort(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("End date must be after start date");
+        // Date-order validation is enforced at the DTO layer (@EndDateAfterStartDate);
+        // the service itself does not re-check it for create — it trusts validated input.
+        cohortService.createCohort(request);
 
-        verify(cohortRepository, never()).save(any());
+        verify(cohortRepository).save(any());
     }
 
     @Test
-    void createCohort_whenEndDateBeforeStartDate_throwsIllegalArgumentException() {
+    void createCohort_whenEndDateBeforeStartDate_delegatesToSave() {
         setField(request, "endDate", LocalDate.of(2024, 12, 31));
+        Cohort saved = buildCohort("Cohort 12");
         when(cohortRepository.existsByName(any())).thenReturn(false);
+        when(cohortRepository.save(any())).thenReturn(saved);
 
-        assertThatThrownBy(() -> cohortService.createCohort(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("End date must be after start date");
+        // Date-order validation is enforced at the DTO layer (@EndDateAfterStartDate);
+        // the service itself does not re-check it for create — it trusts validated input.
+        cohortService.createCohort(request);
 
-        verify(cohortRepository, never()).save(any());
+        verify(cohortRepository).save(any());
     }
 
     // ── getCohorts ────────────────────────────────────────────────────────────
@@ -191,6 +196,40 @@ class CohortServiceTest {
 
         assertThat(response.getContent()).isEmpty();
         assertThat(response.getTotalElements()).isZero();
+    }
+
+    // ── updateCohort ──────────────────────────────────────────────────────────
+
+    @Test
+    void updateCohort_whenCohortIsLocked_throwsUnprocessableEntityException() {
+        Cohort locked = buildLockedCohort("Cohort 12");
+        when(cohortRepository.findById(locked.getId())).thenReturn(Optional.of(locked));
+
+        UpdateCohortRequest updateRequest = new UpdateCohortRequest();
+        setField(updateRequest, "name", "Cohort 13");
+
+        assertThatThrownBy(() -> cohortService.updateCohort(locked.getId(), updateRequest))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("locked")
+                .hasMessageContaining("Cohort 12");
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void updateCohort_whenCohortIsUnlocked_updatesAndPersists() {
+        Cohort cohort = buildCohort("Cohort 12");
+        when(cohortRepository.findById(cohort.getId())).thenReturn(Optional.of(cohort));
+        when(cohortRepository.existsByNameAndIdNot("Cohort 13", cohort.getId())).thenReturn(false);
+        when(cohortRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdateCohortRequest updateRequest = new UpdateCohortRequest();
+        setField(updateRequest, "name", "Cohort 13");
+
+        CohortResponse response = cohortService.updateCohort(cohort.getId(), updateRequest);
+
+        assertThat(response.getName()).isEqualTo("Cohort 13");
+        verify(cohortRepository).save(any());
     }
 
     // ── deleteCohort ──────────────────────────────────────────────────────────
