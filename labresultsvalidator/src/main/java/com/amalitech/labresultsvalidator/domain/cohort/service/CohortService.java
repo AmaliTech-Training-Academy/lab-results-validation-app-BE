@@ -65,6 +65,11 @@ public class CohortService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Cohort with id '" + id + "' not found"));
 
+        if (cohort.isLocked()) {
+            throw new UnprocessableEntityException(
+                    "Cohort '" + cohort.getName() + "' is locked and cannot be edited");
+        }
+
         if (request.getName() != null) {
             String newName = request.getName().strip();
             if (!cohort.getName().equalsIgnoreCase(newName)
