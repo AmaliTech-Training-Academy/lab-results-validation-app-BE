@@ -127,23 +127,9 @@ class UserModuleAssignmentServiceTest {
     }
 
     @Test
-    void assignModule_whenCohortIsLocked_throwsUnprocessableEntityException() {
-        when(userRepository.findByIdAndIsActiveTrue(instructorId)).thenReturn(Optional.of(instructor));
-        when(moduleRepository.findById(moduleId)).thenReturn(Optional.of(module));
-        when(moduleRepository.findCohortIsLockedById(moduleId)).thenReturn(Optional.of(true));
-
-        assertThatThrownBy(() -> assignmentService.assignModule(instructorId, buildRequest(List.of(moduleId))))
-                .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessageContaining("locked");
-
-        verify(userModuleAssignmentRepository, never()).saveAll(any());
-    }
-
-    @Test
     void assignModule_whenAlreadyAssigned_throwsDuplicateResourceException() {
         when(userRepository.findByIdAndIsActiveTrue(instructorId)).thenReturn(Optional.of(instructor));
         when(moduleRepository.findById(moduleId)).thenReturn(Optional.of(module));
-        when(moduleRepository.findCohortIsLockedById(moduleId)).thenReturn(Optional.of(false));
         when(userModuleAssignmentRepository.existsByUserIdAndModuleId(instructorId, moduleId)).thenReturn(true);
 
         assertThatThrownBy(() -> assignmentService.assignModule(instructorId, buildRequest(List.of(moduleId))))
@@ -157,7 +143,6 @@ class UserModuleAssignmentServiceTest {
     void assignModule_success_savesAndReturnsResponse() {
         when(userRepository.findByIdAndIsActiveTrue(instructorId)).thenReturn(Optional.of(instructor));
         when(moduleRepository.findById(moduleId)).thenReturn(Optional.of(module));
-        when(moduleRepository.findCohortIsLockedById(moduleId)).thenReturn(Optional.of(false));
         when(userModuleAssignmentRepository.existsByUserIdAndModuleId(instructorId, moduleId)).thenReturn(false);
 
         AssignModuleResponse response = assignmentService.assignModule(instructorId, buildRequest(List.of(moduleId)));

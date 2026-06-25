@@ -2,7 +2,6 @@ package com.amalitech.labresultsvalidator.domain.user_module_assignment.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
-import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.module.entity.Module;
@@ -57,13 +56,6 @@ public class UserModuleAssignmentService {
             Module module = moduleRepository.findById(moduleId)
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Module not found with ID: " + moduleId));
-
-            // Check cohort is not locked
-            boolean locked = moduleRepository.findCohortIsLockedById(moduleId).orElse(false);
-            if (locked) {
-                throw new UnprocessableEntityException(
-                        "Module '" + module.getName() + "' belongs to a locked cohort");
-            }
 
             // Check not already assigned — 409 if duplicate
             if (userModuleAssignmentRepository.existsByUserIdAndModuleId(instructorId, moduleId)) {
@@ -126,16 +118,6 @@ public class UserModuleAssignmentService {
         List<UserModuleAssignment> toRemove = existing.stream()
                 .filter(a -> toRemoveIds.contains(a.getModule().getId()))
                 .toList();
-
-        // Block removal if any module belongs to a locked cohort
-        toRemove.forEach(a -> {
-            Module module = a.getModule();
-            boolean locked = moduleRepository.findCohortIsLockedById(module.getId()).orElse(false);
-            if (locked) {
-                throw new UnprocessableEntityException(
-                        "Module '" + module.getName() + "' belongs to a locked cohort");
-            }
-        });
 
         userModuleAssignmentRepository.deleteAll(toRemove);
 
