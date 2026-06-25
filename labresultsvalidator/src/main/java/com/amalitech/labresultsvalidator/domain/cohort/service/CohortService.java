@@ -39,10 +39,6 @@ public class CohortService {
                     "Cohort with name '" + request.getName() + "' already exists");
         }
 
-        if (!request.getEndDate().isAfter(request.getStartDate())) {
-            throw new IllegalArgumentException("End date must be after start date");
-        }
-
         Cohort cohort = Cohort.builder()
                 .name(request.getName())
                 .startDate(request.getStartDate())
