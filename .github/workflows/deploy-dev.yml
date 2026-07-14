@@ -78,8 +78,8 @@ jobs:
             echo "CORS_ALLOWED_ORIGINS=*"
             echo "MAIL_USERNAME=$MAIL_USERNAME"
             echo "MAIL_PASSWORD=$MAIL_PASSWORD"
-            echo "FRONTEND_URL=http://108.128.186.142/login"
-            echo "BASE_URL=http://108.128.186.142"
+            echo "FRONTEND_URL=http://52.50.143.70/login"
+            echo "BASE_URL=http://52.50.143.70"
           } > env.deploy
           scp $SSH_OPTS env.deploy ubuntu@"$SSH_HOST":/opt/app/.env
           rm -f env.deploy
