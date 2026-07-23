@@ -80,8 +80,8 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <!-- Pinned above the Spring Boot-managed version to patch
-                 CVE-2026-42198 (HIGH). Fixed in 42.7.11. -->
-            <version>42.7.11</version>
+                 CVE-2026-54291 (HIGH). Fixed in 42.7.12. -->
+            <version>42.7.12</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
