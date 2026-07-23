@@ -1,6 +1,6 @@
 package com.amalitech.labresultsvalidator.common.service;
 
-import com.amalitech.labresultsvalidator.domain.user.event.InstructorProvisionedEvent;
+import com.amalitech.labresultsvalidator.domain.user.event.AdminProvisionedEvent;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
@@ -52,7 +52,7 @@ public class EmailService {
 
     @Async("emailTaskExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onInstructorProvisioned(InstructorProvisionedEvent event) {
+    public void onAdminProvisioned(AdminProvisionedEvent event) {
         dispatch(
             event.email(),
             "Welcome to Amalitech Training Validata — Your Account Details",
@@ -135,7 +135,7 @@ public class EmailService {
                   Welcome aboard!
                 </p>
                 <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#374151;">
-                  Your instructor account on Amalitech Training Validata is ready.
+                  Your admin account on Amalitech Training Validata is ready.
                   Use the credentials below to sign in — you will be prompted to set a new password on your first login.
                 </p>
                 <table cellpadding="0" cellspacing="0" width="100%%"
