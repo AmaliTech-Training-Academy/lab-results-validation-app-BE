@@ -148,6 +148,25 @@
             <version>5.12.0</version>
             <scope>compile</scope>
         </dependency>
+
+        <!-- Microsoft Graph SDK (Graph REST calls) -->
+        <dependency>
+            <groupId>com.microsoft.graph</groupId>
+            <artifactId>microsoft-graph</artifactId>
+            <version>6.3.0</version>
+        </dependency>
+        <!-- Azure Identity (client-credentials token acquisition) -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-identity</artifactId>
+            <version>1.15.4</version>
+        </dependency>
+        <!-- Apache POI — local XLSX parse (PRD D-READ decision) -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.3.0</version>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>
