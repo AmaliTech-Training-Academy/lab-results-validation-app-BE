@@ -1,12 +1,12 @@
 name: Deploy Dev (backend)
 
-# On merge to dev: build the image, push to ECR, then deploy over SSH. The EC2 box has no IAM
+# On merge to develop: build the image, push to ECR, then deploy over SSH. The EC2 box has no IAM
 # role (PassRole denied) and no AWS identity — so this job writes /opt/app/.env on the box,
 # passes a short-lived ECR login token over SSH, and runs `docker compose pull && up -d`.
 
 on:
   push:
-    branches: [dev]
+    branches: [develop]
     paths:
       - "labresultsvalidator/**"
       - ".github/workflows/deploy-dev.yml"
@@ -78,7 +78,7 @@ jobs:
             echo "CORS_ALLOWED_ORIGINS=*"
             echo "MAIL_USERNAME=$MAIL_USERNAME"
             echo "MAIL_PASSWORD=$MAIL_PASSWORD"
-            echo "FRONTEND_URL=http://52.50.143.70/login"
+            echo "FRONTEND_URL=http://52.50.143.70"
             echo "BASE_URL=http://52.50.143.70"
           } > env.deploy
           scp $SSH_OPTS env.deploy ubuntu@"$SSH_HOST":/opt/app/.env
