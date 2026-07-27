@@ -75,7 +75,9 @@ public class GraphDriveService {
             siteId = item.getParentReference().getSiteId();
         }
 
-        if (!azureGraphProperties.sanctionedSiteId().equals(siteId)) {
+        if (!sanctionedSiteMatches(azureGraphProperties.sanctionedSiteId(), siteId)) {
+            LOG.warn("Site ID mismatch — resolved='{}' configured='{}'",
+                siteId, azureGraphProperties.sanctionedSiteId());
             throw new GraphSiteViolationException(
                 "The link points to a location outside the sanctioned SharePoint site."
             );
@@ -87,6 +89,12 @@ public class GraphDriveService {
         }
 
         return new DriveItemInfo(driveId, item.getId(), item.getName(), true, siteId);
+    }
+
+    private boolean sanctionedSiteMatches(String configured, String resolved) {
+        if (configured == null || resolved == null) return false;
+        // Graph may return just the GUID or the full "hostname,guid1,guid2" composite.
+        return configured.equals(resolved) || configured.contains(resolved);
     }
 
     public List<DriveItemInfo> listChildren(String driveId, String itemId) throws GraphAccessException {

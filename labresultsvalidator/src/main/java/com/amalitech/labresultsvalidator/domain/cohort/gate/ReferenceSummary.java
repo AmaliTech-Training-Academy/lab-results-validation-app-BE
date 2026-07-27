@@ -5,5 +5,5 @@ public record ReferenceSummary(
     int moduleCount,
     int labCount,
     int learnerCount,
-    int instructorContactCount
+    boolean quizReferencePresent
 ) {}

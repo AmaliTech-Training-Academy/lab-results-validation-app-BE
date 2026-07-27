@@ -155,11 +155,24 @@
             <artifactId>microsoft-graph</artifactId>
             <version>6.3.0</version>
         </dependency>
-        <!-- Azure Identity (client-credentials token acquisition) -->
+        <!-- Azure Identity (client-credentials token acquisition).
+             Exclude azure-core-http-netty to avoid binary incompatibility with
+             Netty 4.2.x (pulled by Spring Boot 4); use OkHttp instead. -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-identity</artifactId>
             <version>1.15.4</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.azure</groupId>
+                    <artifactId>azure-core-http-netty</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-core-http-okhttp</artifactId>
+            <version>1.12.9</version>
         </dependency>
         <!-- Apache POI — local XLSX parse (PRD D-READ decision) -->
         <dependency>

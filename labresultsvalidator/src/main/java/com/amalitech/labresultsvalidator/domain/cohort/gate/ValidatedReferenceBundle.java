@@ -7,15 +7,13 @@ public record ValidatedReferenceBundle(
     List<ModuleRow> modules,
     List<LabRow> labs,
     List<LearnerRow> learners,
-    List<InstructorContactRow> instructors
+    boolean quizReferencePresent
 ) {
-    public record SpecializationRow(String name, String code) {}
+    public record SpecializationRow(String specializationId, String name) {}
 
-    public record ModuleRow(String name, String code, int sequence, String specializationCode) {}
+    public record ModuleRow(String moduleId, String name, String phase, String specializationId) {}
 
-    public record LabRow(String title, String moduleCode) {}
+    public record LabRow(String assessmentId, String labTitle, String moduleId) {}
 
-    public record LearnerRow(String learnerId, String fullName, String email, String specializationCode) {}
-
-    public record InstructorContactRow(String instructorId, String fullName, String email) {}
+    public record LearnerRow(String email, String fullName, String specialization) {}
 }

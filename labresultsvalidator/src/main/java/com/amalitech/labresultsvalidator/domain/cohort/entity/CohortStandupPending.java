@@ -4,6 +4,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -26,6 +28,7 @@ public class CohortStandupPending {
     @Column(name = "cohort_id", nullable = false, updatable = false)
     private UUID cohortId;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "bundle_json", nullable = false, columnDefinition = "jsonb")
     private String bundleJson;
 

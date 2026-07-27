@@ -1,14 +1,27 @@
 package com.amalitech.labresultsvalidator.domain.cohort.dto;
 
+import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
-public record CohortResponse(
-    UUID id,
-    String name,
-    LocalDate startDate,
-    LocalDate endDate,
-    String lifecycleState,
-    boolean isLocked,
-    String sharepointFolderUrl
-) {}
+@Getter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class CohortResponse {
+    private UUID id;
+    private String name;
+    private LocalDate startDate;
+    private LocalDate endDate;
+    private CohortLifecycleState lifecycleState;
+    private boolean isLocked;
+    private boolean isActive;
+    private String sharepointFolderUrl;
+    private OffsetDateTime createdAt;
+}

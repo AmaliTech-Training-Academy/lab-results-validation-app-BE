@@ -3,6 +3,8 @@ package com.amalitech.labresultsvalidator.domain.cohort.entity;
 import com.amalitech.labresultsvalidator.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -41,8 +43,9 @@ public class Cohort extends BaseEntity {
     private LocalDate endDate;
 
     @Builder.Default
+    @Enumerated(EnumType.STRING)
     @Column(name = "lifecycle_state", nullable = false, length = 30)
-    private String lifecycleState = "DRAFT";
+    private CohortLifecycleState lifecycleState = CohortLifecycleState.DRAFT;
 
     @Builder.Default
     @Column(name = "is_locked", nullable = false)

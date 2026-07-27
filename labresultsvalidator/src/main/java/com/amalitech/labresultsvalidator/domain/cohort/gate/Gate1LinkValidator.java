@@ -8,8 +8,13 @@ import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphIte
 import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphSiteViolationException;
 import org.springframework.stereotype.Component;
 
+import java.util.regex.Pattern;
+
 @Component
 public class Gate1LinkValidator {
+
+    private static final Pattern SHAREPOINT_URL =
+        Pattern.compile("^https://[^/]+\\.sharepoint\\.com/.+", Pattern.CASE_INSENSITIVE);
 
     private final GraphDriveService graphDriveService;
 
@@ -21,6 +26,14 @@ public class Gate1LinkValidator {
         if (sharepointUrl == null || sharepointUrl.isBlank()) {
             return new Gate1Result(
                 GateResult.fail("link", null, "G1-BLANK", "SharePoint folder link is required."),
+                null
+            );
+        }
+
+        if (!SHAREPOINT_URL.matcher(sharepointUrl).matches()) {
+            return new Gate1Result(
+                GateResult.fail("link", sharepointUrl, "G1-INVALID-URL",
+                    "The URL is not a valid SharePoint link. Expected format: https://<tenant>.sharepoint.com/..."),
                 null
             );
         }

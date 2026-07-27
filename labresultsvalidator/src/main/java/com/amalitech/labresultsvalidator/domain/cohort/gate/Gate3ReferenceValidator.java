@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -52,15 +53,24 @@ public class Gate3ReferenceValidator {
             );
         }
 
+        // Key by lowercase name so all lookups are case-insensitive.
         Map<String, DriveItemInfo> childByName = refChildren.stream()
-            .collect(Collectors.toMap(DriveItemInfo::name, Function.identity(), (a, b) -> a));
+            .collect(Collectors.toMap(
+                d -> d.name().toLowerCase(Locale.ROOT),
+                Function.identity(),
+                (a, b) -> a
+            ));
 
+        LOG.info("[gate3] files found in reference folder: {}", childByName.keySet());
+
+        // expectedRefFileNames() contains only the 4 required files (quiz reference is optional).
         List<String> expected = sharePointProperties.expectedRefFileNames();
         List<GateError> missingErrors = new ArrayList<>();
         for (String fname : expected) {
-            if (!childByName.containsKey(fname)) {
+            if (!childByName.containsKey(fname.toLowerCase(Locale.ROOT))) {
                 missingErrors.add(new GateError(fname, null, "G3-MISSING-FILE",
-                    "Required reference file '" + fname + "' not found in the reference folder."));
+                    "Required reference file '" + fname + "' not found in the reference folder. "
+                        + "Found: " + childByName.keySet()));
             }
         }
         if (!missingErrors.isEmpty()) {
@@ -71,12 +81,12 @@ public class Gate3ReferenceValidator {
         String modulesFile = sharePointProperties.refFiles().modules();
         String labsFile = sharePointProperties.refFiles().labs();
         String learnersFile = sharePointProperties.refFiles().learners();
-        String instructorsFile = sharePointProperties.refFiles().instructors();
+        String quizRefFile = sharePointProperties.refFiles().instructors();
 
         Map<String, byte[]> fileBytes = new HashMap<>();
         List<GateError> downloadErrors = new ArrayList<>();
         for (String fname : expected) {
-            DriveItemInfo info = childByName.get(fname);
+            DriveItemInfo info = childByName.get(fname.toLowerCase(Locale.ROOT));
             try {
                 fileBytes.put(fname, graphDriveService.downloadFile(driveId, info.itemId()));
             } catch (GraphAccessException ex) {
@@ -93,90 +103,95 @@ public class Gate3ReferenceValidator {
         List<ValidatedReferenceBundle.SpecializationRow> specializations =
             validateSpecializations(specsFile, fileBytes.get(specsFile), allErrors);
 
-        Set<String> specCodes = specializations.stream()
-            .map(ValidatedReferenceBundle.SpecializationRow::code)
+        Set<String> validSpecIds = specializations.stream()
+            .map(ValidatedReferenceBundle.SpecializationRow::specializationId)
+            .collect(Collectors.toSet());
+
+        // Spec names are used to cross-reference the trainee database (which links by name).
+        Set<String> validSpecNamesLower = specializations.stream()
+            .map(r -> r.name().toLowerCase(Locale.ROOT))
             .collect(Collectors.toSet());
 
         List<ValidatedReferenceBundle.ModuleRow> modules =
-            validateModules(modulesFile, fileBytes.get(modulesFile), specCodes, allErrors);
+            validateModules(modulesFile, fileBytes.get(modulesFile), validSpecIds, allErrors);
 
-        Set<String> moduleCodes = modules.stream()
-            .map(ValidatedReferenceBundle.ModuleRow::code)
+        Set<String> validModuleIds = modules.stream()
+            .map(ValidatedReferenceBundle.ModuleRow::moduleId)
             .collect(Collectors.toSet());
 
         List<ValidatedReferenceBundle.LabRow> labs =
-            validateLabs(labsFile, fileBytes.get(labsFile), moduleCodes, allErrors);
+            validateLabs(labsFile, fileBytes.get(labsFile), validModuleIds, allErrors);
 
         List<ValidatedReferenceBundle.LearnerRow> learners =
-            validateLearners(learnersFile, fileBytes.get(learnersFile), specCodes, allErrors);
-
-        List<ValidatedReferenceBundle.InstructorContactRow> instructors =
-            validateInstructors(instructorsFile, fileBytes.get(instructorsFile), allErrors);
+            validateLearners(learnersFile, fileBytes.get(learnersFile), validSpecNamesLower, allErrors);
 
         if (!allErrors.isEmpty()) {
             return new Gate3Result(GateResult.fail(allErrors), null);
         }
 
+        boolean quizReferencePresent = childByName.containsKey(quizRefFile.toLowerCase(Locale.ROOT));
+        if (quizReferencePresent) {
+            LOG.info("[gate3] optional quiz reference file '{}' found", quizRefFile);
+        } else {
+            LOG.info("[gate3] optional quiz reference file '{}' not present", quizRefFile);
+        }
+
         return new Gate3Result(GateResult.pass(),
-            new ValidatedReferenceBundle(specializations, modules, labs, learners, instructors));
+            new ValidatedReferenceBundle(specializations, modules, labs, learners, quizReferencePresent));
     }
 
+    // Columns: specializationid, specialization
     private List<ValidatedReferenceBundle.SpecializationRow> validateSpecializations(
             String fileName, byte[] bytes, List<GateError> errors) {
         List<ValidatedReferenceBundle.SpecializationRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) {
-            return rows;
-        }
+        if (sheet == null) return rows;
 
         Map<String, Integer> headers = readHeaders(sheet);
-        List<GateError> colErrors = checkRequiredColumns(fileName, headers, "Name", "Code");
+        List<GateError> colErrors = checkRequiredColumns(fileName, headers, "specializationid", "specialization");
         if (!colErrors.isEmpty()) {
             errors.addAll(colErrors);
             return rows;
         }
 
-        Set<String> seenCodes = new HashSet<>();
+        Set<String> seenIds = new HashSet<>();
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) {
+            if (isBlankRow(row)) continue;
+            int rowNum = i + 1;
+            String specId = getCellString(row, headers.get("specializationid"));
+            String name = getCellString(row, headers.get("specialization"));
+
+            if (specId == null || specId.isBlank()) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-SPEC-ID",
+                    "Specialization ID is blank."));
                 continue;
             }
-            String name = getCellString(row, headers.get("Name"));
-            String code = getCellString(row, headers.get("Code"));
-            int rowNum = i + 1;
-
             if (name == null || name.isBlank()) {
                 errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-SPEC-NAME",
                     "Specialization name is blank."));
                 continue;
             }
-            if (code == null || code.isBlank()) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-SPEC-CODE",
-                    "Specialization code is blank."));
+            if (!seenIds.add(specId)) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-SPEC-ID",
+                    "Duplicate specialization ID '" + specId + "'."));
                 continue;
             }
-            if (!seenCodes.add(code)) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-SPEC-CODE",
-                    "Duplicate specialization code '" + code + "'."));
-                continue;
-            }
-            rows.add(new ValidatedReferenceBundle.SpecializationRow(name, code));
+            rows.add(new ValidatedReferenceBundle.SpecializationRow(specId, name));
         }
         return rows;
     }
 
+    // Columns: specializationid, moduleid, module name, phase
     private List<ValidatedReferenceBundle.ModuleRow> validateModules(
-            String fileName, byte[] bytes, Set<String> validSpecCodes, List<GateError> errors) {
+            String fileName, byte[] bytes, Set<String> validSpecIds, List<GateError> errors) {
         List<ValidatedReferenceBundle.ModuleRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) {
-            return rows;
-        }
+        if (sheet == null) return rows;
 
         Map<String, Integer> headers = readHeaders(sheet);
         List<GateError> colErrors = checkRequiredColumns(
-            fileName, headers, "Name", "Code", "Sequence", "Specialization Code");
+            fileName, headers, "specializationid", "moduleid", "module name", "phase");
         if (!colErrors.isEmpty()) {
             errors.addAll(colErrors);
             return rows;
@@ -184,53 +199,48 @@ public class Gate3ReferenceValidator {
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) {
+            if (isBlankRow(row)) continue;
+            int rowNum = i + 1;
+            String specId = getCellString(row, headers.get("specializationid"));
+            String moduleId = getCellString(row, headers.get("moduleid"));
+            String name = getCellString(row, headers.get("module name"));
+            String phaseStr = getCellString(row, headers.get("phase"));
+
+            if (moduleId == null || moduleId.isBlank()) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-MODULE-ID",
+                    "Module ID is blank."));
                 continue;
             }
-            int rowNum = i + 1;
-            String name = getCellString(row, headers.get("Name"));
-            String code = getCellString(row, headers.get("Code"));
-            String seqStr = getCellString(row, headers.get("Sequence"));
-            String specCode = getCellString(row, headers.get("Specialization Code"));
-
             if (name == null || name.isBlank()) {
                 errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-MODULE-NAME",
                     "Module name is blank."));
                 continue;
             }
-
-            int sequence;
-            try {
-                sequence = Integer.parseInt(seqStr == null ? "" : seqStr.trim());
-                if (sequence <= 0) {
-                    throw new NumberFormatException("non-positive");
-                }
-            } catch (NumberFormatException ex) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-INVALID-SEQUENCE",
-                    "Sequence must be a positive integer, got: '" + seqStr + "'."));
+            if (phaseStr == null || phaseStr.isBlank()) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-PHASE",
+                    "Phase is blank."));
                 continue;
             }
-
-            if (specCode == null || !validSpecCodes.contains(specCode)) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-UNKNOWN-SPEC-CODE",
-                    "Specialization Code '" + specCode + "' not found in Specializations file."));
+            if (specId == null || !validSpecIds.contains(specId)) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-UNKNOWN-SPEC-ID",
+                    "Specialization ID '" + specId + "' not found in Specializations file."));
                 continue;
             }
-            rows.add(new ValidatedReferenceBundle.ModuleRow(name, code, sequence, specCode));
+            rows.add(new ValidatedReferenceBundle.ModuleRow(moduleId, name, phaseStr, specId));
         }
         return rows;
     }
 
+    // Columns: moduleid, module name, assessmentid, lab title
     private List<ValidatedReferenceBundle.LabRow> validateLabs(
-            String fileName, byte[] bytes, Set<String> validModuleCodes, List<GateError> errors) {
+            String fileName, byte[] bytes, Set<String> validModuleIds, List<GateError> errors) {
         List<ValidatedReferenceBundle.LabRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) {
-            return rows;
-        }
+        if (sheet == null) return rows;
 
         Map<String, Integer> headers = readHeaders(sheet);
-        List<GateError> colErrors = checkRequiredColumns(fileName, headers, "Title", "Module Code");
+        List<GateError> colErrors = checkRequiredColumns(
+            fileName, headers, "moduleid", "assessmentid", "lab title");
         if (!colErrors.isEmpty()) {
             errors.addAll(colErrors);
             return rows;
@@ -238,149 +248,90 @@ public class Gate3ReferenceValidator {
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) {
-                continue;
-            }
+            if (isBlankRow(row)) continue;
             int rowNum = i + 1;
-            String title = getCellString(row, headers.get("Title"));
-            String moduleCode = getCellString(row, headers.get("Module Code"));
+            String moduleId = getCellString(row, headers.get("moduleid"));
+            String assessmentId = getCellString(row, headers.get("assessmentid"));
+            String labTitle = getCellString(row, headers.get("lab title"));
 
-            if (title == null || title.isBlank()) {
+            if (labTitle == null || labTitle.isBlank()) {
                 errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-LAB-TITLE",
                     "Lab title is blank."));
                 continue;
             }
-            if (moduleCode == null || !validModuleCodes.contains(moduleCode)) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-UNKNOWN-MODULE-CODE",
-                    "Module Code '" + moduleCode + "' not found in Modules file."));
+            if (assessmentId == null || assessmentId.isBlank()) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-ASSESSMENT-ID",
+                    "Assessment ID is blank."));
                 continue;
             }
-            rows.add(new ValidatedReferenceBundle.LabRow(title, moduleCode));
+            if (moduleId == null || !validModuleIds.contains(moduleId)) {
+                // Module may be absent from this cohort's Module Setup — skip rather than fail.
+                LOG.warn("[gate3] {} row {} — lab '{}' references unknown moduleId '{}', skipping",
+                    fileName, rowNum, labTitle, moduleId);
+                continue;
+            }
+            rows.add(new ValidatedReferenceBundle.LabRow(assessmentId, labTitle, moduleId));
         }
         return rows;
     }
 
+    // Columns: amalitech email, full name, specialization
     private List<ValidatedReferenceBundle.LearnerRow> validateLearners(
-            String fileName, byte[] bytes, Set<String> validSpecCodes, List<GateError> errors) {
+            String fileName, byte[] bytes, Set<String> validSpecNamesLower, List<GateError> errors) {
         List<ValidatedReferenceBundle.LearnerRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) {
-            return rows;
-        }
+        if (sheet == null) return rows;
 
         Map<String, Integer> headers = readHeaders(sheet);
         List<GateError> colErrors = checkRequiredColumns(
-            fileName, headers, "LearnerID", "Full Name", "Email", "Specialization Code");
+            fileName, headers, "amalitech email", "full name", "specialization");
         if (!colErrors.isEmpty()) {
             errors.addAll(colErrors);
             return rows;
         }
 
-        Set<String> seenIds = new HashSet<>();
         Set<String> seenEmails = new HashSet<>();
-
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) {
-                continue;
-            }
+            if (isBlankRow(row)) continue;
             int rowNum = i + 1;
-            String learnerId = getCellString(row, headers.get("LearnerID"));
-            String fullName = getCellString(row, headers.get("Full Name"));
-            String email = getCellString(row, headers.get("Email"));
-            String specCode = getCellString(row, headers.get("Specialization Code"));
+            String email = getCellString(row, headers.get("amalitech email"));
+            String fullName = getCellString(row, headers.get("full name"));
+            String specialization = getCellString(row, headers.get("specialization"));
 
             boolean rowHasError = false;
 
-            if (learnerId == null || learnerId.isBlank()) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-LEARNER-ID",
-                    "LearnerID is blank."));
-                rowHasError = true;
-            } else if (!seenIds.add(learnerId)) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-LEARNER-ID",
-                    "Duplicate LearnerID '" + learnerId + "'."));
-                rowHasError = true;
-            }
-
             if (email == null || email.isBlank()) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-LEARNER-EMAIL",
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-TRAINEE-EMAIL",
                     "Email is blank."));
                 rowHasError = true;
-            } else if (!seenEmails.add(email.toLowerCase())) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-LEARNER-EMAIL",
-                    "Duplicate Email '" + email + "'."));
+            } else if (!seenEmails.add(email.toLowerCase(Locale.ROOT))) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-TRAINEE-EMAIL",
+                    "Duplicate email '" + email + "'."));
                 rowHasError = true;
             }
 
-            if (specCode == null || !validSpecCodes.contains(specCode)) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-UNKNOWN-SPEC-CODE",
-                    "Specialization Code '" + specCode + "' not found in Specializations file."));
+            if (!matchesAnySpecName(specialization, validSpecNamesLower)) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-UNKNOWN-SPEC-NAME",
+                    "Specialization '" + specialization + "' does not match any entry in Specializations file."));
                 rowHasError = true;
             }
 
             if (!rowHasError) {
-                rows.add(new ValidatedReferenceBundle.LearnerRow(learnerId, fullName, email, specCode));
+                rows.add(new ValidatedReferenceBundle.LearnerRow(email, fullName, specialization));
             }
         }
         return rows;
     }
 
-    private List<ValidatedReferenceBundle.InstructorContactRow> validateInstructors(
-            String fileName, byte[] bytes, List<GateError> errors) {
-        List<ValidatedReferenceBundle.InstructorContactRow> rows = new ArrayList<>();
-        Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) {
-            return rows;
+    // Passes if the trainee value contains any known spec name or vice-versa (case-insensitive).
+    private boolean matchesAnySpecName(String traineeSpec, Set<String> validSpecNamesLower) {
+        if (traineeSpec == null || traineeSpec.isBlank()) return false;
+        String key = traineeSpec.toLowerCase(Locale.ROOT);
+        for (String specName : validSpecNamesLower) {
+            if (key.contains(specName) || specName.contains(key)) return true;
         }
-
-        Map<String, Integer> headers = readHeaders(sheet);
-        List<GateError> colErrors = checkRequiredColumns(
-            fileName, headers, "InstructorID", "Full Name", "Email");
-        if (!colErrors.isEmpty()) {
-            errors.addAll(colErrors);
-            return rows;
-        }
-
-        Set<String> seenIds = new HashSet<>();
-        Set<String> seenEmails = new HashSet<>();
-
-        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
-            if (isBlankRow(row)) {
-                continue;
-            }
-            int rowNum = i + 1;
-            String instructorId = getCellString(row, headers.get("InstructorID"));
-            String fullName = getCellString(row, headers.get("Full Name"));
-            String email = getCellString(row, headers.get("Email"));
-
-            boolean rowHasError = false;
-
-            if (instructorId == null || instructorId.isBlank()) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-INSTRUCTOR-ID",
-                    "InstructorID is blank."));
-                rowHasError = true;
-            } else if (!seenIds.add(instructorId)) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-INSTRUCTOR-ID",
-                    "Duplicate InstructorID '" + instructorId + "'."));
-                rowHasError = true;
-            }
-
-            if (email == null || email.isBlank()) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-INSTRUCTOR-EMAIL",
-                    "Email is blank."));
-                rowHasError = true;
-            } else if (!seenEmails.add(email.toLowerCase())) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-INSTRUCTOR-EMAIL",
-                    "Duplicate Email '" + email + "'."));
-                rowHasError = true;
-            }
-
-            if (!rowHasError) {
-                rows.add(new ValidatedReferenceBundle.InstructorContactRow(instructorId, fullName, email));
-            }
-        }
-        return rows;
+        return false;
     }
 
     private Sheet openFirstSheet(String fileName, byte[] bytes, List<GateError> errors) {
@@ -407,18 +358,17 @@ public class Gate3ReferenceValidator {
         }
     }
 
+    // Headers are stored lowercase so all column name checks are case-insensitive.
     private Map<String, Integer> readHeaders(Sheet sheet) {
         Map<String, Integer> headers = new HashMap<>();
         Row headerRow = sheet.getRow(0);
-        if (headerRow == null) {
-            return headers;
-        }
+        if (headerRow == null) return headers;
         for (int c = 0; c < headerRow.getLastCellNum(); c++) {
             Cell cell = headerRow.getCell(c);
             if (cell != null) {
                 String val = cell.getStringCellValue();
                 if (val != null && !val.isBlank()) {
-                    headers.put(val.trim(), c);
+                    headers.put(val.trim().toLowerCase(Locale.ROOT), c);
                 }
             }
         }
@@ -438,36 +388,26 @@ public class Gate3ReferenceValidator {
     }
 
     private boolean isBlankRow(Row row) {
-        if (row == null) {
-            return true;
-        }
+        if (row == null) return true;
         for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
             Cell cell = row.getCell(c);
             if (cell != null && cell.getCellType() != CellType.BLANK) {
                 String val = getCellString(row, c);
-                if (val != null && !val.isBlank()) {
-                    return false;
-                }
+                if (val != null && !val.isBlank()) return false;
             }
         }
         return true;
     }
 
     private String getCellString(Row row, Integer colIndex) {
-        if (row == null || colIndex == null) {
-            return null;
-        }
+        if (row == null || colIndex == null) return null;
         Cell cell = row.getCell(colIndex);
-        if (cell == null) {
-            return null;
-        }
+        if (cell == null) return null;
         return switch (cell.getCellType()) {
             case STRING -> cell.getStringCellValue().trim();
             case NUMERIC -> {
                 double d = cell.getNumericCellValue();
-                if (d == Math.floor(d)) {
-                    yield String.valueOf((long) d);
-                }
+                if (d == Math.floor(d)) yield String.valueOf((long) d);
                 yield String.valueOf(d);
             }
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
