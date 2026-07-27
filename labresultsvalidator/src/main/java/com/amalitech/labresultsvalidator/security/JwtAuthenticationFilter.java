@@ -31,12 +31,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         final String authHeader = request.getHeader("Authorization");
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
-            return;
+        // SSE EventSource in browsers cannot send custom headers; fall back to ?token= query param.
+        final String jwt;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwt = authHeader.substring(7);
+        } else {
+            String tokenParam = request.getParameter("token");
+            if (tokenParam != null && !tokenParam.isBlank()) {
+                jwt = tokenParam;
+            } else {
+                filterChain.doFilter(request, response);
+                return;
+            }
         }
-
-        final String jwt = authHeader.substring(7);
         final String userEmail;
 
         try {
