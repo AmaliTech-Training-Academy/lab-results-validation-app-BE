@@ -8,6 +8,8 @@ import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandUpJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortStandUpJobStatus;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandUpJobRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.service.CohortGate4Service;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortStandUpService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,10 +49,16 @@ class CohortControllerTest {
     @Mock
     private CohortStandUpService cohortStandUpService;
 
+    @Mock
+    private CohortStandUpJobRepository standUpJobRepository;
+
+    @Mock
+    private CohortGate4Service cohortGate4Service;
+
     @InjectMocks
     private CohortController cohortController;
 
-    private static final String BASE_URL = "/api/v1/admin/cohorts";
+    private static final String BASE_URL = "/api/v1/cohorts";
 
     @BeforeEach
     void setUp() {
@@ -142,16 +150,16 @@ class CohortControllerTest {
             .endDate(LocalDate.of(2026, 12, 31))
             .lifecycleState(CohortLifecycleState.DRAFT)
             .isActive(true)
-            .sharepointFolderUrl("https://sharepoint/x")
+            .sharepointFolderUrl("https://amalitech.sharepoint.com/sites/labgate/cohort-2026")
             .createdAt(OffsetDateTime.now())
             .build();
         when(cohortService.attachSharePointLink(any(), any())).thenReturn(withLink);
 
         mockMvc.perform(patch(BASE_URL + "/" + id + "/sharepoint-link")
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://sharepoint/x"))))
+                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/labgate/cohort-2026"))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.sharepointFolderUrl").value("https://sharepoint/x"));
+            .andExpect(jsonPath("$.data.sharepointFolderUrl").value("https://amalitech.sharepoint.com/sites/labgate/cohort-2026"));
     }
 
     @Test
@@ -162,7 +170,7 @@ class CohortControllerTest {
 
         mockMvc.perform(patch(BASE_URL + "/" + id + "/sharepoint-link")
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://sharepoint/x"))))
+                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/labgate/cohort-2026"))))
             .andExpect(status().isNotFound());
     }
 
@@ -174,7 +182,7 @@ class CohortControllerTest {
 
         mockMvc.perform(patch(BASE_URL + "/" + id + "/sharepoint-link")
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://sharepoint/x"))))
+                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/labgate/cohort-2026"))))
             .andExpect(status().is(422));
     }
 
