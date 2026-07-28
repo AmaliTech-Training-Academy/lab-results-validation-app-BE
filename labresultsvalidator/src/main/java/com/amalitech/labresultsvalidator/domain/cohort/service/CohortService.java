@@ -3,7 +3,6 @@ package com.amalitech.labresultsvalidator.domain.cohort.service;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
-import com.amalitech.labresultsvalidator.common.response.PagedResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.AttachSharePointLinkRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
@@ -16,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
@@ -24,60 +24,73 @@ import java.util.UUID;
 public class CohortService {
 
     private final CohortRepository cohortRepository;
+    private final StandupPipelineService standupPipelineService;
+    private final ReferenceCommitService referenceCommitService;
 
-    public CohortResponse createCohort(CreateCohortRequest request) {
-        if (cohortRepository.existsByNameIgnoreCase(request.getName())) {
+    @Transactional
+    public CohortResponse createCohort(CreateCohortRequest req) {
+        if (cohortRepository.existsByNameIgnoreCase(req.getName())) {
             throw new DuplicateResourceException("Cohort name must be unique");
         }
-
-        User actor = currentUser();
+        UUID actorId = currentUserId();
         Cohort cohort = Cohort.builder()
-            .name(request.getName())
-            .startDate(request.getStartDate())
-            .endDate(request.getEndDate())
-            .lifecycleState(CohortLifecycleState.DRAFT)
-            .isActive(true)
+            .name(req.getName())
+            .startDate(req.getStartDate())
+            .endDate(req.getEndDate())
             .build();
-        cohort.setCreatedBy(actor.getId());
-        cohort.setUpdatedBy(actor.getId());
-
-        return toResponse(cohortRepository.save(cohort));
+        cohort.setCreatedBy(actorId);
+        cohort.setUpdatedBy(actorId);
+        return toCohortResponse(cohortRepository.save(cohort));
     }
 
-    public PagedResponse<CohortResponse> getCohorts(Pageable pageable) {
-        Page<CohortResponse> page = cohortRepository.findAll(pageable).map(this::toResponse);
-        return PagedResponse.of(page);
+    public Page<CohortResponse> getCohorts(Pageable pageable) {
+        return cohortRepository.findAll(pageable).map(this::toCohortResponse);
     }
 
-    public CohortResponse attachSharePointLink(UUID cohortId, AttachSharePointLinkRequest request) {
+    @Transactional
+    public CohortResponse attachSharePointLink(UUID cohortId, AttachSharePointLinkRequest req) {
         Cohort cohort = cohortRepository.findById(cohortId)
             .orElseThrow(() -> new ResourceNotFoundException("Cohort not found with ID: " + cohortId));
-
         if (cohort.getLifecycleState() != CohortLifecycleState.DRAFT) {
             throw new UnprocessableEntityException(
                 "A SharePoint link can only be attached to a cohort in DRAFT");
         }
-
-        cohort.setSharepointFolderUrl(request.getFolderUrl());
-        cohort.setUpdatedBy(currentUser().getId());
-
-        return toResponse(cohortRepository.save(cohort));
+        UUID actorId = currentUserId();
+        cohort.setSharepointFolderUrl(req.getFolderUrl());
+        cohort.setUpdatedBy(actorId);
+        return toCohortResponse(cohortRepository.save(cohort));
     }
 
-    private CohortResponse toResponse(Cohort cohort) {
+    public void acceptReference(UUID cohortId) {
+        referenceCommitService.acceptAndCommit(cohortId, currentUserId());
+    }
+
+    public void discardReference(UUID cohortId) {
+        referenceCommitService.discardAndReset(cohortId, currentUserId());
+    }
+
+    public CohortResponse getCohort(UUID cohortId) {
+        Cohort cohort = cohortRepository.findById(cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException("Cohort not found with id: " + cohortId));
+        return toCohortResponse(cohort);
+    }
+
+    private UUID currentUserId() {
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return user.getId();
+    }
+
+    private CohortResponse toCohortResponse(Cohort cohort) {
         return CohortResponse.builder()
             .id(cohort.getId())
             .name(cohort.getName())
             .startDate(cohort.getStartDate())
             .endDate(cohort.getEndDate())
             .lifecycleState(cohort.getLifecycleState())
+            .isLocked(cohort.isLocked())
             .isActive(cohort.isActive())
             .sharepointFolderUrl(cohort.getSharepointFolderUrl())
             .createdAt(cohort.getCreatedAt())
             .build();
-    }
-
-    private User currentUser() {
-        return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
 }

@@ -33,3 +33,5 @@ public abstract class BaseEntity {
     @Column(name = "updated_by")
     private UUID updatedBy;
 }
+
+

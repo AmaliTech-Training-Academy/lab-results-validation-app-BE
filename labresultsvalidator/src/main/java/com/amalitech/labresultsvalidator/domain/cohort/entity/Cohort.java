@@ -16,6 +16,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
@@ -47,9 +48,25 @@ public class Cohort extends BaseEntity {
     private CohortLifecycleState lifecycleState = CohortLifecycleState.DRAFT;
 
     @Builder.Default
+    @Column(name = "is_locked", nullable = false)
+    private boolean isLocked = false;
+
+    @Builder.Default
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
-    @Column(name = "sharepoint_folder_url", columnDefinition = "TEXT")
+    @Column(name = "sharepoint_folder_url")
     private String sharepointFolderUrl;
+
+    @Column(name = "sharepoint_drive_id", length = 200)
+    private String sharepointDriveId;
+
+    @Column(name = "sharepoint_item_id", length = 200)
+    private String sharepointItemId;
+
+    @Column(name = "reference_accepted_at")
+    private OffsetDateTime referenceAcceptedAt;
+
+    @Column(name = "reference_accepted_by")
+    private UUID referenceAcceptedBy;
 }

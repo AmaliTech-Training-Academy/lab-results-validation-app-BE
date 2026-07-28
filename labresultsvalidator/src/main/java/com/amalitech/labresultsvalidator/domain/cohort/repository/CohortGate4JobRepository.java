@@ -1,0 +1,15 @@
+package com.amalitech.labresultsvalidator.domain.cohort.repository;
+
+import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortGate4Job;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortGate4JobStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+import java.util.UUID;
+
+public interface CohortGate4JobRepository extends JpaRepository<CohortGate4Job, UUID> {
+
+    boolean existsByCohortIdAndStatus(UUID cohortId, CohortGate4JobStatus status);
+
+    Optional<CohortGate4Job> findTopByCohortIdOrderByStartedAtDesc(UUID cohortId);
+}

@@ -19,10 +19,6 @@ import org.springframework.stereotype.Service;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/**
- * Starts and guards cohort stand-up jobs (PRD A2). Only creates and protects the job
- * record here — actual Gate 1-4 execution against a running job is a later story.
- */
 @Service
 @RequiredArgsConstructor
 public class CohortStandUpService {
@@ -32,6 +28,7 @@ public class CohortStandUpService {
 
     private final CohortRepository cohortRepository;
     private final CohortStandUpJobRepository standUpJobRepository;
+    private final StandupJobRunner standupJobRunner;
 
     public StandUpJobResponse startStandUp(UUID cohortId) {
         Cohort cohort = cohortRepository.findById(cohortId)
@@ -49,11 +46,12 @@ public class CohortStandUpService {
             throw new DuplicateResourceException(ALREADY_RUNNING_MESSAGE);
         }
 
+        UUID actorId = currentUser().getId();
         CohortStandUpJob job = CohortStandUpJob.builder()
             .cohort(cohort)
             .status(CohortStandUpJobStatus.RUNNING)
             .startedAt(OffsetDateTime.now())
-            .triggeredBy(currentUser().getId())
+            .triggeredBy(actorId)
             .build();
 
         try {
@@ -63,6 +61,8 @@ public class CohortStandUpService {
             // guarded at the DB level by the partial unique index on (cohort_id) WHERE status='RUNNING'.
             throw new DuplicateResourceException(ALREADY_RUNNING_MESSAGE);
         }
+
+        standupJobRunner.run(cohortId, job.getId(), actorId);
 
         return StandUpJobResponse.builder()
             .id(job.getId())

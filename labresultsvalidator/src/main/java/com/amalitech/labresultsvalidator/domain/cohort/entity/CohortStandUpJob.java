@@ -12,6 +12,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -52,4 +54,9 @@ public class CohortStandUpJob extends BaseEntity {
 
     @Column(name = "triggered_by")
     private UUID triggeredBy;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Builder.Default
+    @Column(name = "gate_events_json", nullable = false, columnDefinition = "jsonb")
+    private String gateEventsJson = "[]";
 }

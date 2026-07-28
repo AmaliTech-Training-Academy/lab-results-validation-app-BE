@@ -42,6 +42,9 @@ class CohortStandUpServiceTest {
     @Mock
     private CohortStandUpJobRepository standUpJobRepository;
 
+    @Mock
+    private StandupJobRunner standupJobRunner;
+
     @InjectMocks
     private CohortStandUpService cohortStandUpService;
 

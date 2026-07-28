@@ -20,6 +20,7 @@ public class CohortResponse {
     private LocalDate startDate;
     private LocalDate endDate;
     private CohortLifecycleState lifecycleState;
+    private boolean isLocked;
     private boolean isActive;
     private String sharepointFolderUrl;
     private OffsetDateTime createdAt;

@@ -12,20 +12,30 @@ import lombok.Setter;
 
 import java.time.LocalDate;
 
+@EndDateAfterStartDate
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@EndDateAfterStartDate
 public class CreateCohortRequest implements DateRangeHolder {
 
-    @NotBlank(message = "name is required")
+    @NotBlank(message = "Cohort name is required")
     private String name;
 
-    @NotNull(message = "startDate is required")
+    @NotNull(message = "Start date is required")
     private LocalDate startDate;
 
-    @NotNull(message = "endDate is required")
+    @NotNull(message = "End date is required")
     private LocalDate endDate;
+
+    @Override
+    public LocalDate getStartDate() {
+        return startDate;
+    }
+
+    @Override
+    public LocalDate getEndDate() {
+        return endDate;
+    }
 }
