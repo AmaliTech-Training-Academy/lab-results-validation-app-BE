@@ -57,3 +57,9 @@ variable "create_github_oidc_provider" {
   default     = true
   description = "Create the account-level OIDC provider here (the first env). Set false in prod."
 }
+
+variable "sharepoint_bucket_name" {
+  type        = string
+  default     = "lab-results-validator-bucket"
+  description = "S3 bucket holding SharePoint files for comparison/validation triggers."
+}
