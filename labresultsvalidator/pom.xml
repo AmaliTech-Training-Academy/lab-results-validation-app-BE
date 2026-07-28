@@ -44,6 +44,10 @@
              BasicPolymorphicTypeValidator). Fixed in 3.1.4. The Jackson 2 line is
              pinned separately via the jackson-bom import below. -->
         <jackson-bom.version>3.1.4</jackson-bom.version>
+        <!-- Pin all Kiota transitive deps (pulled by microsoft-graph 6.3.0) to patch
+             CVE-2026-44503 (HIGH): RedirectHandler leaks Cookie/Proxy-Authorization
+             headers on cross-host redirect. Fixed in 1.9.1. -->
+        <kiota.version>1.9.1</kiota.version>
     </properties>
     <dependencies>
         <dependency>
@@ -196,6 +200,43 @@
                 <version>2.21.4</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <!-- Force all Kiota modules to 1.9.1 to patch CVE-2026-44503 (HIGH).
+                 microsoft-graph 6.3.0 pulls 1.0.3 transitively. -->
+            <dependency>
+                <groupId>com.microsoft.kiota</groupId>
+                <artifactId>microsoft-kiota-abstractions</artifactId>
+                <version>${kiota.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.kiota</groupId>
+                <artifactId>microsoft-kiota-authentication-azure</artifactId>
+                <version>${kiota.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.kiota</groupId>
+                <artifactId>microsoft-kiota-http-okHttp</artifactId>
+                <version>${kiota.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.kiota</groupId>
+                <artifactId>microsoft-kiota-serialization-json</artifactId>
+                <version>${kiota.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.kiota</groupId>
+                <artifactId>microsoft-kiota-serialization-text</artifactId>
+                <version>${kiota.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.kiota</groupId>
+                <artifactId>microsoft-kiota-serialization-form</artifactId>
+                <version>${kiota.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.kiota</groupId>
+                <artifactId>microsoft-kiota-serialization-multipart</artifactId>
+                <version>${kiota.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
