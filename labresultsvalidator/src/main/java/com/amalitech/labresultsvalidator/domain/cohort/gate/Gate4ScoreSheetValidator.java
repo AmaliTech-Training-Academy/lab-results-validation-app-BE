@@ -132,7 +132,9 @@ public class Gate4ScoreSheetValidator {
                 allErrors.addAll(fileErrors);
                 eventService.emit(jobId, "file.failed", Map.of(
                     "file", file.name(),
-                    "errors", fileErrors.stream().map(GateError::message).collect(Collectors.toList())
+                    "errors", fileErrors.stream()
+                        .map(e -> "[" + e.file() + " | " + e.location() + "] " + e.message())
+                        .collect(Collectors.toList())
                 ));
             }
         }
@@ -175,7 +177,8 @@ public class Gate4ScoreSheetValidator {
                 continue;
             }
 
-            Map<String, Integer> headers = readHeaders(sheet);
+            int headerRowIdx = findHeaderRowIndex(sheet);
+            Map<String, Integer> headers = readHeadersFromRow(sheet.getRow(headerRowIdx));
             List<GateError> colErrors = checkRequiredColumns(fileName, sheetName, headers);
             if (!colErrors.isEmpty()) {
                 errors.addAll(colErrors);
@@ -185,7 +188,7 @@ public class Gate4ScoreSheetValidator {
             int nspCol = headers.get("name of nsp");
             int scoreCol = headers.get("total score");
 
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            for (int i = headerRowIdx + 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (isBlankRow(row)) {
                     continue;
@@ -213,15 +216,34 @@ public class Gate4ScoreSheetValidator {
         return errors;
     }
 
+    // Scans the first 10 rows and returns the index of the one with the most required-column matches.
+    private int findHeaderRowIndex(Sheet sheet) {
+        int best = 0;
+        long bestMatches = 0;
+        int limit = Math.min(10, sheet.getLastRowNum() + 1);
+        for (int r = 0; r < limit; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) {
+                continue;
+            }
+            Map<String, Integer> candidate = readHeadersFromRow(row);
+            long matches = REQUIRED_COLUMNS.stream().filter(candidate::containsKey).count();
+            if (matches > bestMatches) {
+                bestMatches = matches;
+                best = r;
+            }
+        }
+        return best;
+    }
+
     // Headers stored lowercase so all column lookups are case-insensitive.
-    private Map<String, Integer> readHeaders(Sheet sheet) {
+    private Map<String, Integer> readHeadersFromRow(Row row) {
         Map<String, Integer> headers = new HashMap<>();
-        Row headerRow = sheet.getRow(0);
-        if (headerRow == null) {
+        if (row == null) {
             return headers;
         }
-        for (int c = 0; c < headerRow.getLastCellNum(); c++) {
-            String val = getCellString(headerRow, c);
+        for (int c = 0; c < row.getLastCellNum(); c++) {
+            String val = getCellString(row, c);
             if (val != null && !val.isBlank()) {
                 headers.put(val.trim().toLowerCase(Locale.ROOT), c);
             }
