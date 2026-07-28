@@ -29,7 +29,9 @@ public class StandupSseRegistry {
 
     public void send(UUID jobId, StandupGateEvent event) {
         SseEmitter emitter = emitters.get(jobId);
-        if (emitter == null) return;
+        if (emitter == null) {
+            return;
+        }
         try {
             emitter.send(SseEmitter.event()
                 .id(String.valueOf(event.index()))
@@ -44,7 +46,10 @@ public class StandupSseRegistry {
     public void complete(UUID jobId) {
         SseEmitter emitter = emitters.remove(jobId);
         if (emitter != null) {
-            try { emitter.complete(); } catch (Exception ignored) {}
+            try {
+                emitter.complete();
+            } catch (Exception ignored) {
+            }
         }
     }
 }

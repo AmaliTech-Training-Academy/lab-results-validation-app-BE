@@ -145,7 +145,9 @@ public class Gate3ReferenceValidator {
             String fileName, byte[] bytes, List<GateError> errors) {
         List<ValidatedReferenceBundle.SpecializationRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) return rows;
+        if (sheet == null) {
+            return rows;
+        }
 
         Map<String, Integer> headers = readHeaders(sheet);
         List<GateError> colErrors = checkRequiredColumns(fileName, headers, "specializationid", "specialization");
@@ -157,7 +159,9 @@ public class Gate3ReferenceValidator {
         Set<String> seenIds = new HashSet<>();
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) continue;
+            if (isBlankRow(row)) {
+                continue;
+            }
             int rowNum = i + 1;
             String specId = getCellString(row, headers.get("specializationid"));
             String name = getCellString(row, headers.get("specialization"));
@@ -187,7 +191,9 @@ public class Gate3ReferenceValidator {
             String fileName, byte[] bytes, Set<String> validSpecIds, List<GateError> errors) {
         List<ValidatedReferenceBundle.ModuleRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) return rows;
+        if (sheet == null) {
+            return rows;
+        }
 
         Map<String, Integer> headers = readHeaders(sheet);
         List<GateError> colErrors = checkRequiredColumns(
@@ -199,7 +205,9 @@ public class Gate3ReferenceValidator {
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) continue;
+            if (isBlankRow(row)) {
+                continue;
+            }
             int rowNum = i + 1;
             String specId = getCellString(row, headers.get("specializationid"));
             String moduleId = getCellString(row, headers.get("moduleid"));
@@ -236,7 +244,9 @@ public class Gate3ReferenceValidator {
             String fileName, byte[] bytes, Set<String> validModuleIds, List<GateError> errors) {
         List<ValidatedReferenceBundle.LabRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) return rows;
+        if (sheet == null) {
+            return rows;
+        }
 
         Map<String, Integer> headers = readHeaders(sheet);
         List<GateError> colErrors = checkRequiredColumns(
@@ -248,7 +258,9 @@ public class Gate3ReferenceValidator {
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) continue;
+            if (isBlankRow(row)) {
+                continue;
+            }
             int rowNum = i + 1;
             String moduleId = getCellString(row, headers.get("moduleid"));
             String assessmentId = getCellString(row, headers.get("assessmentid"));
@@ -280,7 +292,9 @@ public class Gate3ReferenceValidator {
             String fileName, byte[] bytes, Set<String> validSpecNamesLower, List<GateError> errors) {
         List<ValidatedReferenceBundle.LearnerRow> rows = new ArrayList<>();
         Sheet sheet = openFirstSheet(fileName, bytes, errors);
-        if (sheet == null) return rows;
+        if (sheet == null) {
+            return rows;
+        }
 
         Map<String, Integer> headers = readHeaders(sheet);
         List<GateError> colErrors = checkRequiredColumns(
@@ -293,7 +307,9 @@ public class Gate3ReferenceValidator {
         Set<String> seenEmails = new HashSet<>();
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (isBlankRow(row)) continue;
+            if (isBlankRow(row)) {
+                continue;
+            }
             int rowNum = i + 1;
             String email = getCellString(row, headers.get("amalitech email"));
             String fullName = getCellString(row, headers.get("full name"));
@@ -326,10 +342,14 @@ public class Gate3ReferenceValidator {
 
     // Passes if the trainee value contains any known spec name or vice-versa (case-insensitive).
     private boolean matchesAnySpecName(String traineeSpec, Set<String> validSpecNamesLower) {
-        if (traineeSpec == null || traineeSpec.isBlank()) return false;
+        if (traineeSpec == null || traineeSpec.isBlank()) {
+            return false;
+        }
         String key = traineeSpec.toLowerCase(Locale.ROOT);
         for (String specName : validSpecNamesLower) {
-            if (key.contains(specName) || specName.contains(key)) return true;
+            if (key.contains(specName) || specName.contains(key)) {
+                return true;
+            }
         }
         return false;
     }
@@ -362,7 +382,9 @@ public class Gate3ReferenceValidator {
     private Map<String, Integer> readHeaders(Sheet sheet) {
         Map<String, Integer> headers = new HashMap<>();
         Row headerRow = sheet.getRow(0);
-        if (headerRow == null) return headers;
+        if (headerRow == null) {
+            return headers;
+        }
         for (int c = 0; c < headerRow.getLastCellNum(); c++) {
             Cell cell = headerRow.getCell(c);
             if (cell != null) {
@@ -388,26 +410,36 @@ public class Gate3ReferenceValidator {
     }
 
     private boolean isBlankRow(Row row) {
-        if (row == null) return true;
+        if (row == null) {
+            return true;
+        }
         for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
             Cell cell = row.getCell(c);
             if (cell != null && cell.getCellType() != CellType.BLANK) {
                 String val = getCellString(row, c);
-                if (val != null && !val.isBlank()) return false;
+                if (val != null && !val.isBlank()) {
+                    return false;
+                }
             }
         }
         return true;
     }
 
     private String getCellString(Row row, Integer colIndex) {
-        if (row == null || colIndex == null) return null;
+        if (row == null || colIndex == null) {
+            return null;
+        }
         Cell cell = row.getCell(colIndex);
-        if (cell == null) return null;
+        if (cell == null) {
+            return null;
+        }
         return switch (cell.getCellType()) {
             case STRING -> cell.getStringCellValue().trim();
             case NUMERIC -> {
                 double d = cell.getNumericCellValue();
-                if (d == Math.floor(d)) yield String.valueOf((long) d);
+                if (d == Math.floor(d)) {
+                    yield String.valueOf((long) d);
+                }
                 yield String.valueOf(d);
             }
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());

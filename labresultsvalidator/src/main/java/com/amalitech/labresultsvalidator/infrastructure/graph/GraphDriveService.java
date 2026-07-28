@@ -92,7 +92,9 @@ public class GraphDriveService {
     }
 
     private boolean sanctionedSiteMatches(String configured, String resolved) {
-        if (configured == null || resolved == null) return false;
+        if (configured == null || resolved == null) {
+            return false;
+        }
         // Graph may return just the GUID or the full "hostname,guid1,guid2" composite.
         return configured.equals(resolved) || configured.contains(resolved);
     }

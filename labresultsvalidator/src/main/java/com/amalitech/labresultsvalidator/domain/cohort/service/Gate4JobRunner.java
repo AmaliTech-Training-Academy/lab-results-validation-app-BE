@@ -64,7 +64,8 @@ public class Gate4JobRunner {
                 .orElseThrow(() -> new RuntimeException(
                     "Scores folder '" + scoresFolderName + "' not found."));
 
-            Gate4Result result = gate4Validator.validate(driveId, scoresFolderItemId, cohortId, jobId, gate4EventService);
+            Gate4Result result = gate4Validator.validate(
+                driveId, scoresFolderItemId, cohortId, jobId, gate4EventService);
             boolean passed = result.gate().passed();
             finalStatus = passed ? CohortGate4JobStatus.COMPLETED : CohortGate4JobStatus.FAILED;
 

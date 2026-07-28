@@ -187,7 +187,9 @@ public class Gate4ScoreSheetValidator {
 
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
-                if (isBlankRow(row)) continue;
+                if (isBlankRow(row)) {
+                    continue;
+                }
                 int rowNum = i + 1;
 
                 String nspName = getCellString(row, nspCol);
@@ -215,7 +217,9 @@ public class Gate4ScoreSheetValidator {
     private Map<String, Integer> readHeaders(Sheet sheet) {
         Map<String, Integer> headers = new HashMap<>();
         Row headerRow = sheet.getRow(0);
-        if (headerRow == null) return headers;
+        if (headerRow == null) {
+            return headers;
+        }
         for (int c = 0; c < headerRow.getLastCellNum(); c++) {
             String val = getCellString(headerRow, c);
             if (val != null && !val.isBlank()) {
@@ -231,28 +235,37 @@ public class Gate4ScoreSheetValidator {
         for (String col : REQUIRED_COLUMNS) {
             if (!headers.containsKey(col)) {
                 errors.add(new GateError(fileName, "sheet " + sheetName, "G4-MISSING-COLUMN",
-                    "Required column '" + col + "' not found in sheet '" + sheetName + "' in file '" + fileName + "'."));
+                    "Required column '" + col + "' not found in sheet '"
+                        + sheetName + "' in file '" + fileName + "'."));
             }
         }
         return errors;
     }
 
     private boolean isBlankRow(Row row) {
-        if (row == null) return true;
+        if (row == null) {
+            return true;
+        }
         for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
             Cell cell = row.getCell(c);
             if (cell != null && cell.getCellType() != CellType.BLANK) {
                 String val = getCellString(row, c);
-                if (val != null && !val.isBlank()) return false;
+                if (val != null && !val.isBlank()) {
+                    return false;
+                }
             }
         }
         return true;
     }
 
     private String getCellString(Row row, Integer colIndex) {
-        if (row == null || colIndex == null) return null;
+        if (row == null || colIndex == null) {
+            return null;
+        }
         Cell cell = row.getCell(colIndex);
-        if (cell == null) return null;
+        if (cell == null) {
+            return null;
+        }
         return switch (cell.getCellType()) {
             case STRING -> cell.getStringCellValue().trim();
             case NUMERIC -> {

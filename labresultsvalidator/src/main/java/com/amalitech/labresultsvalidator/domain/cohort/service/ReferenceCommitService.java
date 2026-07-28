@@ -134,10 +134,14 @@ public class ReferenceCommitService {
 
     private Specialization findSpecByPartialName(
             String traineeSpec, Map<String, Specialization> specsByName) {
-        if (traineeSpec == null || traineeSpec.isBlank()) return null;
+        if (traineeSpec == null || traineeSpec.isBlank()) {
+            return null;
+        }
         String key = traineeSpec.toLowerCase(Locale.ROOT);
         Specialization exact = specsByName.get(key);
-        if (exact != null) return exact;
+        if (exact != null) {
+            return exact;
+        }
         for (Map.Entry<String, Specialization> entry : specsByName.entrySet()) {
             if (key.contains(entry.getKey()) || entry.getKey().contains(key)) {
                 return entry.getValue();
@@ -187,12 +191,16 @@ public class ReferenceCommitService {
         int sequenceFallback = 0;
         for (ValidatedReferenceBundle.ModuleRow row : bundle.modules()) {
             Specialization spec = specsByCode.get(row.specializationId());
-            if (spec == null) continue;
+            if (spec == null) {
+                continue;
+            }
             sequenceFallback++;
             int sequence;
             try {
                 sequence = Integer.parseInt(row.phase().trim());
-                if (sequence <= 0) sequence = sequenceFallback;
+                if (sequence <= 0) {
+                    sequence = sequenceFallback;
+                }
             } catch (NumberFormatException ex) {
                 sequence = sequenceFallback;
             }
@@ -216,7 +224,9 @@ public class ReferenceCommitService {
             UUID actorUserId) {
         for (ValidatedReferenceBundle.LabRow row : bundle.labs()) {
             LabModule module = modulesByCode.get(row.moduleId());
-            if (module == null) continue;
+            if (module == null) {
+                continue;
+            }
             Lab lab = Lab.builder()
                 .moduleId(module.getId())
                 .title(row.labTitle())
@@ -242,7 +252,9 @@ public class ReferenceCommitService {
 
         for (ValidatedReferenceBundle.LearnerRow row : bundle.learners()) {
             Specialization spec = findSpecByPartialName(row.specialization(), specsByName);
-            if (spec == null) continue;
+            if (spec == null) {
+                continue;
+            }
 
             Learner learner = Learner.builder()
                 .learnerId(row.email())

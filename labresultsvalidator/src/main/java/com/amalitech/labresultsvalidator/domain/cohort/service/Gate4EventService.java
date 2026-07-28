@@ -64,7 +64,9 @@ public class Gate4EventService {
     }
 
     private List<Map<String, Object>> parseEvents(String json) {
-        if (json == null || json.isBlank() || "[]".equals(json.trim())) return new ArrayList<>();
+        if (json == null || json.isBlank() || "[]".equals(json.trim())) {
+            return new ArrayList<>();
+        }
         try {
             return objectMapper.readValue(json, EVENT_LIST_TYPE);
         } catch (JsonProcessingException ex) {
