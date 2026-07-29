@@ -4,12 +4,16 @@ import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceExce
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortReferenceResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.InstructorContactResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.LearnerResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandUpJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortStandUpJobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandUpJobRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortGate4Service;
+import com.amalitech.labresultsvalidator.domain.cohort.service.CohortReferenceQueryService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortStandUpService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,6 +30,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -54,6 +59,9 @@ class CohortControllerTest {
 
     @Mock
     private CohortGate4Service cohortGate4Service;
+
+    @Mock
+    private CohortReferenceQueryService cohortReferenceQueryService;
 
     @InjectMocks
     private CohortController cohortController;
@@ -209,5 +217,44 @@ class CohortControllerTest {
 
         mockMvc.perform(post(BASE_URL + "/" + id + "/standup"))
             .andExpect(status().isConflict());
+    }
+
+    @Test
+    void getCohortReference_returns200WithNestedBundle() throws Exception {
+        UUID id = UUID.randomUUID();
+        CohortReferenceResponse reference = CohortReferenceResponse.builder()
+            .specializations(List.of())
+            .learners(List.of(LearnerResponse.builder()
+                .id(UUID.randomUUID())
+                .learnerId("DEG-2026-001")
+                .fullName("Ama Owusu")
+                .email("ama.owusu@example.com")
+                .cohortId(id)
+                .status("active")
+                .build()))
+            .instructors(List.of(InstructorContactResponse.builder()
+                .id(UUID.randomUUID())
+                .instructorId("INS-001")
+                .email("kofi.instructor@example.com")
+                .fullName("Kofi Mensah")
+                .isActive(true)
+                .build()))
+            .build();
+        when(cohortReferenceQueryService.getCohortReference(id)).thenReturn(reference);
+
+        mockMvc.perform(get(BASE_URL + "/" + id + "/reference"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.learners[0].learnerId").value("DEG-2026-001"))
+            .andExpect(jsonPath("$.data.instructors[0].instructorId").value("INS-001"));
+    }
+
+    @Test
+    void getCohortReference_cohortNotFound_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(cohortReferenceQueryService.getCohortReference(id))
+            .thenThrow(new ResourceNotFoundException("Cohort not found with id: " + id));
+
+        mockMvc.perform(get(BASE_URL + "/" + id + "/reference"))
+            .andExpect(status().isNotFound());
     }
 }

@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.cohort.controller;
 import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceException;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.AttachSharePointLinkRequest;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortReferenceResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.Gate4JobResponse;
@@ -10,6 +11,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.dto.StandUpJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandupRunResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandUpJobRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortGate4Service;
+import com.amalitech.labresultsvalidator.domain.cohort.service.CohortReferenceQueryService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortStandUpService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -48,6 +50,7 @@ public class CohortController {
     private final CohortStandUpService cohortStandUpService;
     private final CohortStandUpJobRepository standUpJobRepository;
     private final CohortGate4Service cohortGate4Service;
+    private final CohortReferenceQueryService cohortReferenceQueryService;
 
     @Operation(summary = "List all cohorts", description = "Returns a paginated list of all cohorts.")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
@@ -199,5 +202,20 @@ public class CohortController {
     public ResponseEntity<ApiResponse<Gate4JobResponse>> startGate4(@PathVariable UUID id) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
             .body(ApiResponse.success("Gate 4 job started.", cohortGate4Service.startGate4(id)));
+    }
+
+    @Operation(summary = "Get cohort reference bundle",
+        description = "Returns the committed reference data for a cohort in one call: "
+            + "specializations (with nested modules and labs), learners, and instructor contacts.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Cohort reference data returned"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "Cohort not found")
+    })
+    @GetMapping("/{id}/reference")
+    public ResponseEntity<ApiResponse<CohortReferenceResponse>> getCohortReference(@PathVariable UUID id) {
+        CohortReferenceResponse reference = cohortReferenceQueryService.getCohortReference(id);
+        return ResponseEntity.ok(ApiResponse.success("Cohort reference data retrieved.", reference));
     }
 }
