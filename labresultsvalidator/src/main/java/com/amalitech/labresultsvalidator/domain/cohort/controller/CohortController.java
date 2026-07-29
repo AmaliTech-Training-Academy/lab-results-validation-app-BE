@@ -215,7 +215,7 @@ public class CohortController {
     })
     @GetMapping("/{id}/reference")
     public ResponseEntity<ApiResponse<CohortReferenceResponse>> getCohortReference(@PathVariable UUID id) {
-        return ResponseEntity.ok(
-            ApiResponse.success("Cohort reference data retrieved.", cohortReferenceQueryService.getCohortReference(id)));
+        CohortReferenceResponse reference = cohortReferenceQueryService.getCohortReference(id);
+        return ResponseEntity.ok(ApiResponse.success("Cohort reference data retrieved.", reference));
     }
 }
