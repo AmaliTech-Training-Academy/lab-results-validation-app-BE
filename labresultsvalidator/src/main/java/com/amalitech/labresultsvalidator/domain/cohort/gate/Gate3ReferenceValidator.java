@@ -374,6 +374,7 @@ public class Gate3ReferenceValidator {
                     rowHasError = true;
                 }
                 case MATCHED -> { }
+                default -> { }
             }
 
             if (!rowHasError) {
