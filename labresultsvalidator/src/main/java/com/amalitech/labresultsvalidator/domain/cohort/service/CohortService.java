@@ -17,6 +17,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -26,6 +27,7 @@ public class CohortService {
     private final CohortRepository cohortRepository;
     private final StandupPipelineService standupPipelineService;
     private final ReferenceCommitService referenceCommitService;
+    private final AuditEventService auditEventService;
 
     @Transactional
     public CohortResponse createCohort(CreateCohortRequest req) {
@@ -67,6 +69,39 @@ public class CohortService {
 
     public void discardReference(UUID cohortId) {
         referenceCommitService.discardAndReset(cohortId, currentUserId());
+    }
+
+    @Transactional
+    public CohortResponse lockCohort(UUID cohortId) {
+        Cohort cohort = cohortRepository.findById(cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException("Cohort not found with ID: " + cohortId));
+        if (cohort.getLifecycleState() != CohortLifecycleState.STOOD_UP) {
+            throw new UnprocessableEntityException("Only a STOOD_UP cohort can be locked.");
+        }
+        if (cohort.isLocked()) {
+            throw new UnprocessableEntityException("Cohort is already locked.");
+        }
+        UUID actorId = currentUserId();
+        cohort.setLocked(true);
+        cohort.setUpdatedBy(actorId);
+        CohortResponse response = toCohortResponse(cohortRepository.save(cohort));
+        auditEventService.record("COHORT_LOCKED", cohortId, actorId, Map.of("cohortName", cohort.getName()));
+        return response;
+    }
+
+    @Transactional
+    public CohortResponse unlockCohort(UUID cohortId) {
+        Cohort cohort = cohortRepository.findById(cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException("Cohort not found with ID: " + cohortId));
+        if (!cohort.isLocked()) {
+            throw new UnprocessableEntityException("Cohort is not locked.");
+        }
+        UUID actorId = currentUserId();
+        cohort.setLocked(false);
+        cohort.setUpdatedBy(actorId);
+        CohortResponse response = toCohortResponse(cohortRepository.save(cohort));
+        auditEventService.record("COHORT_UNLOCKED", cohortId, actorId, Map.of("cohortName", cohort.getName()));
+        return response;
     }
 
     public CohortResponse getCohort(UUID cohortId) {

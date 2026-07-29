@@ -257,4 +257,70 @@ class CohortControllerTest {
         mockMvc.perform(get(BASE_URL + "/" + id + "/reference"))
             .andExpect(status().isNotFound());
     }
+
+    @Test
+    void lockCohort_stoodUpCohort_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        CohortResponse locked = CohortResponse.builder()
+            .id(id)
+            .name("Cohort 2026")
+            .lifecycleState(CohortLifecycleState.STOOD_UP)
+            .isLocked(true)
+            .isActive(true)
+            .createdAt(OffsetDateTime.now())
+            .build();
+        when(cohortService.lockCohort(id)).thenReturn(locked);
+
+        mockMvc.perform(patch(BASE_URL + "/" + id + "/lock"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.locked").value(true));
+    }
+
+    @Test
+    void lockCohort_notStoodUp_returns422() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(cohortService.lockCohort(id))
+            .thenThrow(new UnprocessableEntityException("Only a STOOD_UP cohort can be locked."));
+
+        mockMvc.perform(patch(BASE_URL + "/" + id + "/lock"))
+            .andExpect(status().is(422));
+    }
+
+    @Test
+    void lockCohort_cohortNotFound_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(cohortService.lockCohort(id))
+            .thenThrow(new ResourceNotFoundException("Cohort not found with ID: " + id));
+
+        mockMvc.perform(patch(BASE_URL + "/" + id + "/lock"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void unlockCohort_lockedCohort_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        CohortResponse unlocked = CohortResponse.builder()
+            .id(id)
+            .name("Cohort 2026")
+            .lifecycleState(CohortLifecycleState.STOOD_UP)
+            .isLocked(false)
+            .isActive(true)
+            .createdAt(OffsetDateTime.now())
+            .build();
+        when(cohortService.unlockCohort(id)).thenReturn(unlocked);
+
+        mockMvc.perform(patch(BASE_URL + "/" + id + "/unlock"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.locked").value(false));
+    }
+
+    @Test
+    void unlockCohort_notLocked_returns422() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(cohortService.unlockCohort(id))
+            .thenThrow(new UnprocessableEntityException("Cohort is not locked."));
+
+        mockMvc.perform(patch(BASE_URL + "/" + id + "/unlock"))
+            .andExpect(status().is(422));
+    }
 }
