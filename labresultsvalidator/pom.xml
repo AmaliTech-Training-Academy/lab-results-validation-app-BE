@@ -48,6 +48,7 @@
              CVE-2026-44503 (HIGH): RedirectHandler leaks Cookie/Proxy-Authorization
              headers on cross-host redirect. Fixed in 1.9.1. -->
         <kiota.version>1.9.1</kiota.version>
+        <aws.sdk.version>2.31.11</aws.sdk.version>
     </properties>
     <dependencies>
         <dependency>
@@ -184,10 +185,36 @@
             <artifactId>poi-ooxml</artifactId>
             <version>5.3.0</version>
         </dependency>
+
+        <!-- AWS SDK v2 — S3 store for SharePoint files (version diffing / re-trigger).
+             Use the sync S3Client over apache-client; exclude the Netty async client so it
+             can't drag in a Netty version that conflicts with the pinned netty.version above. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>
         <dependencies>
+            <!-- AWS SDK v2 BOM: aligns all software.amazon.awssdk module versions. -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <!-- Pin the entire Jackson 2 (com.fasterxml.jackson) family to patch HIGH
                  CVEs CVE-2026-54512 and CVE-2026-54513 in jackson-databind. The
                  Spring Boot-managed version (2.21.2, pulled transitively via

@@ -48,6 +48,14 @@ module "ecr" {
   tags        = local.common_tags
 }
 
+# Stores SharePoint files per cohort; versioned so instructor edits can be diffed
+# against the prior version to re-trigger validation.
+module "sharepoint_files" {
+  source      = "../modules/s3"
+  bucket_name = var.sharepoint_bucket_name
+  tags        = local.common_tags
+}
+
 module "app" {
   source = "../modules/ec2-app"
 
