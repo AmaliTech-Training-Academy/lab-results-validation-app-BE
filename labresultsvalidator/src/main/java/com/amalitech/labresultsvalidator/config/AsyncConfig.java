@@ -45,6 +45,23 @@ public class AsyncConfig implements AsyncConfigurer {
         return executor;
     }
 
+    // Dedicated pool for score-sheet sync jobs — a scheduled run can fan out across every
+    // eligible cohort at once, which would otherwise saturate standupTaskExecutor and starve
+    // concurrently-running Gate4/Standup jobs.
+    @Bean(name = "syncTaskExecutor")
+    public Executor syncTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(10);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("sync-async-");
+        executor.setKeepAliveSeconds(60);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
+        executor.initialize();
+        return executor;
+    }
+
     @Override
     public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
         return (ex, method, params) -> {
