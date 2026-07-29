@@ -137,6 +137,43 @@ public class GraphDriveService {
         return result;
     }
 
+    /**
+     * Resolves a single item's name and immediate parent folder name by ID — used by the
+     * single-file sync path, which only has an itemId, to build the same S3 key a full-folder
+     * sync would build for the same file.
+     */
+    public DriveItemDetails getItem(String driveId, String itemId) throws GraphAccessException {
+        DriveItem item;
+        try {
+            item = graphServiceClient.drives()
+                .byDriveId(driveId)
+                .items()
+                .byDriveItemId(itemId)
+                .get();
+        } catch (Exception ex) {
+            LOG.warn("Graph API call failed fetching item {}: {}", itemId, ex.getMessage());
+            throw new GraphAccessException(
+                "Cannot fetch SharePoint item metadata (driveId=" + driveId + ", itemId=" + itemId + ").",
+                ex
+            );
+        }
+
+        if (item == null) {
+            throw new GraphAccessException("SharePoint returned no metadata for item " + itemId + ".");
+        }
+
+        String parentFolderName = null;
+        if (item.getParentReference() != null && item.getParentReference().getPath() != null) {
+            String path = item.getParentReference().getPath();
+            int lastSlash = path.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < path.length() - 1) {
+                parentFolderName = path.substring(lastSlash + 1);
+            }
+        }
+
+        return new DriveItemDetails(item.getName(), parentFolderName);
+    }
+
     public byte[] downloadFile(String driveId, String itemId) throws GraphAccessException {
         InputStream stream;
         try {
