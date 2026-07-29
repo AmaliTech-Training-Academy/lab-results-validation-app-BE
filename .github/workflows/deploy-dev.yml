@@ -58,8 +58,12 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # NOT named AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY on purpose: those reserved names
+          # would override the OIDC deploy-role creds and make the `aws ecr get-login-password`
+          # call below run as the S3-only app user (no ECR access). Kept app-scoped here and
+          # written into the box .env under the real names further down.
+          APP_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          APP_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
@@ -85,8 +89,8 @@ jobs:
             echo "BASE_URL=http://52.50.143.70"
             echo "AWS_REGION=$AWS_REGION"
             echo "S3_BUCKET=$S3_BUCKET"
-            echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
-            echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+            echo "AWS_ACCESS_KEY_ID=$APP_AWS_ACCESS_KEY_ID"
+            echo "AWS_SECRET_ACCESS_KEY=$APP_AWS_SECRET_ACCESS_KEY"
           } > env.deploy
           scp $SSH_OPTS env.deploy ubuntu@"$SSH_HOST":/opt/app/.env
           rm -f env.deploy
