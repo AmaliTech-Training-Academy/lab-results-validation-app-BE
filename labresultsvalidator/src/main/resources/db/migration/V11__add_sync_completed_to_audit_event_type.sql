@@ -1,0 +1,9 @@
+ALTER TABLE audit_event
+    DROP CONSTRAINT chk_audit_event_type;
+
+ALTER TABLE audit_event
+    ADD CONSTRAINT chk_audit_event_type CHECK (event_type IN (
+        'LINK_SUBMITTED','GATE_FAILED','GATE_PASSED','REFERENCE_ACCEPTED',
+        'DISCARD_RESET','COHORT_LOCKED','COHORT_UNLOCKED','STOOD_UP','CONFLICT_RESOLVED',
+        'SYNC_COMPLETED'
+    ));

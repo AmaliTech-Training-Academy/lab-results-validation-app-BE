@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,6 +43,9 @@ class CohortServiceTest {
 
     @Mock
     private CohortRepository cohortRepository;
+
+    @Mock
+    private AuditEventService auditEventService;
 
     @InjectMocks
     private CohortService cohortService;
@@ -165,5 +169,115 @@ class CohortServiceTest {
             .isInstanceOf(UnprocessableEntityException.class);
 
         verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void lockCohort_stoodUpCohort_setsLockedTrue() {
+        UUID cohortId = UUID.randomUUID();
+        Cohort cohort = Cohort.builder()
+            .id(cohortId)
+            .name("Cohort 2026")
+            .lifecycleState(CohortLifecycleState.STOOD_UP)
+            .isLocked(false)
+            .isActive(true)
+            .build();
+        when(cohortRepository.findById(cohortId)).thenReturn(Optional.of(cohort));
+        when(cohortRepository.save(any(Cohort.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CohortResponse response = cohortService.lockCohort(cohortId);
+
+        assertThat(response.isLocked()).isTrue();
+        verify(auditEventService).record(eq("COHORT_LOCKED"), eq(cohortId), eq(actor.getId()), any());
+    }
+
+    @Test
+    void lockCohort_notStoodUp_throwsUnprocessableEntityException() {
+        UUID cohortId = UUID.randomUUID();
+        Cohort cohort = Cohort.builder()
+            .id(cohortId)
+            .name("Cohort 2026")
+            .lifecycleState(CohortLifecycleState.REFERENCE_ACCEPTED)
+            .isLocked(false)
+            .isActive(true)
+            .build();
+        when(cohortRepository.findById(cohortId)).thenReturn(Optional.of(cohort));
+
+        assertThatThrownBy(() -> cohortService.lockCohort(cohortId))
+            .isInstanceOf(UnprocessableEntityException.class);
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void lockCohort_alreadyLocked_throwsUnprocessableEntityException() {
+        UUID cohortId = UUID.randomUUID();
+        Cohort cohort = Cohort.builder()
+            .id(cohortId)
+            .name("Cohort 2026")
+            .lifecycleState(CohortLifecycleState.STOOD_UP)
+            .isLocked(true)
+            .isActive(true)
+            .build();
+        when(cohortRepository.findById(cohortId)).thenReturn(Optional.of(cohort));
+
+        assertThatThrownBy(() -> cohortService.lockCohort(cohortId))
+            .isInstanceOf(UnprocessableEntityException.class);
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void lockCohort_cohortNotFound_throwsResourceNotFoundException() {
+        UUID cohortId = UUID.randomUUID();
+        when(cohortRepository.findById(cohortId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> cohortService.lockCohort(cohortId))
+            .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void unlockCohort_lockedCohort_setsLockedFalse() {
+        UUID cohortId = UUID.randomUUID();
+        Cohort cohort = Cohort.builder()
+            .id(cohortId)
+            .name("Cohort 2026")
+            .lifecycleState(CohortLifecycleState.STOOD_UP)
+            .isLocked(true)
+            .isActive(true)
+            .build();
+        when(cohortRepository.findById(cohortId)).thenReturn(Optional.of(cohort));
+        when(cohortRepository.save(any(Cohort.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CohortResponse response = cohortService.unlockCohort(cohortId);
+
+        assertThat(response.isLocked()).isFalse();
+        verify(auditEventService).record(eq("COHORT_UNLOCKED"), eq(cohortId), eq(actor.getId()), any());
+    }
+
+    @Test
+    void unlockCohort_notLocked_throwsUnprocessableEntityException() {
+        UUID cohortId = UUID.randomUUID();
+        Cohort cohort = Cohort.builder()
+            .id(cohortId)
+            .name("Cohort 2026")
+            .lifecycleState(CohortLifecycleState.STOOD_UP)
+            .isLocked(false)
+            .isActive(true)
+            .build();
+        when(cohortRepository.findById(cohortId)).thenReturn(Optional.of(cohort));
+
+        assertThatThrownBy(() -> cohortService.unlockCohort(cohortId))
+            .isInstanceOf(UnprocessableEntityException.class);
+
+        verify(cohortRepository, never()).save(any());
+    }
+
+    @Test
+    void unlockCohort_cohortNotFound_throwsResourceNotFoundException() {
+        UUID cohortId = UUID.randomUUID();
+        when(cohortRepository.findById(cohortId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> cohortService.unlockCohort(cohortId))
+            .isInstanceOf(ResourceNotFoundException.class);
     }
 }

@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.cohort.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
+import com.amalitech.labresultsvalidator.common.utils.SpecializationNameMatcher;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortStandupPending;
@@ -24,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -132,24 +132,6 @@ public class ReferenceCommitService {
         auditEventService.record("DISCARD_RESET", cohortId, actorUserId, null);
     }
 
-    private Specialization findSpecByPartialName(
-            String traineeSpec, Map<String, Specialization> specsByName) {
-        if (traineeSpec == null || traineeSpec.isBlank()) {
-            return null;
-        }
-        String key = traineeSpec.toLowerCase(Locale.ROOT);
-        Specialization exact = specsByName.get(key);
-        if (exact != null) {
-            return exact;
-        }
-        for (Map.Entry<String, Specialization> entry : specsByName.entrySet()) {
-            if (key.contains(entry.getKey()) || entry.getKey().contains(key)) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
     private void clearPreviousReferenceData(UUID cohortId) {
         learnerRepository.deleteAllByCohortId(cohortId);
 
@@ -242,19 +224,23 @@ public class ReferenceCommitService {
             UUID cohortId,
             Map<String, Specialization> specsByCode,
             UUID actorUserId) {
-        // Trainees link by specialization name; build a name→Specialization lookup.
+        // Trainees link by specialization name; build a normalized name→Specialization lookup.
         Map<String, Specialization> specsByName = specsByCode.values().stream()
             .collect(Collectors.toMap(
-                s -> s.getName().toLowerCase(Locale.ROOT),
+                s -> SpecializationNameMatcher.normalize(s.getName()),
                 s -> s,
                 (a, b) -> a
             ));
 
         for (ValidatedReferenceBundle.LearnerRow row : bundle.learners()) {
-            Specialization spec = findSpecByPartialName(row.specialization(), specsByName);
-            if (spec == null) {
+            SpecializationNameMatcher.MatchResult<Specialization> match =
+                SpecializationNameMatcher.resolve(row.specialization(), specsByName);
+            if (match.outcome() != SpecializationNameMatcher.MatchOutcome.MATCHED) {
+                // Gate 3 already rejects unknown/ambiguous specializations before commit; this is a
+                // defensive guard, not an expected path.
                 continue;
             }
+            Specialization spec = match.value();
 
             Learner learner = Learner.builder()
                 .learnerId(row.email())
