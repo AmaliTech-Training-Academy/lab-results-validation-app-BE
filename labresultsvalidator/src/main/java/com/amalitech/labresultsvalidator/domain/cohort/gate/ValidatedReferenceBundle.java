@@ -11,7 +11,7 @@ public record ValidatedReferenceBundle(
 ) {
     public record SpecializationRow(String specializationId, String name) {}
 
-    public record ModuleRow(String moduleId, String name, String phase, String specializationId) {}
+    public record ModuleRow(String moduleId, String name, String specializationId) {}
 
     public record LabRow(String assessmentId, String labTitle, String moduleId) {}
 

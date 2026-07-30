@@ -17,7 +17,6 @@ public class ModuleWithLabsResponse {
     private UUID specializationId;
     private String name;
     private String code;
-    private int sequence;
     private String status;
     private List<LabResponse> labs;
 }
