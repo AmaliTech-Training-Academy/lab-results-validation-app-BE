@@ -4,6 +4,7 @@ import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceExce
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.Gate4JobResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortGate4Job;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortGate4JobStatus;
@@ -61,6 +62,13 @@ public class CohortGate4Service {
 
         gate4JobRunner.run(cohortId, job.getId(), actorId);
         return Gate4JobResponse.from(job);
+    }
+
+    /** Resolves the most recent Gate 4 job for the SSE stream endpoint. */
+    public StreamJobHandle getLatestJobForStream(UUID cohortId) {
+        CohortGate4Job job = gate4JobRepository.findTopByCohortIdOrderByStartedAtDesc(cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException("No Gate 4 job found for cohort " + cohortId));
+        return new StreamJobHandle(job.getId(), job.getStatus() == CohortGate4JobStatus.RUNNING);
     }
 
     private User currentUser() {

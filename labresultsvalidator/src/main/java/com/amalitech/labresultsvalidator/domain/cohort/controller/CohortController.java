@@ -9,7 +9,6 @@ import com.amalitech.labresultsvalidator.domain.cohort.dto.CreateCohortRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.Gate4JobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandUpJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandupRunResponse;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandUpJobRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortGate4Service;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortReferenceQueryService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortService;
@@ -48,7 +47,6 @@ public class CohortController {
 
     private final CohortService cohortService;
     private final CohortStandUpService cohortStandUpService;
-    private final CohortStandUpJobRepository standUpJobRepository;
     private final CohortGate4Service cohortGate4Service;
     private final CohortReferenceQueryService cohortReferenceQueryService;
 
@@ -162,9 +160,7 @@ public class CohortController {
         @PathVariable UUID id,
         @PageableDefault(size = 20) Pageable pageable
     ) {
-        Page<StandupRunResponse> runs = standUpJobRepository
-            .findByCohortIdOrderByStartedAtDesc(id, pageable)
-            .map(StandupRunResponse::from);
+        Page<StandupRunResponse> runs = cohortStandUpService.listRuns(id, pageable);
         return ResponseEntity.ok(ApiResponse.success("Stand-up runs retrieved.", runs));
     }
 

@@ -95,10 +95,13 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- No GA release of spring-boot-starter-aop exists for the Boot 4.x line yet —
+             only milestones (org.springframework.boot:spring-boot-starter-aop on Maven
+             Central tops out at 4.0.0-M2). Pin to the latest milestone until a GA ships. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
-            <version>4.0.0-M1</version>
+            <version>4.0.0-M2</version>
             <scope>compile</scope>
         </dependency>
 
@@ -340,6 +343,15 @@
                     <failsOnError>true</failsOnError>
                     <includeTestSourceDirectory>false</includeTestSourceDirectory>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>checkstyle-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- JaCoCo: produces target/site/jacoco/jacoco.xml, which SonarQube

@@ -11,7 +11,6 @@ import com.amalitech.labresultsvalidator.domain.cohort.dto.LearnerResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandUpJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortStandUpJobStatus;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandUpJobRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortGate4Service;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortReferenceQueryService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortService;
@@ -53,9 +52,6 @@ class CohortControllerTest {
 
     @Mock
     private CohortStandUpService cohortStandUpService;
-
-    @Mock
-    private CohortStandUpJobRepository standUpJobRepository;
 
     @Mock
     private CohortGate4Service cohortGate4Service;

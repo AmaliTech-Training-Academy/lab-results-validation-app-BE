@@ -1,18 +1,14 @@
 package com.amalitech.labresultsvalidator.domain.cohort.controller;
 
-import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortSyncJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandupGateEvent;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncBatchResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncRunResponse;
-import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
-import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortSyncService;
-import com.amalitech.labresultsvalidator.domain.cohort.service.StandupSseRegistry;
+import com.amalitech.labresultsvalidator.domain.cohort.service.SseGateEventStreamer;
 import com.amalitech.labresultsvalidator.domain.cohort.service.SyncEventService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -34,7 +30,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,10 +42,8 @@ public class CohortSyncController {
     private static final Logger LOG = LoggerFactory.getLogger(CohortSyncController.class);
 
     private final CohortSyncService cohortSyncService;
-    private final CohortSyncJobRepository syncJobRepository;
-    private final IngestionRunRepository ingestionRunRepository;
     private final SyncEventService syncEventService;
-    private final StandupSseRegistry sseRegistry;
+    private final SseGateEventStreamer sseStreamer;
 
     @Operation(summary = "Trigger a sync run for all eligible cohorts",
         description = "Runs the same logic as the scheduled sync, immediately, for every STOOD_UP cohort.")
@@ -107,10 +100,7 @@ public class CohortSyncController {
         @PathVariable UUID id,
         @PageableDefault(size = 20) Pageable pageable
     ) {
-        Page<SyncRunResponse> runs = syncJobRepository
-            .findByCohortIdOrderByStartedAtDesc(id, pageable)
-            .map(SyncRunResponse::from);
-        return ResponseEntity.ok(ApiResponse.success("Sync runs retrieved.", runs));
+        return ResponseEntity.ok(ApiResponse.success("Sync runs retrieved.", cohortSyncService.listRuns(id, pageable)));
     }
 
     @Operation(summary = "Get a single sync run",
@@ -126,10 +116,7 @@ public class CohortSyncController {
         @PathVariable UUID id,
         @PathVariable UUID jobId
     ) {
-        CohortSyncJob job = syncJobRepository.findByIdAndCohortId(jobId, id)
-            .orElseThrow(() -> new ResourceNotFoundException(
-                "No sync job found with ID " + jobId + " for cohort " + id));
-        return ResponseEntity.ok(ApiResponse.success("Sync run retrieved.", SyncRunResponse.from(job)));
+        return ResponseEntity.ok(ApiResponse.success("Sync run retrieved.", cohortSyncService.getRun(id, jobId)));
     }
 
     @Operation(summary = "Get a sync run's grading overview",
@@ -147,12 +134,8 @@ public class CohortSyncController {
         @PathVariable UUID id,
         @PathVariable UUID jobId
     ) {
-        CohortSyncJob job = syncJobRepository.findByIdAndCohortId(jobId, id)
-            .orElseThrow(() -> new ResourceNotFoundException(
-                "No sync job found with ID " + jobId + " for cohort " + id));
-        var runs = ingestionRunRepository.findBySyncJobId(jobId);
         return ResponseEntity.ok(ApiResponse.success(
-            "Grading sync overview retrieved.", GradingSyncOverviewResponse.from(job, runs)));
+            "Grading sync overview retrieved.", cohortSyncService.getGradingSyncOverview(id, jobId)));
     }
 
     @Operation(
@@ -166,42 +149,10 @@ public class CohortSyncController {
         @PathVariable UUID cohortId,
         @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId
     ) {
-        CohortSyncJob job = syncJobRepository.findTopByCohortIdOrderByStartedAtDesc(cohortId)
-            .orElseThrow(() -> new ResourceNotFoundException("No sync job found for cohort " + cohortId));
+        StreamJobHandle handle = cohortSyncService.getLatestJobForStream(cohortId);
+        LOG.debug("[sse-sync] cohort={} job={} client connected lastEventId={}", cohortId, handle.jobId(), lastEventId);
 
-        UUID jobId = job.getId();
-        LOG.debug("[sse-sync] cohort={} job={} client connected lastEventId={}", cohortId, jobId, lastEventId);
-
-        SseEmitter emitter = sseRegistry.register(jobId);
-        List<StandupGateEvent> allEvents = syncEventService.getEvents(jobId);
-
-        int replayFrom = 0;
-        if (lastEventId != null && !lastEventId.isBlank()) {
-            try {
-                replayFrom = Integer.parseInt(lastEventId.trim()) + 1;
-            } catch (NumberFormatException ignored) {}
-        }
-
-        for (StandupGateEvent e : allEvents) {
-            if (e.index() >= replayFrom) {
-                try {
-                    emitter.send(SseEmitter.event()
-                        .id(String.valueOf(e.index()))
-                        .name(e.event())
-                        .data(e.payload()));
-                } catch (IOException ex) {
-                    LOG.debug("[sse-sync] cohort={} job={} replay failed — client disconnected", cohortId, jobId);
-                    emitter.completeWithError(ex);
-                    return emitter;
-                }
-            }
-        }
-
-        boolean alreadyDone = allEvents.stream().anyMatch(e -> "sync.done".equals(e.event()));
-        if (alreadyDone || job.getStatus() != CohortSyncJobStatus.RUNNING) {
-            emitter.complete();
-        }
-
-        return emitter;
+        List<StandupGateEvent> events = syncEventService.getEvents(handle.jobId());
+        return sseStreamer.stream(handle.jobId(), handle.running(), "sync.done", events, lastEventId, "sse-sync");
     }
 }
