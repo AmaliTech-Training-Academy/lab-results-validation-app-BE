@@ -110,6 +110,25 @@ public class CohortSyncController {
         return ResponseEntity.ok(ApiResponse.success("Sync runs retrieved.", runs));
     }
 
+    @Operation(summary = "Get a single sync run",
+        description = "Returns the status and details of one sync job for a cohort.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Sync run found"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "No sync job with that ID for this cohort")
+    })
+    @GetMapping("/{id}/sync/runs/{jobId}")
+    public ResponseEntity<ApiResponse<SyncRunResponse>> getSyncRun(
+        @PathVariable UUID id,
+        @PathVariable UUID jobId
+    ) {
+        CohortSyncJob job = syncJobRepository.findByIdAndCohortId(jobId, id)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "No sync job found with ID " + jobId + " for cohort " + id));
+        return ResponseEntity.ok(ApiResponse.success("Sync run retrieved.", SyncRunResponse.from(job)));
+    }
+
     @Operation(
         summary = "Stream score sheet sync events",
         description = "Opens an SSE stream for the most recent sync job on a cohort. "

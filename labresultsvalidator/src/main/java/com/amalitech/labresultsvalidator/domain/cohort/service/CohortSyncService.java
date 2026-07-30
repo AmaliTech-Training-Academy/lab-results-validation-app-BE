@@ -21,7 +21,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -34,6 +36,7 @@ public class CohortSyncService {
     private final CohortRepository cohortRepository;
     private final CohortSyncJobRepository syncJobRepository;
     private final CohortSyncJobRunner syncJobRunner;
+    private final SyncEventService syncEventService;
 
     public CohortSyncJobResponse triggerSyncForCohort(UUID cohortId) {
         Cohort cohort = getEligibleCohort(cohortId);
@@ -118,6 +121,12 @@ public class CohortSyncService {
         } catch (DataIntegrityViolationException ex) {
             throw new DuplicateResourceException(ALREADY_RUNNING_MESSAGE);
         }
+
+        Map<String, Object> startedPayload = new LinkedHashMap<>();
+        startedPayload.put("cohortId", cohortId.toString());
+        startedPayload.put("status", CohortSyncJobStatus.RUNNING.name());
+        startedPayload.put("startedAt", job.getStartedAt().toString());
+        syncEventService.emit(job.getId(), "sync.started", startedPayload);
 
         syncJobRunner.run(cohortId, job.getId(), actorId, targetItemId);
         return job;
