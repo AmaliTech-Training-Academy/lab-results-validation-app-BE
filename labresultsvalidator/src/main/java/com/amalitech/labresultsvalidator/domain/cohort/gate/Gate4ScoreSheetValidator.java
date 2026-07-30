@@ -1,6 +1,13 @@
 package com.amalitech.labresultsvalidator.domain.cohort.gate;
 
+import com.amalitech.labresultsvalidator.domain.cohort.entity.Lab;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.LabModule;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.Learner;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.Specialization;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.LabModuleRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LearnerRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.SpecializationRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.Gate4EventService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
@@ -19,6 +26,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,13 +51,22 @@ public class Gate4ScoreSheetValidator {
 
     private final GraphDriveService graphDriveService;
     private final LearnerRepository learnerRepository;
+    private final SpecializationRepository specializationRepository;
+    private final LabModuleRepository labModuleRepository;
+    private final LabRepository labRepository;
 
     public Gate4ScoreSheetValidator(
         GraphDriveService graphDriveService,
-        LearnerRepository learnerRepository
+        LearnerRepository learnerRepository,
+        SpecializationRepository specializationRepository,
+        LabModuleRepository labModuleRepository,
+        LabRepository labRepository
     ) {
         this.graphDriveService = graphDriveService;
         this.learnerRepository = learnerRepository;
+        this.specializationRepository = specializationRepository;
+        this.labModuleRepository = labModuleRepository;
+        this.labRepository = labRepository;
     }
 
     public Gate4Result validate(String driveId, String scoresFolderItemId, UUID cohortId,
@@ -99,10 +116,17 @@ public class Gate4ScoreSheetValidator {
         LOG.info("[gate4] found {} score sheet(s): {}", xlsxFiles.size(),
             xlsxFiles.stream().map(DriveItemInfo::name).collect(Collectors.toList()));
 
-        // Load all learner full names for this cohort once — used for NSP name lookup across all files.
-        Set<String> learnerNames = learnerRepository.findAllByCohortId(cohortId).stream()
-            .map(l -> l.getFullName().trim().toLowerCase(Locale.ROOT))
-            .collect(Collectors.toSet());
+        // Load all learners for this cohort once — used for NSP name/specialization lookup across all files.
+        Map<String, Learner> learnersByName = learnerRepository.findAllByCohortId(cohortId).stream()
+            .collect(Collectors.toMap(
+                l -> l.getFullName().trim().toLowerCase(Locale.ROOT),
+                l -> l,
+                (a, b) -> a
+            ));
+
+        // Maps a configured lab's title to the specialization(s) it's configured under, so a row's
+        // Lab Title can be checked against the reference data and cross-referenced with the NSP's specialization.
+        Map<String, Set<UUID>> labTitleToSpecIds = buildLabTitleToSpecIds(cohortId);
 
         List<GateError> allErrors = new ArrayList<>();
 
@@ -123,7 +147,7 @@ public class Gate4ScoreSheetValidator {
                 continue;
             }
 
-            List<GateError> fileErrors = processScoreFile(file.name(), bytes, learnerNames);
+            List<GateError> fileErrors = processScoreFile(file.name(), bytes, learnersByName, labTitleToSpecIds);
             if (fileErrors.isEmpty()) {
                 eventService.emit(jobId, "file.passed", Map.of("file", file.name()));
             } else {
@@ -143,10 +167,37 @@ public class Gate4ScoreSheetValidator {
         return new Gate4Result(GateResult.pass());
     }
 
+    // A lab title may be configured under more than one specialization (shared lab), so each
+    // title maps to the set of specialization IDs it's valid under rather than a single one.
+    private Map<String, Set<UUID>> buildLabTitleToSpecIds(UUID cohortId) {
+        List<Specialization> specializations = specializationRepository.findAllByCohortId(cohortId);
+        List<UUID> specIds = specializations.stream().map(Specialization::getId).collect(Collectors.toList());
+
+        List<LabModule> modules = labModuleRepository.findAllBySpecializationIdIn(specIds);
+        Map<UUID, UUID> specIdByModuleId = modules.stream()
+            .collect(Collectors.toMap(LabModule::getId, LabModule::getSpecializationId));
+
+        List<UUID> moduleIds = modules.stream().map(LabModule::getId).collect(Collectors.toList());
+        List<Lab> labs = labRepository.findAllByModuleIdIn(moduleIds);
+
+        Map<String, Set<UUID>> labTitleToSpecIds = new HashMap<>();
+        for (Lab lab : labs) {
+            UUID specId = specIdByModuleId.get(lab.getModuleId());
+            if (specId == null) {
+                continue;
+            }
+            labTitleToSpecIds
+                .computeIfAbsent(lab.getTitle().trim().toLowerCase(Locale.ROOT), k -> new HashSet<>())
+                .add(specId);
+        }
+        return labTitleToSpecIds;
+    }
+
     private List<GateError> processScoreFile(
         String fileName,
         byte[] bytes,
-        Set<String> learnerNames
+        Map<String, Learner> learnersByName,
+        Map<String, Set<UUID>> labTitleToSpecIds
     ) {
         List<GateError> errors = new ArrayList<>();
 
@@ -186,7 +237,7 @@ public class Gate4ScoreSheetValidator {
             }
 
             int nspCol = headers.get("name of nsp");
-            int scoreCol = headers.get("total score");
+            int labTitleCol = headers.get("lab title");
 
             for (int i = headerRowIdx + 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
@@ -194,22 +245,34 @@ public class Gate4ScoreSheetValidator {
                     continue;
                 }
                 int rowNum = i + 1;
+                String location = "sheet " + sheetName + " row " + rowNum;
 
                 String nspName = getCellString(row, nspCol);
-                String totalScore = getCellString(row, scoreCol);
+                String labTitle = getCellString(row, labTitleCol);
 
+                Learner learner = null;
                 if (nspName == null || nspName.isBlank()) {
-                    errors.add(new GateError(fileName, "sheet " + sheetName + " row " + rowNum,
-                        "G4-BLANK-NSP", "Name of NSP is blank."));
-                } else if (!learnerNames.contains(nspName.trim().toLowerCase(Locale.ROOT))) {
-                    errors.add(new GateError(fileName, "sheet " + sheetName + " row " + rowNum,
-                        "G4-UNKNOWN-NSP",
-                        "NSP '" + nspName + "' does not match any learner in this cohort."));
+                    errors.add(new GateError(fileName, location, "G4-BLANK-NSP", "Name of NSP is blank."));
+                } else {
+                    learner = learnersByName.get(nspName.trim().toLowerCase(Locale.ROOT));
+                    if (learner == null) {
+                        errors.add(new GateError(fileName, location, "G4-UNKNOWN-NSP",
+                            "NSP '" + nspName + "' does not match any learner in this cohort."));
+                    }
                 }
 
-                if (totalScore == null || totalScore.isBlank()) {
-                    errors.add(new GateError(fileName, "sheet " + sheetName + " row " + rowNum,
-                        "G4-BLANK-SCORE", "Total Score is blank."));
+                if (labTitle == null || labTitle.isBlank()) {
+                    errors.add(new GateError(fileName, location, "G4-BLANK-LAB-TITLE", "Lab Title is blank."));
+                } else {
+                    Set<UUID> specIdsForLab = labTitleToSpecIds.get(labTitle.trim().toLowerCase(Locale.ROOT));
+                    if (specIdsForLab == null) {
+                        errors.add(new GateError(fileName, location, "G4-UNKNOWN-LAB",
+                            "Lab Title '" + labTitle + "' does not match any lab configured for this cohort."));
+                    } else if (learner != null && !specIdsForLab.contains(learner.getSpecializationId())) {
+                        errors.add(new GateError(fileName, location, "G4-SPEC-MISMATCH",
+                            "NSP '" + nspName + "' specialization does not match the specialization "
+                                + "configured for lab '" + labTitle + "'."));
+                    }
                 }
             }
         }

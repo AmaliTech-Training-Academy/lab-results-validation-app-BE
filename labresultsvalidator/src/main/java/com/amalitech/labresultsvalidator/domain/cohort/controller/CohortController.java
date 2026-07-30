@@ -204,6 +204,37 @@ public class CohortController {
             .body(ApiResponse.success("Gate 4 job started.", cohortGate4Service.startGate4(id)));
     }
 
+    @Operation(summary = "Lock a stood-up cohort",
+        description = "Locks a cohort once it is STOOD_UP, marking it ready for the weekly grading sync "
+            + "and closed to further reference/score changes.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Cohort locked"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "Cohort not found"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422",
+            description = "Cohort is not in STOOD_UP state or is already locked")
+    })
+    @PatchMapping("/{id}/lock")
+    public ResponseEntity<ApiResponse<CohortResponse>> lockCohort(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success("Cohort locked.", cohortService.lockCohort(id)));
+    }
+
+    @Operation(summary = "Unlock a locked cohort",
+        description = "Reverses a cohort lock applied in error.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Cohort unlocked"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "Cohort not found"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422",
+            description = "Cohort is not locked")
+    })
+    @PatchMapping("/{id}/unlock")
+    public ResponseEntity<ApiResponse<CohortResponse>> unlockCohort(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success("Cohort unlocked.", cohortService.unlockCohort(id)));
+    }
+
     @Operation(summary = "Get cohort reference bundle",
         description = "Returns the committed reference data for a cohort in one call: "
             + "specializations (with nested modules and labs), learners, and instructor contacts.")
