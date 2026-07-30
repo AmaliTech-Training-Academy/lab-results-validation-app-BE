@@ -8,8 +8,18 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({AzureGraphProperties.class, SharePointProperties.class})
+@EnableConfigurationProperties({
+    AzureGraphProperties.class,
+    SharePointProperties.class,
+    GraphRetryProperties.class
+})
 public class GraphConfig {
+
+    /** Real clock sleeping; retry tests substitute a recording implementation. */
+    @Bean
+    public Sleeper sleeper() {
+        return Sleeper.real();
+    }
 
     @Bean
     public GraphServiceClient graphServiceClient(AzureGraphProperties props) {
