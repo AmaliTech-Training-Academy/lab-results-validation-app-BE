@@ -16,4 +16,6 @@ public interface CohortSyncJobRepository extends JpaRepository<CohortSyncJob, UU
     Optional<CohortSyncJob> findTopByCohortIdOrderByStartedAtDesc(UUID cohortId);
 
     Page<CohortSyncJob> findByCohortIdOrderByStartedAtDesc(UUID cohortId, Pageable pageable);
+
+    Optional<CohortSyncJob> findByIdAndCohortId(UUID id, UUID cohortId);
 }
