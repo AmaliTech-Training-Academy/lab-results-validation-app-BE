@@ -3,6 +3,8 @@ package com.amalitech.labresultsvalidator.domain.cohort.entity;
 import com.amalitech.labresultsvalidator.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -51,4 +53,31 @@ public class CohortSyncFile extends BaseEntity {
 
     @Column(name = "scenario_folder", length = 255)
     private String scenarioFolder;
+
+    /**
+     * Stable drive item id of the source file. Recorded for provenance: unlike the filename
+     * it survives renames, so it identifies which SharePoint item a row describes.
+     */
+    @Column(name = "sharepoint_item_id", length = 200)
+    private String sharepointItemId;
+
+    /** SharePoint's server-computed content hash, from the single-item GET (B3 AC1). */
+    @Column(name = "quick_xor_hash", length = 128)
+    private String quickXorHash;
+
+    /** Content tag (cTag) from the single-item GET (B3 AC1). */
+    @Column(name = "sharepoint_version_id", length = 200)
+    private String sharepointVersionId;
+
+    /** SHA-256 (hex) over the exact bytes downloaded and handed to POI (B4 AC3). */
+    @Column(name = "file_sha256", length = 64)
+    private String fileSha256;
+
+    /**
+     * What change detection concluded for this file in this run. A row exists for every file
+     * the run reached, so a missing row means "not reached", never "unchanged" (B3 AC2).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "change_state", length = 20)
+    private SyncFileChangeState changeState;
 }

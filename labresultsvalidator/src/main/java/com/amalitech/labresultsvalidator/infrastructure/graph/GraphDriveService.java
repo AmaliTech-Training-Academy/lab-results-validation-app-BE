@@ -12,28 +12,50 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
+/**
+ * Read-only access to SharePoint drives via Microsoft Graph.
+ *
+ * <p>Every call routes through {@link GraphRetryExecutor} so throttling (429), transient
+ * 5xx faults and mid-run token expiry are retried with backoff before the caller sees a
+ * failure (B4 AC4). The executor must wrap the SDK call directly: it needs the
+ * {@code ApiException} status and {@code Retry-After} header, both of which are lost once
+ * the failure is wrapped in a {@link GraphAccessException}.
+ */
 @Service
 public class GraphDriveService {
 
     private static final Logger LOG = LoggerFactory.getLogger(GraphDriveService.class);
 
+    /**
+     * Fields needed from a single-item GET. {@code file} carries the {@code hashes} facet
+     * (and therefore {@code quickXorHash}); {@code cTag} is the content version marker.
+     * Requesting them explicitly keeps the response small and makes the dependency obvious.
+     */
+    private static final String[] ITEM_SELECT = {
+        "id", "name", "size", "cTag", "eTag", "file", "webUrl", "parentReference"
+    };
+
     private final GraphServiceClient graphServiceClient;
     private final AzureGraphProperties azureGraphProperties;
     private final SharePointProperties sharePointProperties;
+    private final GraphRetryExecutor retry;
 
     public GraphDriveService(
         GraphServiceClient graphServiceClient,
         AzureGraphProperties azureGraphProperties,
-        SharePointProperties sharePointProperties
+        SharePointProperties sharePointProperties,
+        GraphRetryExecutor retry
     ) {
         this.graphServiceClient = graphServiceClient;
         this.azureGraphProperties = azureGraphProperties;
         this.sharePointProperties = sharePointProperties;
+        this.retry = retry;
     }
 
     public DriveItemInfo resolveFolder(String sharepointUrl)
@@ -42,26 +64,22 @@ public class GraphDriveService {
             .withoutPadding()
             .encodeToString(sharepointUrl.getBytes(StandardCharsets.UTF_8));
 
+        String notAccessible = "Cannot access the SharePoint folder at " + sharepointUrl
+            + ". Check the path and that LabGate has been granted access.";
+
         DriveItem item;
         try {
-            item = graphServiceClient.shares()
+            item = retry.execute("resolve shared link", () -> graphServiceClient.shares()
                 .bySharedDriveItemId(encodedToken)
                 .driveItem()
-                .get();
-        } catch (Exception ex) {
+                .get());
+        } catch (GraphAccessException ex) {
             LOG.warn("Graph API call failed resolving SharePoint URL: {}", ex.getMessage());
-            throw new GraphAccessException(
-                "Cannot access the SharePoint folder at " + sharepointUrl
-                    + ". Check the path and that LabGate has been granted access.",
-                ex
-            );
+            throw new GraphAccessException(notAccessible, ex);
         }
 
         if (item == null) {
-            throw new GraphAccessException(
-                "Cannot access the SharePoint folder at " + sharepointUrl
-                    + ". Check the path and that LabGate has been granted access."
-            );
+            throw new GraphAccessException(notAccessible);
         }
 
         if (item.getFolder() == null) {
@@ -102,13 +120,13 @@ public class GraphDriveService {
     public List<DriveItemInfo> listChildren(String driveId, String itemId) throws GraphAccessException {
         DriveItemCollectionResponse response;
         try {
-            response = graphServiceClient.drives()
+            response = retry.execute("list children of " + itemId, () -> graphServiceClient.drives()
                 .byDriveId(driveId)
                 .items()
                 .byDriveItemId(itemId)
                 .children()
-                .get();
-        } catch (Exception ex) {
+                .get());
+        } catch (GraphAccessException ex) {
             LOG.warn("Graph API call failed listing children for item {}: {}", itemId, ex.getMessage());
             throw new GraphAccessException(
                 "Cannot list contents of the SharePoint folder (driveId=" + driveId
@@ -138,19 +156,21 @@ public class GraphDriveService {
     }
 
     /**
-     * Resolves a single item's name and immediate parent folder name by ID — used by the
-     * single-file sync path, which only has an itemId, to build the same S3 key a full-folder
-     * sync would build for the same file.
+     * Single-item metadata GET (B3 AC1): reads the item's {@code quickXorHash}, content version
+     * (cTag) and size, plus the name and immediate parent folder name used to build its S3 key.
+     *
+     * <p>Size arrives here so callers can reject an oversized workbook <em>before</em> spending
+     * the download.
      */
     public DriveItemDetails getItem(String driveId, String itemId) throws GraphAccessException {
         DriveItem item;
         try {
-            item = graphServiceClient.drives()
+            item = retry.execute("get item " + itemId, () -> graphServiceClient.drives()
                 .byDriveId(driveId)
                 .items()
                 .byDriveItemId(itemId)
-                .get();
-        } catch (Exception ex) {
+                .get(config -> config.queryParameters.select = ITEM_SELECT));
+        } catch (GraphAccessException ex) {
             LOG.warn("Graph API call failed fetching item {}: {}", itemId, ex.getMessage());
             throw new GraphAccessException(
                 "Cannot fetch SharePoint item metadata (driveId=" + driveId + ", itemId=" + itemId + ").",
@@ -171,43 +191,58 @@ public class GraphDriveService {
             }
         }
 
-        return new DriveItemDetails(item.getName(), parentFolderName);
+        String quickXorHash = null;
+        if (item.getFile() != null && item.getFile().getHashes() != null) {
+            quickXorHash = item.getFile().getHashes().getQuickXorHash();
+        }
+
+        return new DriveItemDetails(
+            item.getName(),
+            parentFolderName,
+            quickXorHash,
+            item.getCTag(),
+            item.getSize(),
+            item.getWebUrl()
+        );
     }
 
+    /**
+     * Downloads an item's content.
+     *
+     * <p>The read is bounded at the configured workbook cap rather than checked afterwards: an
+     * unbounded {@code readAllBytes} would exhaust the heap on an oversized file before any
+     * size check could fire. Streaming and reading happen inside one retryable unit so a fault
+     * partway through the body is retried rather than surfacing as a truncated workbook.
+     */
     public byte[] downloadFile(String driveId, String itemId) throws GraphAccessException {
-        InputStream stream;
-        try {
-            stream = graphServiceClient.drives()
-                .byDriveId(driveId)
-                .items()
-                .byDriveItemId(itemId)
-                .content()
-                .get();
-        } catch (Exception ex) {
-            LOG.warn("Graph API call failed downloading item {}: {}", itemId, ex.getMessage());
+        long cap = sharePointProperties.maxWorkbookBytes();
+        int readLimit = (int) Math.min(cap + 1, Integer.MAX_VALUE);
+
+        byte[] bytes = retry.execute("download item " + itemId, () -> {
+            try (InputStream stream = graphServiceClient.drives()
+                    .byDriveId(driveId)
+                    .items()
+                    .byDriveItemId(itemId)
+                    .content()
+                    .get()) {
+
+                if (stream == null) {
+                    return null;
+                }
+                return stream.readNBytes(readLimit);
+            } catch (IOException ex) {
+                // Surfaced as an IOException cause so the retry executor treats it as transient.
+                throw new UncheckedIOException("Failed reading content for item " + itemId, ex);
+            }
+        });
+
+        if (bytes == null) {
+            throw new GraphAccessException("SharePoint returned empty content for item " + itemId + ".");
+        }
+
+        if (bytes.length > cap) {
             throw new GraphAccessException(
-                "Cannot download file from SharePoint (driveId=" + driveId
-                    + ", itemId=" + itemId + ").",
-                ex
-            );
-        }
-
-        if (stream == null) {
-            throw new GraphAccessException(
-                "SharePoint returned empty content for item " + itemId + "."
-            );
-        }
-
-        byte[] bytes;
-        try {
-            bytes = stream.readAllBytes();
-        } catch (IOException ex) {
-            LOG.warn("Failed to read stream for item {}: {}", itemId, ex.getMessage());
-            throw new GraphAccessException("Failed to read file content from SharePoint.", ex);
-        }
-
-        if (bytes.length > sharePointProperties.maxWorkbookBytes()) {
-            throw new GraphAccessException("File exceeds the maximum allowed size.");
+                "File exceeds the maximum allowed size of " + cap + " bytes.");
         }
 
         return bytes;

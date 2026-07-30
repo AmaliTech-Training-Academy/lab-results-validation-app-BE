@@ -5,7 +5,6 @@ import com.amalitech.labresultsvalidator.domain.cohort.service.Gate4EventService
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphAccessException;
-import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
@@ -31,7 +30,6 @@ import java.util.stream.Collectors;
 public class Gate4ScoreSheetValidator {
 
     private static final Logger LOG = LoggerFactory.getLogger(Gate4ScoreSheetValidator.class);
-    private static final long MAX_ENTRY_SIZE = 20L * 1024 * 1024;
 
     // Matched case-insensitively after trimming — expand as new template variants appear.
     private static final Set<String> SKIP_SHEETS = Set.of(
@@ -151,9 +149,11 @@ public class Gate4ScoreSheetValidator {
         Set<String> learnerNames
     ) {
         List<GateError> errors = new ArrayList<>();
-        ZipSecureFile.setMinInflateRatio(0);
-        ZipSecureFile.setMaxEntrySize(MAX_ENTRY_SIZE);
 
+        // ZipSecureFile limits are JVM-global and are now applied once at startup by
+        // PoiHardeningConfig. Setting them here per file meant this loop silently decided the
+        // zip-bomb policy for every other POI caller in the process — including a
+        // setMinInflateRatio(0) that disabled the guard outright (risk R-10).
         Workbook wb;
         try {
             wb = WorkbookFactory.create(new ByteArrayInputStream(bytes));

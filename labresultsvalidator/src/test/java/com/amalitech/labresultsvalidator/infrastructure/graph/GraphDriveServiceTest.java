@@ -5,6 +5,8 @@ import com.microsoft.graph.drives.item.DriveItemRequestBuilder;
 import com.microsoft.graph.drives.item.items.ItemsRequestBuilder;
 import com.microsoft.graph.drives.item.items.item.DriveItemItemRequestBuilder;
 import com.microsoft.graph.models.DriveItem;
+import com.microsoft.graph.models.File;
+import com.microsoft.graph.models.Hashes;
 import com.microsoft.graph.models.ItemReference;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +16,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,7 +45,13 @@ class GraphDriveServiceTest {
 
     @BeforeEach
     void setUp() {
-        graphDriveService = new GraphDriveService(graphServiceClient, azureGraphProperties, sharePointProperties);
+        // A real executor with a single attempt and a no-op sleeper: exercises the pass-through
+        // without turning these into retry tests (GraphRetryExecutorTest covers that).
+        GraphRetryExecutor retry = new GraphRetryExecutor(
+            new GraphRetryProperties(1, 0L, 0L, 0L, 0L), millis -> { });
+
+        graphDriveService = new GraphDriveService(
+            graphServiceClient, azureGraphProperties, sharePointProperties, retry);
 
         when(graphServiceClient.drives()).thenReturn(drivesRequestBuilder);
         when(drivesRequestBuilder.byDriveId(DRIVE_ID)).thenReturn(driveItemRequestBuilder);
@@ -63,7 +72,7 @@ class GraphDriveServiceTest {
 
     @Test
     void resolvesTheImmediateParentFolderNameFromTheItemsParentPath() {
-        when(driveItemItemRequestBuilder.get())
+        when(driveItemItemRequestBuilder.get(any()))
             .thenReturn(itemWithParentPath("Results.xlsx", "/drives/drive-1/root:/Cohort X/Lab Scores/Scenario 1"));
 
         DriveItemDetails details = graphDriveService.getItem(DRIVE_ID, ITEM_ID);
@@ -74,7 +83,7 @@ class GraphDriveServiceTest {
 
     @Test
     void resolvesTheScoresFolderItselfAsTheParentWhenTheFileIsNotInAScenarioSubfolder() {
-        when(driveItemItemRequestBuilder.get())
+        when(driveItemItemRequestBuilder.get(any()))
             .thenReturn(itemWithParentPath("Direct.xlsx", "/drives/drive-1/root:/Cohort X/Lab Scores"));
 
         DriveItemDetails details = graphDriveService.getItem(DRIVE_ID, ITEM_ID);
@@ -85,11 +94,46 @@ class GraphDriveServiceTest {
 
     @Test
     void returnsNullParentFolderNameWhenGraphDoesNotProvideAParentPath() {
-        when(driveItemItemRequestBuilder.get()).thenReturn(itemWithParentPath("Orphan.xlsx", null));
+        when(driveItemItemRequestBuilder.get(any())).thenReturn(itemWithParentPath("Orphan.xlsx", null));
 
         DriveItemDetails details = graphDriveService.getItem(DRIVE_ID, ITEM_ID);
 
         assertThat(details.name()).isEqualTo("Orphan.xlsx");
         assertThat(details.parentFolderName()).isNull();
+    }
+
+    @Test
+    void readsTheChangeDetectionMetadataFromTheFileFacet() {
+        DriveItem item = itemWithParentPath("Scores.xlsx", "/drives/drive-1/root:/Cohort X/Lab Scores");
+        Hashes hashes = new Hashes();
+        hashes.setQuickXorHash("zZ9k4TaQ==");
+        File file = new File();
+        file.setHashes(hashes);
+        item.setFile(file);
+        item.setCTag("\"c:{GUID},2\"");
+        item.setSize(4096L);
+        item.setWebUrl("https://tenant.sharepoint.com/Scores.xlsx");
+
+        when(driveItemItemRequestBuilder.get(any())).thenReturn(item);
+
+        DriveItemDetails details = graphDriveService.getItem(DRIVE_ID, ITEM_ID);
+
+        assertThat(details.quickXorHash()).isEqualTo("zZ9k4TaQ==");
+        assertThat(details.hasQuickXorHash()).isTrue();
+        assertThat(details.versionId()).isEqualTo("\"c:{GUID},2\"");
+        assertThat(details.sizeBytes()).isEqualTo(4096L);
+        assertThat(details.webUrl()).isEqualTo("https://tenant.sharepoint.com/Scores.xlsx");
+    }
+
+    @Test
+    void reportsNoHashWhenGraphOmitsTheFileFacet() {
+        when(driveItemItemRequestBuilder.get(any()))
+            .thenReturn(itemWithParentPath("NoFacet.xlsx", null));
+
+        DriveItemDetails details = graphDriveService.getItem(DRIVE_ID, ITEM_ID);
+
+        // Detection must not assume the hash exists — it falls back to comparing bytes.
+        assertThat(details.quickXorHash()).isNull();
+        assertThat(details.hasQuickXorHash()).isFalse();
     }
 }
