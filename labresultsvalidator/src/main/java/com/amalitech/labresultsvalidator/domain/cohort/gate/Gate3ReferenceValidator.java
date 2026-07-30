@@ -40,7 +40,7 @@ public class Gate3ReferenceValidator {
 
     private static final List<String> SPEC_COLUMNS = List.of("specializationid", "specialization");
     private static final List<String> MODULE_COLUMNS =
-        List.of("specializationid", "moduleid", "module name", "phase");
+        List.of("specializationid", "moduleid", "module name");
     private static final List<String> LAB_COLUMNS = List.of("moduleid", "assessmentid", "lab title");
     private static final List<String> LEARNER_COLUMNS =
         List.of("amalitech email", "full name", "specialization");
@@ -201,7 +201,8 @@ public class Gate3ReferenceValidator {
         return rows;
     }
 
-    // Columns: specializationid, moduleid, module name, phase
+    // Columns: specializationid, moduleid, module name. No phase — a module's position within
+    // its specialization plays no role anywhere; rows resolve by (Lab Title, specialization).
     private List<ValidatedReferenceBundle.ModuleRow> validateModules(
             String fileName, byte[] bytes, Set<String> validSpecIds, List<GateError> errors) {
         List<ValidatedReferenceBundle.ModuleRow> rows = new ArrayList<>();
@@ -213,7 +214,7 @@ public class Gate3ReferenceValidator {
         int headerRowIdx = findHeaderRowIndex(sheet, MODULE_COLUMNS);
         Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
         List<GateError> colErrors = checkRequiredColumns(
-            fileName, headers, "specializationid", "moduleid", "module name", "phase");
+            fileName, headers, "specializationid", "moduleid", "module name");
         if (!colErrors.isEmpty()) {
             errors.addAll(colErrors);
             return rows;
@@ -229,7 +230,6 @@ public class Gate3ReferenceValidator {
             String specId = getCellString(row, headers.get("specializationid"));
             String moduleId = getCellString(row, headers.get("moduleid"));
             String name = getCellString(row, headers.get("module name"));
-            String phaseStr = getCellString(row, headers.get("phase"));
 
             if (moduleId == null || moduleId.isBlank()) {
                 errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-MODULE-ID",
@@ -239,11 +239,6 @@ public class Gate3ReferenceValidator {
             if (name == null || name.isBlank()) {
                 errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-MODULE-NAME",
                     "Module name is blank."));
-                continue;
-            }
-            if (phaseStr == null || phaseStr.isBlank()) {
-                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-PHASE",
-                    "Phase is blank."));
                 continue;
             }
             if (specId == null || !validSpecIds.contains(specId)) {
@@ -256,7 +251,7 @@ public class Gate3ReferenceValidator {
                     "Duplicate module ID '" + moduleId + "'."));
                 continue;
             }
-            rows.add(new ValidatedReferenceBundle.ModuleRow(moduleId, name, phaseStr, specId));
+            rows.add(new ValidatedReferenceBundle.ModuleRow(moduleId, name, specId));
         }
         return rows;
     }

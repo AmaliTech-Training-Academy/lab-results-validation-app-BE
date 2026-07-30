@@ -12,8 +12,6 @@ import com.amalitech.labresultsvalidator.domain.cohort.service.Gate4EventService
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphAccessException;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -38,16 +36,6 @@ import java.util.stream.Collectors;
 public class Gate4ScoreSheetValidator {
 
     private static final Logger LOG = LoggerFactory.getLogger(Gate4ScoreSheetValidator.class);
-
-    // Matched case-insensitively after trimming — expand as new template variants appear.
-    private static final Set<String> SKIP_SHEETS = Set.of(
-        "template", "how-to", "ref",
-        "how to use", "rating scale ref", "sheet1"
-    );
-
-    // All header names stored/compared lowercase.
-    private static final List<String> REQUIRED_COLUMNS =
-        List.of("review date", "name of nsp", "lab title", "total score", "reviewer");
 
     private final GraphDriveService graphDriveService;
     private final LearnerRepository learnerRepository;
@@ -224,12 +212,12 @@ public class Gate4ScoreSheetValidator {
             Sheet sheet = wb.getSheetAt(s);
             String sheetName = sheet.getSheetName();
 
-            if (SKIP_SHEETS.contains(sheetName.trim().toLowerCase(Locale.ROOT))) {
+            if (ScoreSheetRowReader.SKIP_SHEETS.contains(sheetName.trim().toLowerCase(Locale.ROOT))) {
                 continue;
             }
 
-            int headerRowIdx = findHeaderRowIndex(sheet);
-            Map<String, Integer> headers = readHeadersFromRow(sheet.getRow(headerRowIdx));
+            int headerRowIdx = ScoreSheetRowReader.findHeaderRowIndex(sheet);
+            Map<String, Integer> headers = ScoreSheetRowReader.readHeadersFromRow(sheet.getRow(headerRowIdx));
             List<GateError> colErrors = checkRequiredColumns(fileName, sheetName, headers);
             if (!colErrors.isEmpty()) {
                 errors.addAll(colErrors);
@@ -241,14 +229,14 @@ public class Gate4ScoreSheetValidator {
 
             for (int i = headerRowIdx + 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
-                if (isBlankRow(row)) {
+                if (ScoreSheetRowReader.isBlankRow(row)) {
                     continue;
                 }
                 int rowNum = i + 1;
                 String location = "sheet " + sheetName + " row " + rowNum;
 
-                String nspName = getCellString(row, nspCol);
-                String labTitle = getCellString(row, labTitleCol);
+                String nspName = ScoreSheetRowReader.getCellString(row, nspCol);
+                String labTitle = ScoreSheetRowReader.getCellString(row, labTitleCol);
 
                 Learner learner = null;
                 if (nspName == null || nspName.isBlank()) {
@@ -279,89 +267,14 @@ public class Gate4ScoreSheetValidator {
         return errors;
     }
 
-    // Scans the first 10 rows and returns the index of the one with the most required-column matches.
-    private int findHeaderRowIndex(Sheet sheet) {
-        int best = 0;
-        long bestMatches = 0;
-        int limit = Math.min(10, sheet.getLastRowNum() + 1);
-        for (int r = 0; r < limit; r++) {
-            Row row = sheet.getRow(r);
-            if (row == null) {
-                continue;
-            }
-            Map<String, Integer> candidate = readHeadersFromRow(row);
-            long matches = REQUIRED_COLUMNS.stream().filter(candidate::containsKey).count();
-            if (matches > bestMatches) {
-                bestMatches = matches;
-                best = r;
-            }
-        }
-        return best;
-    }
-
-    // Headers stored lowercase so all column lookups are case-insensitive.
-    private Map<String, Integer> readHeadersFromRow(Row row) {
-        Map<String, Integer> headers = new HashMap<>();
-        if (row == null) {
-            return headers;
-        }
-        for (int c = 0; c < row.getLastCellNum(); c++) {
-            String val = getCellString(row, c);
-            if (val != null && !val.isBlank()) {
-                headers.put(val.trim().toLowerCase(Locale.ROOT), c);
-            }
-        }
-        return headers;
-    }
-
     private List<GateError> checkRequiredColumns(
             String fileName, String sheetName, Map<String, Integer> headers) {
         List<GateError> errors = new ArrayList<>();
-        for (String col : REQUIRED_COLUMNS) {
-            if (!headers.containsKey(col)) {
-                errors.add(new GateError(fileName, "sheet " + sheetName, "G4-MISSING-COLUMN",
-                    "Required column '" + col + "' not found in sheet '"
-                        + sheetName + "' in file '" + fileName + "'."));
-            }
+        for (String col : ScoreSheetRowReader.findMissingColumns(headers)) {
+            errors.add(new GateError(fileName, "sheet " + sheetName, "G4-MISSING-COLUMN",
+                "Required column '" + col + "' not found in sheet '"
+                    + sheetName + "' in file '" + fileName + "'."));
         }
         return errors;
-    }
-
-    private boolean isBlankRow(Row row) {
-        if (row == null) {
-            return true;
-        }
-        for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
-            Cell cell = row.getCell(c);
-            if (cell != null && cell.getCellType() != CellType.BLANK) {
-                String val = getCellString(row, c);
-                if (val != null && !val.isBlank()) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    private String getCellString(Row row, Integer colIndex) {
-        if (row == null || colIndex == null) {
-            return null;
-        }
-        Cell cell = row.getCell(colIndex);
-        if (cell == null) {
-            return null;
-        }
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> {
-                double d = cell.getNumericCellValue();
-                yield d == Math.floor(d) ? String.valueOf((long) d) : String.valueOf(d);
-            }
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            case FORMULA -> cell.getCachedFormulaResultType() == CellType.STRING
-                ? cell.getStringCellValue().trim()
-                : String.valueOf(cell.getNumericCellValue());
-            default -> null;
-        };
     }
 }
