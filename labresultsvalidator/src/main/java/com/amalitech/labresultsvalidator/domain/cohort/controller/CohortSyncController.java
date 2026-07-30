@@ -3,12 +3,14 @@ package com.amalitech.labresultsvalidator.domain.cohort.controller;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortSyncJobResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandupGateEvent;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncBatchResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncRunResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortSyncService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.StandupSseRegistry;
 import com.amalitech.labresultsvalidator.domain.cohort.service.SyncEventService;
@@ -46,6 +48,7 @@ public class CohortSyncController {
 
     private final CohortSyncService cohortSyncService;
     private final CohortSyncJobRepository syncJobRepository;
+    private final IngestionRunRepository ingestionRunRepository;
     private final SyncEventService syncEventService;
     private final StandupSseRegistry sseRegistry;
 
@@ -127,6 +130,29 @@ public class CohortSyncController {
             .orElseThrow(() -> new ResourceNotFoundException(
                 "No sync job found with ID " + jobId + " for cohort " + id));
         return ResponseEntity.ok(ApiResponse.success("Sync run retrieved.", SyncRunResponse.from(job)));
+    }
+
+    @Operation(summary = "Get a sync run's grading overview",
+        description = "Summarizes what the grading-ingestion pipeline (B5-B10) consumed for one sync "
+            + "run: rows read, new/updated/skipped-invalid/skipped-unchanged/conflicts, aggregated "
+            + "and broken down per workbook.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Overview retrieved"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "No sync job with that ID for this cohort")
+    })
+    @GetMapping("/{id}/sync/runs/{jobId}/overview")
+    public ResponseEntity<ApiResponse<GradingSyncOverviewResponse>> getGradingSyncOverview(
+        @PathVariable UUID id,
+        @PathVariable UUID jobId
+    ) {
+        CohortSyncJob job = syncJobRepository.findByIdAndCohortId(jobId, id)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "No sync job found with ID " + jobId + " for cohort " + id));
+        var runs = ingestionRunRepository.findBySyncJobId(jobId);
+        return ResponseEntity.ok(ApiResponse.success(
+            "Grading sync overview retrieved.", GradingSyncOverviewResponse.from(job, runs)));
     }
 
     @Operation(

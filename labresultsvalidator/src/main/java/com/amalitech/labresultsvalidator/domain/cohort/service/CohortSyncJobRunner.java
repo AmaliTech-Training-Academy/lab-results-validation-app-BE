@@ -4,6 +4,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.SyncFileChangeState;
+import com.amalitech.labresultsvalidator.domain.cohort.ingestion.GradingIngestionService;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncFileRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
@@ -74,6 +75,7 @@ public class CohortSyncJobRunner {
     private final SharePointProperties sharePointProperties;
     private final S3StorageService s3StorageService;
     private final WorkbookFetchService workbookFetchService;
+    private final GradingIngestionService gradingIngestionService;
 
     @Async("syncTaskExecutor")
     public void run(UUID cohortId, UUID jobId, UUID actorId, String targetItemId) {
@@ -97,8 +99,9 @@ public class CohortSyncJobRunner {
 
             LOG.info("[sync] job={} discovered {} score sheet(s)", jobId, itemIds.size());
 
+            String triggerType = targetItemId != null ? "MANUAL" : "SCHEDULED";
             for (String itemId : itemIds) {
-                processFile(cohort, jobId, driveId, itemId, counts);
+                processFile(cohort, jobId, driveId, itemId, counts, actorId, triggerType);
             }
 
             finalStatus = CohortSyncJobStatus.COMPLETED;
@@ -191,7 +194,8 @@ public class CohortSyncJobRunner {
     // Per-file pipeline
     // ------------------------------------------------------------------
 
-    private void processFile(Cohort cohort, UUID jobId, String driveId, String itemId, SyncCounts counts) {
+    private void processFile(Cohort cohort, UUID jobId, String driveId, String itemId, SyncCounts counts,
+                             UUID actorId, String triggerType) {
         // B3 AC1 — single-item GET for quickXorHash, content version and size, before any download.
         DriveItemDetails details;
         try {
@@ -242,7 +246,7 @@ public class CohortSyncJobRunner {
             return;
         }
 
-        processChangedFile(cohort, jobId, itemId, scenarioFolder, details, outcome, counts);
+        processChangedFile(cohort, jobId, itemId, scenarioFolder, details, outcome, counts, actorId, triggerType);
     }
 
     /**
@@ -250,7 +254,8 @@ public class CohortSyncJobRunner {
      * archives the bytes and records the outcome.
      */
     private void processChangedFile(Cohort cohort, UUID jobId, String itemId, String scenarioFolder,
-                                    DriveItemDetails details, FetchOutcome outcome, SyncCounts counts) {
+                                    DriveItemDetails details, FetchOutcome outcome, SyncCounts counts,
+                                    UUID actorId, String triggerType) {
         String fileName = text(details.name());
 
         try (FetchedWorkbook workbook = outcome.workbook()) {
@@ -259,12 +264,24 @@ public class CohortSyncJobRunner {
                 "state", outcome.state().name(),
                 "sheets", workbook.workbook().getNumberOfSheets()));
 
-            // ---------------------------------------------------------------
-            // Seam for B5–B9: sheet selection, row validation, classification and
-            // upsert into lab_results consume `workbook` here. Sequenced before the
-            // archive below on purpose — the archive is what marks this version done,
-            // so a processing failure must leave the old baseline in place.
-            // ---------------------------------------------------------------
+            // B5–B9: sheet selection, row validation, classification and upsert into lab_results.
+            // Sequenced before the archive below on purpose — the archive is what marks this
+            // version done, so a processing failure must leave the old baseline in place.
+            try {
+                gradingIngestionService.process(cohort, jobId, fileName, workbook.workbook(), details,
+                    outcome.sha256Hex(), actorId, triggerType);
+            } catch (RuntimeException ex) {
+                LOG.warn("[sync] job={} grading ingestion failed for '{}': {}",
+                    jobId, fileName, ex.getMessage());
+                saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder,
+                    buildS3Key(cohort.getId(), scenarioFolder, fileName),
+                    details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED);
+                syncEventService.emit(jobId, "file.ingestion_failed", payload(
+                    "file", fileName,
+                    "error", text(ex.getMessage())));
+                counts.failed++;
+                return;
+            }
 
             String s3VersionId = s3StorageService.putObject(
                 workbook.s3Key(), workbook.content(), XLSX_CONTENT_TYPE);

@@ -5,6 +5,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.SyncFileChangeState;
+import com.amalitech.labresultsvalidator.domain.cohort.ingestion.GradingIngestionService;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncFileRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
@@ -71,6 +72,8 @@ class CohortSyncJobRunnerTest {
     private S3StorageService s3StorageService;
     @Mock
     private WorkbookFetchService workbookFetchService;
+    @Mock
+    private GradingIngestionService gradingIngestionService;
 
     private CohortSyncJobRunner runner;
 
@@ -85,7 +88,7 @@ class CohortSyncJobRunnerTest {
         runner = new CohortSyncJobRunner(
             cohortRepository, syncJobRepository, syncFileRepository, syncEventService,
             sseRegistry, auditEventService, graphDriveService, sharePointProperties,
-            s3StorageService, workbookFetchService
+            s3StorageService, workbookFetchService, gradingIngestionService
         );
 
         cohortId = UUID.randomUUID();
@@ -314,6 +317,98 @@ class CohortSyncJobRunnerTest {
         verify(syncEventService).emit(eq(jobId), eq("file.archive_failed"), any());
         verify(syncEventService, never()).emit(eq(jobId), eq("file.archived"), any());
         assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
+    }
+
+    @Test
+    void callsGradingIngestionBeforeArchivingWithScheduledTriggerType() throws Exception {
+        stubFolderWithOneFile("file-1", "Direct.xlsx");
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        String key = "cohorts/" + cohortId + "/scores/Direct.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), anyString()))
+            .thenReturn(changed("Direct.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        runner.run(cohortId, jobId, actorId, null);
+
+        verify(gradingIngestionService).process(eq(cohort), eq(jobId), eq("Direct.xlsx"), any(), any(),
+            eq("sha-Direct.xlsx"), eq(actorId), eq("SCHEDULED"));
+        // The seam must run before the archive write (a processing failure must leave the baseline).
+        verify(s3StorageService).putObject(eq(key), any(byte[].class), anyString());
+    }
+
+    @Test
+    void callsGradingIngestionWithManualTriggerTypeForASingleTargetedFile() throws Exception {
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+        when(sharePointProperties.scoresFolder()).thenReturn(SCORES_FOLDER_NAME);
+        when(graphDriveService.getItem(DRIVE_ID, "file-2")).thenReturn(details("Results.xlsx", "Scenario 1"));
+
+        String key = "cohorts/" + cohortId + "/scores/Scenario 1/Results.xlsx";
+        byte[] bytes = "scenario-bytes".getBytes(StandardCharsets.UTF_8);
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-2"), any(), eq(key)))
+            .thenReturn(changed("Results.xlsx", key, bytes));
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        runner.run(cohortId, jobId, actorId, "file-2");
+
+        verify(gradingIngestionService).process(eq(cohort), eq(jobId), eq("Results.xlsx"), any(), any(),
+            eq("sha-Results.xlsx"), eq(actorId), eq("MANUAL"));
+    }
+
+    @Test
+    void gradingIngestionFailureLeavesTheBaselineUnmovedAndMarksTheFileFailed() throws Exception {
+        stubFolderWithOneFile("file-1", "Direct.xlsx");
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        String key = "cohorts/" + cohortId + "/scores/Direct.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), anyString()))
+            .thenReturn(changed("Direct.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
+        when(gradingIngestionService.process(any(), any(), anyString(), any(), any(), anyString(), any(), anyString()))
+            .thenThrow(new IllegalStateException("DB unreachable"));
+
+        runner.run(cohortId, jobId, actorId, null);
+
+        // The processing failure must leave the S3 baseline untouched, so the file retries next run.
+        verify(s3StorageService, never()).putObject(anyString(), any(byte[].class), anyString());
+
+        ArgumentCaptor<CohortSyncFile> captor = ArgumentCaptor.forClass(CohortSyncFile.class);
+        verify(syncFileRepository).save(captor.capture());
+        assertThat(captor.getValue().getChangeState()).isEqualTo(SyncFileChangeState.FAILED);
+        assertThat(captor.getValue().getS3VersionId()).isNull();
+
+        verify(syncEventService).emit(eq(jobId), eq("file.ingestion_failed"), any());
+        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
+        verifyAuditCounts(0, 0, 1);
+    }
+
+    @Test
+    void aGradingIngestionFailureOnOneFileDoesNotStopItsSiblings() throws Exception {
+        when(sharePointProperties.scoresFolder()).thenReturn(SCORES_FOLDER_NAME);
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        when(graphDriveService.listChildren(DRIVE_ID, ROOT_ITEM_ID))
+            .thenReturn(List.of(item("scores-1", SCORES_FOLDER_NAME, true)));
+        when(graphDriveService.listChildren(DRIVE_ID, "scores-1"))
+            .thenReturn(List.of(item("bad", "Broken.xlsx", false), item("good", "Fine.xlsx", false)));
+        when(graphDriveService.getItem(DRIVE_ID, "bad")).thenReturn(details("Broken.xlsx", SCORES_FOLDER_NAME));
+        when(graphDriveService.getItem(DRIVE_ID, "good")).thenReturn(details("Fine.xlsx", SCORES_FOLDER_NAME));
+
+        String badKey = "cohorts/" + cohortId + "/scores/Broken.xlsx";
+        String goodKey = "cohorts/" + cohortId + "/scores/Fine.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("bad"), any(), eq(badKey)))
+            .thenReturn(changed("Broken.xlsx", badKey, "bad".getBytes(StandardCharsets.UTF_8)));
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("good"), any(), eq(goodKey)))
+            .thenReturn(changed("Fine.xlsx", goodKey, "ok".getBytes(StandardCharsets.UTF_8)));
+        when(gradingIngestionService.process(any(), any(), eq("Broken.xlsx"), any(), any(), anyString(), any(), anyString()))
+            .thenThrow(new IllegalStateException("bad workbook"));
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        runner.run(cohortId, jobId, actorId, null);
+
+        // The healthy sibling still archives despite the other file's ingestion failure.
+        verify(s3StorageService).putObject(eq(goodKey), any(byte[].class), anyString());
+        verify(s3StorageService, never()).putObject(eq(badKey), any(byte[].class), anyString());
+        verifyAuditCounts(1, 0, 1);
     }
 
     @Test
