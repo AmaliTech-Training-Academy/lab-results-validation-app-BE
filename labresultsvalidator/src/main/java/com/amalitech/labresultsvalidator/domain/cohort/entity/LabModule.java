@@ -38,9 +38,6 @@ public class LabModule extends BaseEntity {
     @Column(nullable = false, length = 20)
     private String code;
 
-    @Column(nullable = false)
-    private int sequence;
-
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String status = "active";

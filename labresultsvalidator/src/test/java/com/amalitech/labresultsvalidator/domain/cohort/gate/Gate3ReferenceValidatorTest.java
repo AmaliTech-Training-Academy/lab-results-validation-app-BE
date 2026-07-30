@@ -94,8 +94,8 @@ class Gate3ReferenceValidatorTest {
             List.of("specializationid", "specialization"),
             List.of(List.of("SWE", "Software Engineering")));
         byte[] modules = buildWorkbook(2,
-            List.of("specializationid", "moduleid", "module name", "phase"),
-            List.of(List.of("SWE", "BEM01", "Backend Fundamentals", "1")));
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE", "BEM01", "Backend Fundamentals")));
         byte[] labs = buildWorkbook(2,
             List.of("moduleid", "assessmentid", "lab title"),
             List.of(List.of("BEM01", "A1", "REST API Basics")));
@@ -119,8 +119,8 @@ class Gate3ReferenceValidatorTest {
             List.of("specializationid", "specialization"),
             List.of(List.of("SWE", "Software Engineering")));
         byte[] modules = buildWorkbook(0,
-            List.of("specializationid", "moduleid", "module name", "phase"),
-            List.of(List.of("SWE", "BEM01", "Backend Fundamentals", "1")));
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE", "BEM01", "Backend Fundamentals")));
         byte[] labs = buildWorkbook(0,
             List.of("moduleid", "assessmentid", "lab title"),
             List.of(List.of("BEM01", "A1", "REST API Basics")));
@@ -140,10 +140,10 @@ class Gate3ReferenceValidatorTest {
             List.of("specializationid", "specialization"),
             List.of(List.of("SWE", "Software Engineering")));
         byte[] modules = buildWorkbook(0,
-            List.of("specializationid", "moduleid", "module name", "phase"),
+            List.of("specializationid", "moduleid", "module name"),
             List.of(
-                List.of("SWE", "BEM01", "Backend Fundamentals", "1"),
-                List.of("SWE", "BEM01", "Backend Fundamentals Duplicate", "2")));
+                List.of("SWE", "BEM01", "Backend Fundamentals"),
+                List.of("SWE", "BEM01", "Backend Fundamentals Duplicate")));
         byte[] labs = buildWorkbook(0,
             List.of("moduleid", "assessmentid", "lab title"),
             List.of(List.of("BEM01", "A1", "REST API Basics")));
@@ -165,8 +165,8 @@ class Gate3ReferenceValidatorTest {
             List.of("specializationid", "specialization"),
             List.of(List.of("SWE", "Software Engineering")));
         byte[] modules = buildWorkbook(0,
-            List.of("specializationid", "moduleid", "module name", "phase"),
-            List.of(List.of("SWE", "BEM01", "Backend Fundamentals", "1")));
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE", "BEM01", "Backend Fundamentals")));
         byte[] labs = buildWorkbook(0,
             List.of("moduleid", "assessmentid", "lab title"),
             List.of(
@@ -192,8 +192,8 @@ class Gate3ReferenceValidatorTest {
                 List.of("SWE-JAVA", "Software Engineering - Java"),
                 List.of("SWE-JS", "Software Engineering - JS")));
         byte[] modules = buildWorkbook(0,
-            List.of("specializationid", "moduleid", "module name", "phase"),
-            List.of(List.of("SWE-JAVA", "BEM01", "Backend Fundamentals", "1")));
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE-JAVA", "BEM01", "Backend Fundamentals")));
         byte[] labs = buildWorkbook(0,
             List.of("moduleid", "assessmentid", "lab title"),
             List.of(List.of("BEM01", "A1", "REST API Basics")));
@@ -217,8 +217,8 @@ class Gate3ReferenceValidatorTest {
                 List.of("SWE-JAVA", "Software Engineering - Java"),
                 List.of("SWE-JS", "Software Engineering - JS")));
         byte[] modules = buildWorkbook(0,
-            List.of("specializationid", "moduleid", "module name", "phase"),
-            List.of(List.of("SWE-JAVA", "BEM01", "Backend Fundamentals", "1")));
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE-JAVA", "BEM01", "Backend Fundamentals")));
         byte[] labs = buildWorkbook(0,
             List.of("moduleid", "assessmentid", "lab title"),
             List.of(List.of("BEM01", "A1", "REST API Basics")));

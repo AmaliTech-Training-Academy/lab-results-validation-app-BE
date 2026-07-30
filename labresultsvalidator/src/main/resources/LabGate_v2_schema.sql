@@ -93,18 +93,20 @@ CREATE TABLE specializations (
 );
 
 -- ============================================================
--- 5. modules  — `code` is the sheet-name → module lookup key (NEW)
--- NOTE: code is unique within specialization. The sheet→module lookup
--- resolves within a (cohort, specialization) context. If the D-LIT file
--- layout turns out NOT to be specialization-scoped (one workbook spanning
--- specializations), revisit to enforce uniqueness within cohort instead.
+-- 5. modules  — no `sequence`/phase column at all (V15 made it optional,
+-- V16 removed it entirely). The reference file's "phase" column doesn't
+-- hold a clean whole number in practice (e.g. "Phase 1" as free text), and
+-- the grading-ingestion pipeline no longer resolves a module via sheet name
+-- + phase — it resolves a row's lab directly by (Lab Title, NSP's
+-- specialization), the same way Gate4ScoreSheetValidator already validates
+-- this workbook at stand-up. `code` is a business identifier only, never
+-- used for sheet-name matching.
 -- ============================================================
 CREATE TABLE modules (
     id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     specialization_id UUID         NOT NULL REFERENCES specializations(id) ON DELETE RESTRICT,
     name              VARCHAR(150) NOT NULL,
     code              VARCHAR(20)  NOT NULL,             -- e.g. BEM01
-    sequence          INT          NOT NULL CHECK (sequence > 0),
     status            VARCHAR(20)  NOT NULL DEFAULT 'active',
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -112,7 +114,6 @@ CREATE TABLE modules (
     updated_by        UUID         REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT uq_module_name     UNIQUE (specialization_id, name),
     CONSTRAINT uq_module_code     UNIQUE (specialization_id, code),
-    CONSTRAINT uq_module_sequence UNIQUE (specialization_id, sequence),
     CONSTRAINT chk_module_status  CHECK (status IN ('active','archived'))
 );
 
@@ -158,6 +159,7 @@ CREATE TABLE learners (
 CREATE TABLE ingestion_runs (
     id                    UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
     cohort_id             UUID          NOT NULL REFERENCES cohorts(id) ON DELETE RESTRICT,
+    sync_job_id           UUID          REFERENCES cohort_sync_jobs(id) ON DELETE RESTRICT,  -- V14, nullable (pre-V14 rows)
     workbook_filename     VARCHAR(255)  NOT NULL,
     sharepoint_file_url   TEXT,
     sharepoint_version_id VARCHAR(200),
@@ -181,9 +183,11 @@ CREATE TABLE ingestion_runs (
 );
 
 -- ============================================================
--- 9. lab_results  — one result per (learner, lab). No attempt_number.
+-- 9. lab_results  — row identity is (submitted_on, nsp_name), not (learner, lab).
+-- learner_id/lab_id are still resolved and stored for reporting/joins, but play
+-- no role in change-detection matching (V13).
 -- instructor_contact_id replaces free-text graded_by (notification link).
--- row_value_hash powers change detection (hash of score + submitted_on).
+-- row_value_hash powers change detection (hash of submitted_on + nsp_name + score).
 -- ============================================================
 CREATE TABLE lab_results (
     id                    UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -191,6 +195,7 @@ CREATE TABLE lab_results (
     lab_id                UUID          NOT NULL REFERENCES labs(id)                ON DELETE RESTRICT,
     ingestion_run_id      UUID          NOT NULL REFERENCES ingestion_runs(id)      ON DELETE RESTRICT,
     instructor_contact_id UUID          REFERENCES instructor_contacts(id)          ON DELETE SET NULL,
+    nsp_name              VARCHAR(255)  NOT NULL,          -- raw "Name of NSP" text, matched on directly
     score                 NUMERIC(8,2)  NOT NULL CHECK (score >= 0),
     max_score_snapshot    NUMERIC(8,2)  NOT NULL DEFAULT 100 CHECK (max_score_snapshot > 0),
     submitted_on          DATE          NOT NULL,          -- Review Date
@@ -199,7 +204,7 @@ CREATE TABLE lab_results (
     updated_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     created_by            UUID          REFERENCES users(id) ON DELETE SET NULL,
     updated_by            UUID          REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT uq_lab_result UNIQUE (learner_id, lab_id),
+    CONSTRAINT uq_lab_result UNIQUE (submitted_on, nsp_name),
     CONSTRAINT chk_score_max CHECK (score <= max_score_snapshot)
 );
 

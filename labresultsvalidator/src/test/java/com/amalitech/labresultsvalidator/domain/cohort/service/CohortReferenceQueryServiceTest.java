@@ -86,7 +86,6 @@ class CohortReferenceQueryServiceTest {
             .specializationId(specializationId)
             .name("Backend Fundamentals")
             .code("BEM01")
-            .sequence(1)
             .status("active")
             .build();
         when(labModuleRepository.findAllBySpecializationIdIn(List.of(specializationId)))

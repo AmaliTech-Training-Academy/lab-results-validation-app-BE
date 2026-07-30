@@ -170,27 +170,15 @@ public class ReferenceCommitService {
             Map<String, Specialization> specsByCode,
             UUID actorUserId) {
         Map<String, LabModule> byCode = new HashMap<>();
-        int sequenceFallback = 0;
         for (ValidatedReferenceBundle.ModuleRow row : bundle.modules()) {
             Specialization spec = specsByCode.get(row.specializationId());
             if (spec == null) {
                 continue;
             }
-            sequenceFallback++;
-            int sequence;
-            try {
-                sequence = Integer.parseInt(row.phase().trim());
-                if (sequence <= 0) {
-                    sequence = sequenceFallback;
-                }
-            } catch (NumberFormatException ex) {
-                sequence = sequenceFallback;
-            }
             LabModule module = LabModule.builder()
                 .specializationId(spec.getId())
                 .name(row.name())
                 .code(row.moduleId())
-                .sequence(sequence)
                 .build();
             module.setCreatedBy(actorUserId);
             module.setUpdatedBy(actorUserId);

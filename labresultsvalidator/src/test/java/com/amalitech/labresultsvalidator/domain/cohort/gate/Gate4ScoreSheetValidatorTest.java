@@ -79,7 +79,7 @@ class Gate4ScoreSheetValidatorTest {
         when(specializationRepository.findAllByCohortId(cohortId)).thenReturn(List.of(swe, data));
 
         LabModule module = LabModule.builder().id(moduleId).specializationId(sweSpecId)
-            .name("Backend Fundamentals").code("BEM01").sequence(1).build();
+            .name("Backend Fundamentals").code("BEM01").build();
         when(labModuleRepository.findAllBySpecializationIdIn(any())).thenReturn(List.of(module));
 
         Lab lab = Lab.builder().id(UUID.randomUUID()).moduleId(moduleId).title("REST API Basics").build();

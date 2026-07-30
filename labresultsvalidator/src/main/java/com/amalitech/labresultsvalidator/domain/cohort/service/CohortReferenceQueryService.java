@@ -83,7 +83,7 @@ public class CohortReferenceQueryService {
     ) {
         List<ModuleWithLabsResponse> moduleResponses = modulesBySpecializationId
             .getOrDefault(spec.getId(), List.of()).stream()
-            .sorted(Comparator.comparingInt(LabModule::getSequence))
+            .sorted(Comparator.comparing(LabModule::getCode))
             .map(module -> toModuleResponse(module, labsByModuleId))
             .toList();
 
@@ -111,7 +111,6 @@ public class CohortReferenceQueryService {
             .specializationId(module.getSpecializationId())
             .name(module.getName())
             .code(module.getCode())
-            .sequence(module.getSequence())
             .status(module.getStatus())
             .labs(labResponses)
             .build();
