@@ -18,9 +18,11 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * A committed grading result. Row identity for change detection is
- * {@code (submittedOn, nspName)} — see {@code V13__lab_result_identity.sql} — not
- * {@code learnerId}/{@code labId}, which are resolved and stored here for reporting/joins only.
+ * A committed grading result. Row identity is {@code (learnerId, labId)} — see
+ * {@code V20__lab_result_identity_learner_lab.sql} — since those are resolved during validation
+ * and don't change between ingestion runs, unlike {@code submittedOn} (a re-grade can land on a
+ * new date). {@code submittedOn}/{@code score} feed change detection ({@code rowValueHash})
+ * instead.
  */
 @Entity
 @Table(name = "lab_results")
@@ -63,7 +65,7 @@ public class LabResult extends BaseEntity {
     @Column(name = "submitted_on", nullable = false)
     private LocalDate submittedOn;
 
-    /** Change-detection fingerprint: hash(submittedOn, nspName, score). */
+    /** Change-detection fingerprint: hash(submittedOn, score). */
     @Column(name = "row_value_hash", nullable = false, length = 64)
     private String rowValueHash;
 }

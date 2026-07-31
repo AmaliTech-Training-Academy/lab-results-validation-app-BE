@@ -27,6 +27,8 @@ class ScoreRowClassifierTest {
 
     private static final LocalDate SUBMITTED_ON = LocalDate.of(2026, 1, 15);
     private static final String NSP_NAME = "ama owusu";
+    private static final UUID LEARNER_ID = UUID.randomUUID();
+    private static final UUID LAB_ID = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
@@ -34,12 +36,16 @@ class ScoreRowClassifierTest {
     }
 
     private ValidatedScoreRow row(BigDecimal score) {
-        return new ValidatedScoreRow("Instructor1.xlsx", "BEM01", 2, UUID.randomUUID(), UUID.randomUUID(),
-            null, NSP_NAME, SUBMITTED_ON, score);
+        return row(score, SUBMITTED_ON);
+    }
+
+    private ValidatedScoreRow row(BigDecimal score, LocalDate submittedOn) {
+        return new ValidatedScoreRow("Instructor1.xlsx", "BEM01", 2, LEARNER_ID, LAB_ID,
+            null, NSP_NAME, submittedOn, score);
     }
 
     private void stubExisting(LabResult... existing) {
-        when(labResultRepository.findBySubmittedOnInAndNspNameIn(Set.of(SUBMITTED_ON), Set.of(NSP_NAME)))
+        when(labResultRepository.findByLearnerIdInAndLabIdIn(Set.of(LEARNER_ID), Set.of(LAB_ID)))
             .thenReturn(List.of(existing));
     }
 
@@ -57,8 +63,8 @@ class ScoreRowClassifierTest {
     @Test
     void classify_existingRecordWithMatchingFingerprint_isUnchanged() {
         BigDecimal score = new BigDecimal("90.00");
-        LabResult existing = LabResult.builder().id(UUID.randomUUID())
-            .rowValueHash(RowFingerprint.compute(SUBMITTED_ON, NSP_NAME, score))
+        LabResult existing = LabResult.builder().id(UUID.randomUUID()).learnerId(LEARNER_ID).labId(LAB_ID)
+            .rowValueHash(RowFingerprint.compute(SUBMITTED_ON, score))
             .score(score).submittedOn(SUBMITTED_ON).nspName(NSP_NAME).build();
         stubExisting(existing);
 
@@ -72,8 +78,8 @@ class ScoreRowClassifierTest {
     void classify_existingRecordWithDifferentScore_isChanged() {
         BigDecimal oldScore = new BigDecimal("85.00");
         BigDecimal newScore = new BigDecimal("90.00");
-        LabResult existing = LabResult.builder().id(UUID.randomUUID())
-            .rowValueHash(RowFingerprint.compute(SUBMITTED_ON, NSP_NAME, oldScore))
+        LabResult existing = LabResult.builder().id(UUID.randomUUID()).learnerId(LEARNER_ID).labId(LAB_ID)
+            .rowValueHash(RowFingerprint.compute(SUBMITTED_ON, oldScore))
             .score(oldScore).submittedOn(SUBMITTED_ON).nspName(NSP_NAME).build();
         stubExisting(existing);
 
@@ -81,6 +87,36 @@ class ScoreRowClassifierTest {
 
         assertThat(result.get(0).kind()).isEqualTo(ClassificationKind.CHANGED);
         assertThat(result.get(0).existing()).isEqualTo(existing);
+    }
+
+    @Test
+    void classify_regradeOnANewDate_matchesByLearnerAndLabAndIsChanged() {
+        BigDecimal score = new BigDecimal("90.00");
+        LabResult existing = LabResult.builder().id(UUID.randomUUID()).learnerId(LEARNER_ID).labId(LAB_ID)
+            .rowValueHash(RowFingerprint.compute(SUBMITTED_ON, score))
+            .score(score).submittedOn(SUBMITTED_ON).nspName(NSP_NAME).build();
+        stubExisting(existing);
+
+        LocalDate regradeDate = SUBMITTED_ON.plusDays(7);
+        List<RowClassification> result = classifier.classify(List.of(row(score, regradeDate)));
+
+        assertThat(result.get(0).kind()).isEqualTo(ClassificationKind.CHANGED);
+        assertThat(result.get(0).existing()).isEqualTo(existing);
+    }
+
+    @Test
+    void classify_twoDifferentLabsSameTraineeSameDate_areNotTreatedAsDuplicates() {
+        UUID otherLabId = UUID.randomUUID();
+        ValidatedScoreRow first = row(new BigDecimal("90.00"));
+        ValidatedScoreRow second = new ValidatedScoreRow("Instructor1.xlsx", "BEM02", 3, LEARNER_ID, otherLabId,
+            null, NSP_NAME, SUBMITTED_ON, new BigDecimal("95.00"));
+        when(labResultRepository.findByLearnerIdInAndLabIdIn(Set.of(LEARNER_ID), Set.of(LAB_ID, otherLabId)))
+            .thenReturn(List.of());
+
+        List<RowClassification> result = classifier.classify(List.of(first, second));
+
+        assertThat(result).hasSize(2);
+        assertThat(result).allSatisfy(c -> assertThat(c.kind()).isEqualTo(ClassificationKind.NEW));
     }
 
     @Test
@@ -98,7 +134,7 @@ class ScoreRowClassifierTest {
 
     @Test
     void classify_duplicateGroupWithAnAlreadyCommittedRecord_attachesItToEachDuplicate() {
-        LabResult existing = LabResult.builder().id(UUID.randomUUID())
+        LabResult existing = LabResult.builder().id(UUID.randomUUID()).learnerId(LEARNER_ID).labId(LAB_ID)
             .rowValueHash("irrelevant").score(new BigDecimal("80.00")).submittedOn(SUBMITTED_ON)
             .nspName(NSP_NAME).build();
         stubExisting(existing);

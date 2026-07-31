@@ -75,7 +75,7 @@ class LabResultCommitServiceTest {
         assertThat(saved.getIngestionRunId()).isEqualTo(ingestionRunId);
         assertThat(saved.getNspName()).isEqualTo(NSP_NAME);
         assertThat(saved.getScore()).isEqualTo(row.score());
-        assertThat(saved.getRowValueHash()).isEqualTo(RowFingerprint.compute(SUBMITTED_ON, NSP_NAME, row.score()));
+        assertThat(saved.getRowValueHash()).isEqualTo(RowFingerprint.compute(SUBMITTED_ON, row.score()));
         assertThat(saved.getCreatedBy()).isEqualTo(triggeredBy);
         assertThat(saved.getUpdatedBy()).isEqualTo(triggeredBy);
     }
@@ -123,6 +123,23 @@ class LabResultCommitServiceTest {
         assertThat(audit.getOldValue()).isEqualTo("85.00");
         assertThat(audit.getNewValue()).isEqualTo("90.00");
         assertThat(audit.getChangedBy()).isEqualTo(triggeredBy);
+    }
+
+    @Test
+    void commit_changedRowOnANewDate_updatesSubmittedOnInPlace() {
+        LocalDate regradeDate = SUBMITTED_ON.plusDays(7);
+        BigDecimal score = new BigDecimal("90.00");
+        UUID existingId = UUID.randomUUID();
+        LabResult existing = LabResult.builder().id(existingId).score(score).submittedOn(SUBMITTED_ON).build();
+        ValidatedScoreRow row = new ValidatedScoreRow("Instructor1.xlsx", "BEM01", 2, UUID.randomUUID(),
+            UUID.randomUUID(), null, NSP_NAME, regradeDate, score);
+        RowClassification classification = new RowClassification(ClassificationKind.CHANGED, row, existing);
+
+        service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+
+        ArgumentCaptor<LabResult> resultCaptor = ArgumentCaptor.forClass(LabResult.class);
+        verify(labResultRepository).save(resultCaptor.capture());
+        assertThat(resultCaptor.getValue().getSubmittedOn()).isEqualTo(regradeDate);
     }
 
     @Test

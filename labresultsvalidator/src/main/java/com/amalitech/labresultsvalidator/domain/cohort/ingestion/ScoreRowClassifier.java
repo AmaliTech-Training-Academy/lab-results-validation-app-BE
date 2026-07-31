@@ -4,17 +4,18 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LabResultRepository;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * B8 — classifies each validated row as new/unchanged/changed/duplicate. Identity is
- * {@code (submittedOn, nspName)}, not {@code learnerId}/{@code labId} (finalized model —
- * supersedes what's currently written in the PRD).
+ * {@code (learnerId, labId)} — both are resolved during validation and don't change between
+ * ingestion runs, unlike {@code submittedOn} (a re-grade can land on a new date). Change detection
+ * (unchanged vs changed) compares {@code submittedOn}/{@code score} via {@link RowFingerprint}.
  */
 @Component
 public class ScoreRowClassifier {
@@ -47,12 +48,12 @@ public class ScoreRowClassifier {
 
     /** Batch-fetches every existing row that could match this sheet's rows in one query (B8). */
     private Map<String, LabResult> fetchExisting(List<ValidatedScoreRow> validRows) {
-        Set<LocalDate> submittedOns = validRows.stream()
-            .map(ValidatedScoreRow::submittedOn).collect(Collectors.toSet());
-        Set<String> nspNames = validRows.stream()
-            .map(ValidatedScoreRow::nspName).collect(Collectors.toSet());
-        return labResultRepository.findBySubmittedOnInAndNspNameIn(submittedOns, nspNames).stream()
-            .collect(Collectors.toMap(r -> identityKey(r.getSubmittedOn(), r.getNspName()), r -> r));
+        Set<UUID> learnerIds = validRows.stream()
+            .map(ValidatedScoreRow::learnerId).collect(Collectors.toSet());
+        Set<UUID> labIds = validRows.stream()
+            .map(ValidatedScoreRow::labId).collect(Collectors.toSet());
+        return labResultRepository.findByLearnerIdInAndLabIdIn(learnerIds, labIds).stream()
+            .collect(Collectors.toMap(r -> identityKey(r.getLearnerId(), r.getLabId()), r -> r));
     }
 
     private void classifySingleRow(ValidatedScoreRow row, LabResult existing, List<RowClassification> results) {
@@ -61,7 +62,7 @@ public class ScoreRowClassifier {
             return;
         }
 
-        String incomingFingerprint = RowFingerprint.compute(row.submittedOn(), row.nspName(), row.score());
+        String incomingFingerprint = RowFingerprint.compute(row.submittedOn(), row.score());
         ClassificationKind kind = incomingFingerprint.equals(existing.getRowValueHash())
             ? ClassificationKind.UNCHANGED
             : ClassificationKind.CHANGED;
@@ -69,10 +70,10 @@ public class ScoreRowClassifier {
     }
 
     private String identityKey(ValidatedScoreRow row) {
-        return identityKey(row.submittedOn(), row.nspName());
+        return identityKey(row.learnerId(), row.labId());
     }
 
-    private String identityKey(LocalDate submittedOn, String nspName) {
-        return submittedOn + "|" + nspName;
+    private String identityKey(UUID learnerId, UUID labId) {
+        return learnerId + "|" + labId;
     }
 }
