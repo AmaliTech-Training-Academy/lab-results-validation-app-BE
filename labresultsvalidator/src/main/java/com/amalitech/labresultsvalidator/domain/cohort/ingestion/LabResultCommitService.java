@@ -99,7 +99,7 @@ public class LabResultCommitService {
     }
 
     private void commitNew(ValidatedScoreRow row, UUID ingestionRunId, UUID triggeredBy) {
-        String fingerprint = RowFingerprint.compute(row.submittedOn(), row.nspName(), row.score());
+        String fingerprint = RowFingerprint.compute(row.submittedOn(), row.score());
         LabResult result = LabResult.builder()
             .learnerId(row.learnerId())
             .labId(row.labId())
@@ -121,9 +121,10 @@ public class LabResultCommitService {
         BigDecimal oldScore = existing.getScore();
 
         existing.setScore(row.score());
+        existing.setSubmittedOn(row.submittedOn());
         existing.setInstructorContactId(row.instructorContactId());
         existing.setIngestionRunId(ingestionRunId);
-        existing.setRowValueHash(RowFingerprint.compute(row.submittedOn(), row.nspName(), row.score()));
+        existing.setRowValueHash(RowFingerprint.compute(row.submittedOn(), row.score()));
         existing.setUpdatedBy(triggeredBy);
         labResultRepository.save(existing);
 
