@@ -10,16 +10,14 @@ public record CohortSyncJobResponse(
     UUID id,
     UUID cohortId,
     CohortSyncJobStatus status,
-    OffsetDateTime startedAt,
-    String targetItemId
+    OffsetDateTime startedAt
 ) {
     public static CohortSyncJobResponse from(CohortSyncJob job) {
         return new CohortSyncJobResponse(
             job.getId(),
             job.getCohort().getId(),
             job.getStatus(),
-            job.getStartedAt(),
-            job.getTargetItemId()
+            job.getStartedAt()
         );
     }
 }

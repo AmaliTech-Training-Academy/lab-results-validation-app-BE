@@ -82,8 +82,8 @@ public class CohortSyncJobRunner {
     private final GradingIngestionService gradingIngestionService;
 
     @Async("syncTaskExecutor")
-    public void run(UUID cohortId, UUID jobId, UUID actorId, String targetItemId) {
-        LOG.info("[sync] job={} cohort={} STARTED targetItemId={}", jobId, cohortId, targetItemId);
+    public void run(UUID cohortId, UUID jobId, UUID actorId) {
+        LOG.info("[sync] job={} cohort={} STARTED", jobId, cohortId);
         CohortSyncJobStatus finalStatus = CohortSyncJobStatus.FAILED;
         SyncCounts counts = new SyncCounts();
 
@@ -97,9 +97,7 @@ public class CohortSyncJobRunner {
                 throw new IllegalStateException("Cohort is missing SharePoint drive reference.");
             }
 
-            List<String> itemIds = targetItemId != null
-                ? List.of(targetItemId)
-                : discoverScoreSheets(driveId, parentItemId, jobId);
+            List<String> itemIds = discoverScoreSheets(driveId, parentItemId, jobId);
 
             LOG.info("[sync] job={} discovered {} score sheet(s)", jobId, itemIds.size());
 
@@ -108,7 +106,9 @@ public class CohortSyncJobRunner {
             // event emission, counts and DB writes are identical to a fully-serial run.
             List<PrefetchResult> prefetched = prefetchAll(cohort, driveId, itemIds);
 
-            String triggerType = targetItemId != null ? "MANUAL" : "SCHEDULED";
+            // A human-attributed run is a manual trigger; an unattributed one came from the
+            // scheduler (triggerScheduledSyncForCohort/triggerScheduledSyncForAll pass null).
+            String triggerType = actorId != null ? "MANUAL" : "SCHEDULED";
             for (PrefetchResult result : prefetched) {
                 processFile(cohort, jobId, result, counts, actorId, triggerType);
             }

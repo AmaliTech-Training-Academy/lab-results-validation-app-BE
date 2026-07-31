@@ -47,12 +47,7 @@ public class CohortSyncService {
 
     public CohortSyncJobResponse triggerSyncForCohort(UUID cohortId) {
         Cohort cohort = getEligibleCohort(cohortId);
-        return CohortSyncJobResponse.from(startJob(cohort, currentUser().getId(), null));
-    }
-
-    public CohortSyncJobResponse triggerSyncForFile(UUID cohortId, String targetItemId) {
-        Cohort cohort = getEligibleCohort(cohortId);
-        return CohortSyncJobResponse.from(startJob(cohort, currentUser().getId(), targetItemId));
+        return CohortSyncJobResponse.from(startJob(cohort, currentUser().getId()));
     }
 
     /** Manual "whole run" trigger — attributes the batch to the authenticated caller. */
@@ -85,7 +80,7 @@ public class CohortSyncService {
             return;
         }
         try {
-            startJob(cohort, null, null);
+            startJob(cohort, null);
         } catch (DuplicateResourceException ex) {
             LOG.info("[sync] scheduled cohort sync skipped: cohort {} started concurrently", cohortId);
         }
@@ -136,7 +131,7 @@ public class CohortSyncService {
                 continue;
             }
             try {
-                startJob(cohort, actorId, null);
+                startJob(cohort, actorId);
                 triggered.add(cohort.getId());
             } catch (DuplicateResourceException ex) {
                 LOG.info("[sync] cohort={} started running between check and insert — skipping in this batch",
@@ -162,7 +157,7 @@ public class CohortSyncService {
         return cohort;
     }
 
-    private CohortSyncJob startJob(Cohort cohort, UUID actorId, String targetItemId) {
+    private CohortSyncJob startJob(Cohort cohort, UUID actorId) {
         UUID cohortId = cohort.getId();
         if (syncJobRepository.existsByCohortIdAndStatus(cohortId, CohortSyncJobStatus.RUNNING)) {
             throw new DuplicateResourceException(ALREADY_RUNNING_MESSAGE);
@@ -173,7 +168,6 @@ public class CohortSyncService {
             .status(CohortSyncJobStatus.RUNNING)
             .startedAt(OffsetDateTime.now())
             .triggeredBy(actorId)
-            .targetItemId(targetItemId)
             .build();
 
         try {
@@ -188,7 +182,7 @@ public class CohortSyncService {
         startedPayload.put("startedAt", job.getStartedAt().toString());
         syncEventService.emit(job.getId(), "sync.started", startedPayload);
 
-        syncJobRunner.run(cohortId, job.getId(), actorId, targetItemId);
+        syncJobRunner.run(cohortId, job.getId(), actorId);
         return job;
     }
 

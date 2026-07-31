@@ -60,7 +60,7 @@ class CohortSyncControllerTest {
         UUID cohortId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
         SyncRunResponse response = new SyncRunResponse(
-            jobId, cohortId, CohortSyncJobStatus.COMPLETED, OffsetDateTime.now(), OffsetDateTime.now(), null, null);
+            jobId, cohortId, CohortSyncJobStatus.COMPLETED, OffsetDateTime.now(), OffsetDateTime.now(), null);
         when(cohortSyncService.getRun(cohortId, jobId)).thenReturn(response);
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId))
