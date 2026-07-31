@@ -4,6 +4,8 @@ import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceExce
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandUpJobResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.StandupRunResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortStandUpJob;
@@ -13,6 +15,8 @@ import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandUpJ
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -70,6 +74,18 @@ public class CohortStandUpService {
             .status(job.getStatus())
             .startedAt(job.getStartedAt())
             .build();
+    }
+
+    public Page<StandupRunResponse> listRuns(UUID cohortId, Pageable pageable) {
+        return standUpJobRepository.findByCohortIdOrderByStartedAtDesc(cohortId, pageable)
+            .map(StandupRunResponse::from);
+    }
+
+    /** Resolves the most recent stand-up job for the SSE stream endpoint. */
+    public StreamJobHandle getLatestJobForStream(UUID cohortId) {
+        CohortStandUpJob job = standUpJobRepository.findTopByCohortIdOrderByStartedAtDesc(cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException("No stand-up job found for cohort " + cohortId));
+        return new StreamJobHandle(job.getId(), job.getStatus() == CohortStandUpJobStatus.RUNNING);
     }
 
     private User currentUser() {

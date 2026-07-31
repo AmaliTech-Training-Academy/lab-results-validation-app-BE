@@ -4,18 +4,24 @@ import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceExce
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortSyncJobResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncBatchResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncRunResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +41,7 @@ public class CohortSyncService {
 
     private final CohortRepository cohortRepository;
     private final CohortSyncJobRepository syncJobRepository;
+    private final IngestionRunRepository ingestionRunRepository;
     private final CohortSyncJobRunner syncJobRunner;
     private final SyncEventService syncEventService;
 
@@ -56,6 +63,59 @@ public class CohortSyncService {
     /** Scheduled trigger — runs outside any request/security context, so there's no actor to attribute to. */
     public SyncBatchResponse triggerScheduledSyncForAll() {
         return runBatch(null);
+    }
+
+    /**
+     * Scheduled trigger for a single cohort (dynamic per-cohort {@code SyncSchedule}). Skips
+     * quietly rather than throwing — there's no caller to report an error to, so an ineligible or
+     * already-running cohort just waits for the next fire.
+     */
+    public void triggerScheduledSyncForCohort(UUID cohortId) {
+        Cohort cohort = cohortRepository.findById(cohortId).orElse(null);
+        if (cohort == null
+            || cohort.getLifecycleState() != CohortLifecycleState.STOOD_UP
+            || !cohort.isActive()
+            || cohort.getSharepointDriveId() == null
+            || cohort.getSharepointItemId() == null) {
+            LOG.info("[sync] scheduled cohort sync skipped: cohort {} not eligible", cohortId);
+            return;
+        }
+        if (syncJobRepository.existsByCohortIdAndStatus(cohort.getId(), CohortSyncJobStatus.RUNNING)) {
+            LOG.info("[sync] scheduled cohort sync skipped: cohort {} already has a running job", cohortId);
+            return;
+        }
+        try {
+            startJob(cohort, null, null);
+        } catch (DuplicateResourceException ex) {
+            LOG.info("[sync] scheduled cohort sync skipped: cohort {} started concurrently", cohortId);
+        }
+    }
+
+    public Page<SyncRunResponse> listRuns(UUID cohortId, Pageable pageable) {
+        return syncJobRepository.findByCohortIdOrderByStartedAtDesc(cohortId, pageable).map(SyncRunResponse::from);
+    }
+
+    public SyncRunResponse getRun(UUID cohortId, UUID jobId) {
+        return SyncRunResponse.from(getJobOrThrow(cohortId, jobId));
+    }
+
+    public GradingSyncOverviewResponse getGradingSyncOverview(UUID cohortId, UUID jobId) {
+        CohortSyncJob job = getJobOrThrow(cohortId, jobId);
+        var runs = ingestionRunRepository.findBySyncJobId(jobId);
+        return GradingSyncOverviewResponse.from(job, runs);
+    }
+
+    /** Resolves the most recent sync job for the SSE stream endpoint. */
+    public StreamJobHandle getLatestJobForStream(UUID cohortId) {
+        CohortSyncJob job = syncJobRepository.findTopByCohortIdOrderByStartedAtDesc(cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException("No sync job found for cohort " + cohortId));
+        return new StreamJobHandle(job.getId(), job.getStatus() == CohortSyncJobStatus.RUNNING);
+    }
+
+    private CohortSyncJob getJobOrThrow(UUID cohortId, UUID jobId) {
+        return syncJobRepository.findByIdAndCohortId(jobId, cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "No sync job found with ID " + jobId + " for cohort " + cohortId));
     }
 
     /**

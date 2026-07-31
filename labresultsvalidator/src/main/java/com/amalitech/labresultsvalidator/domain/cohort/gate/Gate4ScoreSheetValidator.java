@@ -30,6 +30,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 @Component
@@ -118,15 +121,18 @@ public class Gate4ScoreSheetValidator {
 
         List<GateError> allErrors = new ArrayList<>();
 
-        for (DriveItemInfo file : xlsxFiles) {
+        // Download every file concurrently (the dominant latency cost), then process results
+        // sequentially in original order below — event emission and error aggregation are
+        // identical to a fully-serial run.
+        List<DownloadResult> downloads = prefetchDownloads(driveId, xlsxFiles);
+
+        for (DownloadResult download : downloads) {
+            DriveItemInfo file = download.file();
             eventService.emit(jobId, "file.start", Map.of("file", file.name()));
 
-            byte[] bytes;
-            try {
-                bytes = graphDriveService.downloadFile(driveId, file.itemId());
-            } catch (GraphAccessException ex) {
+            if (download.error() != null) {
                 GateError err = new GateError(file.name(), null, "G4-DOWNLOAD-FAIL",
-                    "Could not download score file '" + file.name() + "': " + ex.getMessage());
+                    "Could not download score file '" + file.name() + "': " + download.error().getMessage());
                 allErrors.add(err);
                 eventService.emit(jobId, "file.failed", Map.of(
                     "file", file.name(),
@@ -135,7 +141,8 @@ public class Gate4ScoreSheetValidator {
                 continue;
             }
 
-            List<GateError> fileErrors = processScoreFile(file.name(), bytes, learnersByName, labTitleToSpecIds);
+            List<GateError> fileErrors =
+                processScoreFile(file.name(), download.bytes(), learnersByName, labTitleToSpecIds);
             if (fileErrors.isEmpty()) {
                 eventService.emit(jobId, "file.passed", Map.of("file", file.name()));
             } else {
@@ -153,6 +160,35 @@ public class Gate4ScoreSheetValidator {
             return new Gate4Result(GateResult.fail(allErrors));
         }
         return new Gate4Result(GateResult.pass());
+    }
+
+    private record DownloadResult(DriveItemInfo file, byte[] bytes, GraphAccessException error) {
+    }
+
+    private List<DownloadResult> prefetchDownloads(String driveId, List<DriveItemInfo> xlsxFiles) {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<DownloadResult>> futures = xlsxFiles.stream()
+                .map(file -> executor.submit(() -> downloadOne(driveId, file)))
+                .toList();
+            List<DownloadResult> results = new ArrayList<>(futures.size());
+            for (Future<DownloadResult> future : futures) {
+                results.add(future.get());
+            }
+            return results;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while downloading score sheets", ex);
+        } catch (ExecutionException ex) {
+            throw new IllegalStateException("Unexpected error downloading score sheets", ex.getCause());
+        }
+    }
+
+    private DownloadResult downloadOne(String driveId, DriveItemInfo file) {
+        try {
+            return new DownloadResult(file, graphDriveService.downloadFile(driveId, file.itemId()), null);
+        } catch (GraphAccessException ex) {
+            return new DownloadResult(file, null, ex);
+        }
     }
 
     // A lab title may be configured under more than one specialization (shared lab), so each

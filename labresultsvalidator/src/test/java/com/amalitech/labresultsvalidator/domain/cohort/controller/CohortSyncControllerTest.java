@@ -1,14 +1,14 @@
 package com.amalitech.labresultsvalidator.domain.cohort.controller;
 
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
-import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
-import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.FileIngestionSummary;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncRunResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortSyncService;
-import com.amalitech.labresultsvalidator.domain.cohort.service.StandupSseRegistry;
+import com.amalitech.labresultsvalidator.domain.cohort.service.SseGateEventStreamer;
 import com.amalitech.labresultsvalidator.domain.cohort.service.SyncEventService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.Mockito.when;
@@ -38,16 +37,10 @@ class CohortSyncControllerTest {
     private CohortSyncService cohortSyncService;
 
     @Mock
-    private CohortSyncJobRepository syncJobRepository;
-
-    @Mock
-    private IngestionRunRepository ingestionRunRepository;
-
-    @Mock
     private SyncEventService syncEventService;
 
     @Mock
-    private StandupSseRegistry sseRegistry;
+    private SseGateEventStreamer sseStreamer;
 
     @InjectMocks
     private CohortSyncController cohortSyncController;
@@ -66,13 +59,9 @@ class CohortSyncControllerTest {
     void getSyncRun_existingJob_returns200() throws Exception {
         UUID cohortId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
-        CohortSyncJob job = CohortSyncJob.builder()
-            .id(jobId)
-            .cohort(Cohort.builder().id(cohortId).build())
-            .status(CohortSyncJobStatus.COMPLETED)
-            .startedAt(OffsetDateTime.now())
-            .build();
-        when(syncJobRepository.findByIdAndCohortId(jobId, cohortId)).thenReturn(Optional.of(job));
+        SyncRunResponse response = new SyncRunResponse(
+            jobId, cohortId, CohortSyncJobStatus.COMPLETED, OffsetDateTime.now(), OffsetDateTime.now(), null, null);
+        when(cohortSyncService.getRun(cohortId, jobId)).thenReturn(response);
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId))
             .andExpect(status().isOk())
@@ -85,7 +74,8 @@ class CohortSyncControllerTest {
     void getSyncRun_unknownOrMismatchedCohort_returns404() throws Exception {
         UUID cohortId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
-        when(syncJobRepository.findByIdAndCohortId(jobId, cohortId)).thenReturn(Optional.empty());
+        when(cohortSyncService.getRun(cohortId, jobId))
+            .thenThrow(new ResourceNotFoundException("No sync job found with ID " + jobId + " for cohort " + cohortId));
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId))
             .andExpect(status().isNotFound());
@@ -95,27 +85,25 @@ class CohortSyncControllerTest {
     void getGradingSyncOverview_existingJob_returnsAggregatedCountsAndPerFileBreakdown() throws Exception {
         UUID cohortId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
-        CohortSyncJob job = CohortSyncJob.builder()
-            .id(jobId)
-            .cohort(Cohort.builder().id(cohortId).build())
-            .status(CohortSyncJobStatus.COMPLETED)
-            .startedAt(OffsetDateTime.now())
-            .completedAt(OffsetDateTime.now())
-            .build();
-        when(syncJobRepository.findByIdAndCohortId(jobId, cohortId)).thenReturn(Optional.of(job));
 
-        IngestionRun run1 = IngestionRun.builder()
-            .cohortId(cohortId).syncJobId(jobId).workbookFilename("Instructor1.xlsx")
-            .status("completed").rowsRead(3).committedNew(2).updatedCount(1)
-            .skippedInvalid(0).skippedUnchanged(0).conflictsCount(0).build();
+        FileIngestionSummary file1 = FileIngestionSummary.from(
+            IngestionRun.builder()
+                .cohortId(cohortId).syncJobId(jobId).workbookFilename("Instructor1.xlsx")
+                .status("completed").rowsRead(3).committedNew(2).updatedCount(1)
+                .skippedInvalid(0).skippedUnchanged(0).conflictsCount(0).build());
         String errorReportJson = "[{\"file\":\"Instructor2.xlsx\",\"location\":\"sheet BEM01 row 3\","
             + "\"rule\":\"R1-UNKNOWN-NSP\",\"message\":\"NSP 'Not A Learner' does not match any learner.\"}]";
-        IngestionRun run2 = IngestionRun.builder()
-            .cohortId(cohortId).syncJobId(jobId).workbookFilename("Instructor2.xlsx")
-            .status("partial").rowsRead(2).committedNew(0).updatedCount(0)
-            .skippedInvalid(1).skippedUnchanged(0).conflictsCount(1)
-            .errorReportJson(errorReportJson).build();
-        when(ingestionRunRepository.findBySyncJobId(jobId)).thenReturn(List.of(run1, run2));
+        FileIngestionSummary file2 = FileIngestionSummary.from(
+            IngestionRun.builder()
+                .cohortId(cohortId).syncJobId(jobId).workbookFilename("Instructor2.xlsx")
+                .status("partial").rowsRead(2).committedNew(0).updatedCount(0)
+                .skippedInvalid(1).skippedUnchanged(0).conflictsCount(1)
+                .errorReportJson(errorReportJson).build());
+
+        GradingSyncOverviewResponse response = new GradingSyncOverviewResponse(
+            jobId, cohortId, CohortSyncJobStatus.COMPLETED, OffsetDateTime.now(), OffsetDateTime.now(),
+            2, 5, 2, 1, 1, 0, 1, List.of(file1, file2));
+        when(cohortSyncService.getGradingSyncOverview(cohortId, jobId)).thenReturn(response);
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/overview"))
             .andExpect(status().isOk())
@@ -139,7 +127,8 @@ class CohortSyncControllerTest {
     void getGradingSyncOverview_unknownOrMismatchedCohort_returns404() throws Exception {
         UUID cohortId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
-        when(syncJobRepository.findByIdAndCohortId(jobId, cohortId)).thenReturn(Optional.empty());
+        when(cohortSyncService.getGradingSyncOverview(cohortId, jobId))
+            .thenThrow(new ResourceNotFoundException("No sync job found with ID " + jobId + " for cohort " + cohortId));
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/overview"))
             .andExpect(status().isNotFound());

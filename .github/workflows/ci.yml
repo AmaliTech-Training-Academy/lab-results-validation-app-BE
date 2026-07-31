@@ -75,13 +75,10 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Lint
-        run: mvn -B checkstyle:check
-        working-directory: ${{ env.WORKDIR }}
-
-      # `verify` compiles, runs tests (JaCoCo agent attached) and packages the
-      # jar in a single pass — this is the one and only compilation in the run.
-      - name: Build, test & package
+      # `verify` compiles, runs tests (JaCoCo agent attached), lints (Checkstyle
+      # is bound to this phase) and packages the jar in a single pass — this is
+      # the one and only compilation (and only lint run) in the whole workflow.
+      - name: Build, test, lint & package
         run: mvn -B clean verify
         working-directory: ${{ env.WORKDIR }}
 

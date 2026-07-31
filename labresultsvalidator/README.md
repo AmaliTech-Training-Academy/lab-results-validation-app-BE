@@ -1,6 +1,11 @@
-# labresultsvalidator — Local Postgres setup
+# labresultsvalidator
 
-This README explains how to run a local PostgreSQL database for the labresultsvalidator project using Docker Compose, how the `.env` is used, how persistence works, and common troubleshooting steps.
+Backend for LabGate — a Spring Boot service that validates and syncs cohort grading data against
+reference data pulled from SharePoint.
+
+## Local Postgres setup
+
+This section explains how to run a local PostgreSQL database for the labresultsvalidator project using Docker Compose, how the `.env` is used, how persistence works, and common troubleshooting steps.
 
 Prerequisites
 - Docker Desktop for Windows (or Docker Engine + Compose). Ensure the Docker service is running.
@@ -108,41 +113,38 @@ Next steps / optional improvements
 - Add an init SQL script under `docker-entrypoint-initdb.d/` if you want the DB pre-populated the first time it is created.
 - Add a `Makefile` or PowerShell script for common commands (start/stop/reset/psql) to simplify developer setup.
 
-If you'd like, I can:
-- Start the Postgres container for you now and show the logs.
-- Modify `docker-compose.yml` to use a bind mount or to add the Spring Boot service.
-- Add a `.env.example` file with placeholders.
+## Architecture
 
+The codebase is organized by domain (feature-sliced), not by technical layer at the root. Each
+domain package holds its own `controller` / `service` / `repository` / `entity` / `dto` slices.
 
+```
 main/
-├── java/
-│   └── com.amalitech.labresultsvalidator/
-│       ├── common/
-│       ├── config/
-│       ├── domain/
-│       │   ├── audit/
-│       │   ├── cohort/
-│       │   ├── csv_upload/
-│       │   ├── enums/
-│       │   ├── lab/
-│       │   ├── lab_result/
-│       │   ├── learner/
-│       │   ├── module/
-│       │   ├── specialization/
-│       │   ├── user/
-│       │   └── user_module_assignment/
-│       ├── security/
-│       │   ├── controller/
-│       │   ├── dto/
-│       │   ├── entity/
-│       │   ├── repository/
-│       │   └── service/
-│       ├── LabresultsvalidatorApplication.java
-│       └── package-info.java
+├── java/com/amalitech/labresultsvalidator/
+│   ├── domain/
+│   │   ├── auth/          # login, refresh/logout, password reset, JWT issuance
+│   │   ├── cohort/        # cohort lifecycle, stand-up/Gate3/Gate4 pipelines, score sheet sync
+│   │   ├── user/          # user accounts
+│   │   └── enums/
+│   ├── common/
+│   │   ├── exceptions/    # GlobalExceptionHandler + domain exceptions
+│   │   ├── response/      # ApiResponse envelope
+│   │   ├── config/        # CORS, OpenAPI, etc.
+│   │   ├── aop/           # cross-cutting aspects
+│   │   ├── csv/
+│   │   ├── service/       # e.g. EmailService
+│   │   ├── validation/
+│   │   └── utils/
+│   ├── infrastructure/
+│   │   ├── graph/         # Microsoft Graph / SharePoint client
+│   │   └── storage/       # S3 client
+│   ├── security/          # SecurityConfig, JWT filters, password-reset filters
+│   └── config/
 └── resources/
-├── db.migration/
-│   ├── R__seed_data.sql
-│   └── V1__create_tables.sql
-├── static/
-├── templates/
-└── application.properties
+    ├── db/migration/      # Flyway migrations (V1…Vn)
+    └── application.properties
+```
+
+Secrets and environment-specific values are injected via `${VAR}` placeholders in
+`application.properties`, sourced from `.env` (gitignored) — see the Postgres setup section above
+for local development.
