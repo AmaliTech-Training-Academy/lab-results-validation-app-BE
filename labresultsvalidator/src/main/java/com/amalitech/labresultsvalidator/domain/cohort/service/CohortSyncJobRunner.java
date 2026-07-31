@@ -33,6 +33,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Runs one cohort's score-sheet sync: enumerates the "Lab Scores" folder, detects which
@@ -99,9 +102,14 @@ public class CohortSyncJobRunner {
 
             LOG.info("[sync] job={} discovered {} score sheet(s)", jobId, itemIds.size());
 
+            // Fetch every file concurrently (the dominant latency cost — Graph metadata +
+            // download round-trips), then process them sequentially in original order below so
+            // event emission, counts and DB writes are identical to a fully-serial run.
+            List<PrefetchResult> prefetched = prefetchAll(cohort, driveId, itemIds);
+
             String triggerType = targetItemId != null ? "MANUAL" : "SCHEDULED";
-            for (String itemId : itemIds) {
-                processFile(cohort, jobId, driveId, itemId, counts, actorId, triggerType);
+            for (PrefetchResult result : prefetched) {
+                processFile(cohort, jobId, result, counts, actorId, triggerType);
             }
 
             finalStatus = CohortSyncJobStatus.COMPLETED;
@@ -194,25 +202,91 @@ public class CohortSyncJobRunner {
     // Per-file pipeline
     // ------------------------------------------------------------------
 
-    private void processFile(Cohort cohort, UUID jobId, String driveId, String itemId, SyncCounts counts,
-                             UUID actorId, String triggerType) {
+    /**
+     * Result of prefetching one file's Graph metadata + content — pure data, no side effects
+     * (no SSE emission, no counts, no DB writes). {@code metadataError}/{@code fetchError} carry
+     * exactly the exception {@link #processFile} used to catch inline, so downstream handling is
+     * unchanged; only when the network calls happen moves earlier (concurrently), not what happens.
+     */
+    private record PrefetchResult(
+        String itemId,
+        DriveItemDetails details,
+        GraphAccessException metadataError,
+        String scenarioFolder,
+        String s3Key,
+        FetchOutcome outcome,
+        Exception fetchError
+    ) {
+        boolean metadataFailed() {
+            return metadataError != null;
+        }
+
+        boolean fetchFailed() {
+            return fetchError != null;
+        }
+    }
+
+    /**
+     * Fetches every file's Graph metadata + content concurrently (the dominant latency cost),
+     * preserving {@code itemIds} order in the returned list so the caller can process results
+     * sequentially exactly as if the loop had been fully serial.
+     */
+    private List<PrefetchResult> prefetchAll(Cohort cohort, String driveId, List<String> itemIds) {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<PrefetchResult>> futures = itemIds.stream()
+                .map(itemId -> executor.submit(() -> prefetch(cohort, driveId, itemId)))
+                .toList();
+            List<PrefetchResult> results = new ArrayList<>(futures.size());
+            for (Future<PrefetchResult> future : futures) {
+                results.add(future.get());
+            }
+            return results;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while prefetching score sheets", ex);
+        } catch (ExecutionException ex) {
+            throw new IllegalStateException("Unexpected error prefetching score sheets", ex.getCause());
+        }
+    }
+
+    private PrefetchResult prefetch(Cohort cohort, String driveId, String itemId) {
         // B3 AC1 — single-item GET for quickXorHash, content version and size, before any download.
         DriveItemDetails details;
         try {
             details = graphDriveService.getItem(driveId, itemId);
         } catch (GraphAccessException ex) {
+            return new PrefetchResult(itemId, null, ex, null, null, null, null);
+        }
+
+        String scenarioFolder = resolveScenarioFolder(details.parentFolderName());
+        String s3Key = buildS3Key(cohort.getId(), scenarioFolder, text(details.name()));
+
+        try {
+            FetchOutcome outcome = workbookFetchService.fetchIfChanged(driveId, itemId, details, s3Key);
+            return new PrefetchResult(itemId, details, null, scenarioFolder, s3Key, outcome, null);
+        } catch (GraphAccessException | WorkbookParseException | S3StorageException ex) {
+            return new PrefetchResult(itemId, details, null, scenarioFolder, s3Key, null, ex);
+        }
+    }
+
+    private void processFile(Cohort cohort, UUID jobId, PrefetchResult prefetched, SyncCounts counts,
+                             UUID actorId, String triggerType) {
+        String itemId = prefetched.itemId();
+        if (prefetched.metadataFailed()) {
             // No filename or key is known yet, so there is nothing to key an audit row on.
-            LOG.warn("[sync] job={} cannot read metadata for item {}: {}", jobId, itemId, ex.getMessage());
+            LOG.warn("[sync] job={} cannot read metadata for item {}: {}",
+                jobId, itemId, prefetched.metadataError().getMessage());
             syncEventService.emit(jobId, "file.failed", payload(
                 "itemId", itemId,
-                "error", text(ex.getMessage())));
+                "error", text(prefetched.metadataError().getMessage())));
             counts.failed++;
             return;
         }
 
+        DriveItemDetails details = prefetched.details();
         String fileName = text(details.name());
-        String scenarioFolder = resolveScenarioFolder(details.parentFolderName());
-        String s3Key = buildS3Key(cohort.getId(), scenarioFolder, fileName);
+        String scenarioFolder = prefetched.scenarioFolder();
+        String s3Key = prefetched.s3Key();
 
         syncEventService.emit(jobId, "file.discovered", payload(
             "file", fileName,
@@ -220,22 +294,20 @@ public class CohortSyncJobRunner {
             "versionId", text(details.versionId()),
             "quickXorHash", text(details.quickXorHash())));
 
-        FetchOutcome outcome;
-        try {
-            outcome = workbookFetchService.fetchIfChanged(driveId, itemId, details, s3Key);
-        } catch (GraphAccessException | WorkbookParseException | S3StorageException ex) {
+        if (prefetched.fetchFailed()) {
             // Download, parse or archive-read failure — fail this workbook only (§4.5, B4 AC2).
             // The S3 baseline is left untouched, so the next run retries this file.
-            LOG.warn("[sync] job={} file '{}' failed: {}", jobId, fileName, ex.getMessage());
+            LOG.warn("[sync] job={} file '{}' failed: {}", jobId, fileName, prefetched.fetchError().getMessage());
             saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder, s3Key,
                 details, null, null, SyncFileChangeState.FAILED);
             syncEventService.emit(jobId, "file.failed", payload(
                 "file", fileName,
-                "error", text(ex.getMessage())));
+                "error", text(prefetched.fetchError().getMessage())));
             counts.failed++;
             return;
         }
 
+        FetchOutcome outcome = prefetched.outcome();
         if (!outcome.hasWorkbook()) {
             // B3 AC2 — unchanged: no parse, no upload, but still recorded so the run summary can
             // say "we saw it and nothing changed" rather than leaving silence.

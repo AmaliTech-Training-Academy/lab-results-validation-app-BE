@@ -65,6 +65,32 @@ public class CohortSyncService {
         return runBatch(null);
     }
 
+    /**
+     * Scheduled trigger for a single cohort (dynamic per-cohort {@code SyncSchedule}). Skips
+     * quietly rather than throwing — there's no caller to report an error to, so an ineligible or
+     * already-running cohort just waits for the next fire.
+     */
+    public void triggerScheduledSyncForCohort(UUID cohortId) {
+        Cohort cohort = cohortRepository.findById(cohortId).orElse(null);
+        if (cohort == null
+            || cohort.getLifecycleState() != CohortLifecycleState.STOOD_UP
+            || !cohort.isActive()
+            || cohort.getSharepointDriveId() == null
+            || cohort.getSharepointItemId() == null) {
+            LOG.info("[sync] scheduled cohort sync skipped: cohort {} not eligible", cohortId);
+            return;
+        }
+        if (syncJobRepository.existsByCohortIdAndStatus(cohort.getId(), CohortSyncJobStatus.RUNNING)) {
+            LOG.info("[sync] scheduled cohort sync skipped: cohort {} already has a running job", cohortId);
+            return;
+        }
+        try {
+            startJob(cohort, null, null);
+        } catch (DuplicateResourceException ex) {
+            LOG.info("[sync] scheduled cohort sync skipped: cohort {} started concurrently", cohortId);
+        }
+    }
+
     public Page<SyncRunResponse> listRuns(UUID cohortId, Pageable pageable) {
         return syncJobRepository.findByCohortIdOrderByStartedAtDesc(cohortId, pageable).map(SyncRunResponse::from);
     }

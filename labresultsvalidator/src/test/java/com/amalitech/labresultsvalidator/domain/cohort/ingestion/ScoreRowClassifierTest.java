@@ -11,7 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,10 +38,14 @@ class ScoreRowClassifierTest {
             null, NSP_NAME, SUBMITTED_ON, score);
     }
 
+    private void stubExisting(LabResult... existing) {
+        when(labResultRepository.findBySubmittedOnInAndNspNameIn(Set.of(SUBMITTED_ON), Set.of(NSP_NAME)))
+            .thenReturn(List.of(existing));
+    }
+
     @Test
     void classify_noExistingRecord_isNew() {
-        when(labResultRepository.findBySubmittedOnAndNspName(SUBMITTED_ON, NSP_NAME))
-            .thenReturn(Optional.empty());
+        stubExisting();
 
         List<RowClassification> result = classifier.classify(List.of(row(new BigDecimal("90.00"))));
 
@@ -55,9 +59,8 @@ class ScoreRowClassifierTest {
         BigDecimal score = new BigDecimal("90.00");
         LabResult existing = LabResult.builder().id(UUID.randomUUID())
             .rowValueHash(RowFingerprint.compute(SUBMITTED_ON, NSP_NAME, score))
-            .score(score).submittedOn(SUBMITTED_ON).build();
-        when(labResultRepository.findBySubmittedOnAndNspName(SUBMITTED_ON, NSP_NAME))
-            .thenReturn(Optional.of(existing));
+            .score(score).submittedOn(SUBMITTED_ON).nspName(NSP_NAME).build();
+        stubExisting(existing);
 
         List<RowClassification> result = classifier.classify(List.of(row(score)));
 
@@ -71,9 +74,8 @@ class ScoreRowClassifierTest {
         BigDecimal newScore = new BigDecimal("90.00");
         LabResult existing = LabResult.builder().id(UUID.randomUUID())
             .rowValueHash(RowFingerprint.compute(SUBMITTED_ON, NSP_NAME, oldScore))
-            .score(oldScore).submittedOn(SUBMITTED_ON).build();
-        when(labResultRepository.findBySubmittedOnAndNspName(SUBMITTED_ON, NSP_NAME))
-            .thenReturn(Optional.of(existing));
+            .score(oldScore).submittedOn(SUBMITTED_ON).nspName(NSP_NAME).build();
+        stubExisting(existing);
 
         List<RowClassification> result = classifier.classify(List.of(row(newScore)));
 
@@ -83,8 +85,7 @@ class ScoreRowClassifierTest {
 
     @Test
     void classify_sameIdentityTwiceInOneFile_bothAreDuplicates() {
-        when(labResultRepository.findBySubmittedOnAndNspName(SUBMITTED_ON, NSP_NAME))
-            .thenReturn(Optional.empty());
+        stubExisting();
 
         ValidatedScoreRow first = row(new BigDecimal("90.00"));
         ValidatedScoreRow second = row(new BigDecimal("95.00"));
@@ -98,9 +99,9 @@ class ScoreRowClassifierTest {
     @Test
     void classify_duplicateGroupWithAnAlreadyCommittedRecord_attachesItToEachDuplicate() {
         LabResult existing = LabResult.builder().id(UUID.randomUUID())
-            .rowValueHash("irrelevant").score(new BigDecimal("80.00")).submittedOn(SUBMITTED_ON).build();
-        when(labResultRepository.findBySubmittedOnAndNspName(SUBMITTED_ON, NSP_NAME))
-            .thenReturn(Optional.of(existing));
+            .rowValueHash("irrelevant").score(new BigDecimal("80.00")).submittedOn(SUBMITTED_ON)
+            .nspName(NSP_NAME).build();
+        stubExisting(existing);
 
         List<RowClassification> result = classifier.classify(
             List.of(row(new BigDecimal("90.00")), row(new BigDecimal("95.00"))));
