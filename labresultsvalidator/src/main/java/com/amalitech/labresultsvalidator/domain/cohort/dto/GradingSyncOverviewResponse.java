@@ -25,6 +25,7 @@ public record GradingSyncOverviewResponse(
     int skippedInvalid,
     int skippedUnchanged,
     int conflictsCount,
+    int highFailureFileCount,
     List<FileIngestionSummary> files
 ) {
     public static GradingSyncOverviewResponse from(CohortSyncJob job, List<IngestionRun> runs) {
@@ -34,6 +35,7 @@ public record GradingSyncOverviewResponse(
         int skippedInvalid = 0;
         int skippedUnchanged = 0;
         int conflictsCount = 0;
+        int highFailureFileCount = 0;
         List<FileIngestionSummary> files = runs.stream().map(FileIngestionSummary::from).toList();
 
         for (IngestionRun run : runs) {
@@ -43,6 +45,9 @@ public record GradingSyncOverviewResponse(
             skippedInvalid += run.getSkippedInvalid();
             skippedUnchanged += run.getSkippedUnchanged();
             conflictsCount += run.getConflictsCount();
+            if (run.isHighFailureRate()) {
+                highFailureFileCount++;
+            }
         }
 
         return new GradingSyncOverviewResponse(
@@ -58,6 +63,7 @@ public record GradingSyncOverviewResponse(
             skippedInvalid,
             skippedUnchanged,
             conflictsCount,
+            highFailureFileCount,
             files
         );
     }

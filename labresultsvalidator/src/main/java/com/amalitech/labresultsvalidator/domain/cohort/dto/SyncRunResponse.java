@@ -12,8 +12,7 @@ public record SyncRunResponse(
     CohortSyncJobStatus status,
     OffsetDateTime startedAt,
     OffsetDateTime completedAt,
-    UUID triggeredBy,
-    String targetItemId
+    UUID triggeredBy
 ) {
     public static SyncRunResponse from(CohortSyncJob job) {
         return new SyncRunResponse(
@@ -22,8 +21,7 @@ public record SyncRunResponse(
             job.getStatus(),
             job.getStartedAt(),
             job.getCompletedAt(),
-            job.getTriggeredBy(),
-            job.getTargetItemId()
+            job.getTriggeredBy()
         );
     }
 }

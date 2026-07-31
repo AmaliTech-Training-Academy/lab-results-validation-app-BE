@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.cohort.service;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.SyncFileChangeState;
 import com.amalitech.labresultsvalidator.domain.cohort.ingestion.GradingIngestionService;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -81,8 +82,8 @@ public class CohortSyncJobRunner {
     private final GradingIngestionService gradingIngestionService;
 
     @Async("syncTaskExecutor")
-    public void run(UUID cohortId, UUID jobId, UUID actorId, String targetItemId) {
-        LOG.info("[sync] job={} cohort={} STARTED targetItemId={}", jobId, cohortId, targetItemId);
+    public void run(UUID cohortId, UUID jobId, UUID actorId) {
+        LOG.info("[sync] job={} cohort={} STARTED", jobId, cohortId);
         CohortSyncJobStatus finalStatus = CohortSyncJobStatus.FAILED;
         SyncCounts counts = new SyncCounts();
 
@@ -96,9 +97,7 @@ public class CohortSyncJobRunner {
                 throw new IllegalStateException("Cohort is missing SharePoint drive reference.");
             }
 
-            List<String> itemIds = targetItemId != null
-                ? List.of(targetItemId)
-                : discoverScoreSheets(driveId, parentItemId, jobId);
+            List<String> itemIds = discoverScoreSheets(driveId, parentItemId, jobId);
 
             LOG.info("[sync] job={} discovered {} score sheet(s)", jobId, itemIds.size());
 
@@ -107,7 +106,9 @@ public class CohortSyncJobRunner {
             // event emission, counts and DB writes are identical to a fully-serial run.
             List<PrefetchResult> prefetched = prefetchAll(cohort, driveId, itemIds);
 
-            String triggerType = targetItemId != null ? "MANUAL" : "SCHEDULED";
+            // A human-attributed run is a manual trigger; an unattributed one came from the
+            // scheduler (triggerScheduledSyncForCohort/triggerScheduledSyncForAll pass null).
+            String triggerType = actorId != null ? "MANUAL" : "SCHEDULED";
             for (PrefetchResult result : prefetched) {
                 processFile(cohort, jobId, result, counts, actorId, triggerType);
             }
@@ -340,8 +341,11 @@ public class CohortSyncJobRunner {
             // Sequenced before the archive below on purpose — the archive is what marks this
             // version done, so a processing failure must leave the old baseline in place.
             try {
-                gradingIngestionService.process(cohort, jobId, fileName, workbook.workbook(), details,
-                    outcome.sha256Hex(), actorId, triggerType);
+                IngestionRun ingestionRun = gradingIngestionService.process(cohort, jobId, fileName,
+                    workbook.workbook(), details, outcome.sha256Hex(), actorId, triggerType);
+                if (ingestionRun != null && ingestionRun.isHighFailureRate()) {
+                    raiseHighFailureRateAlert(cohort, jobId, fileName, ingestionRun, actorId);
+                }
             } catch (RuntimeException ex) {
                 LOG.warn("[sync] job={} grading ingestion failed for '{}': {}",
                     jobId, fileName, ex.getMessage());
@@ -382,6 +386,27 @@ public class CohortSyncJobRunner {
             // Thrown only by Workbook.close(); the work itself already succeeded.
             LOG.warn("[sync] job={} failed to close workbook '{}': {}", jobId, fileName, ex.getMessage());
         }
+    }
+
+    /**
+     * §4.5 — "No hard stop on failure rate": valid rows still commit, but a sheet where more than
+     * half its READY rows were rejected gets a loud, immediate alert (B7 AC3) rather than silence.
+     */
+    private void raiseHighFailureRateAlert(Cohort cohort, UUID jobId, String fileName, IngestionRun run,
+                                           UUID actorId) {
+        LOG.warn("[sync] job={} file '{}' HIGH FAILURE RATE {}% (invalid={} of read={})",
+            jobId, fileName, String.format(Locale.ROOT, "%.1f", run.getFailureRatePercent()),
+            run.getSkippedInvalid(), run.getRowsRead());
+
+        Map<String, Object> payload = payload(
+            "file", fileName,
+            "failureRatePercent", run.getFailureRatePercent(),
+            "rowsRead", run.getRowsRead(),
+            "skippedInvalid", run.getSkippedInvalid(),
+            "committedNew", run.getCommittedNew(),
+            "updatedCount", run.getUpdatedCount());
+        syncEventService.emit(jobId, "file.high_failure_rate", payload);
+        auditEventService.record("HIGH_FAILURE_RATE", cohort.getId(), actorId, payload);
     }
 
     private void countChanged(SyncFileChangeState state, SyncCounts counts) {

@@ -4,6 +4,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.SyncFileChangeState;
 import com.amalitech.labresultsvalidator.domain.cohort.ingestion.GradingIngestionService;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -171,7 +172,7 @@ class CohortSyncJobRunnerTest {
 
         when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         verify(s3StorageService).putObject(eq(directKey), eq(directBytes), anyString());
         verify(s3StorageService).putObject(eq(scenarioKey), eq(scenarioBytes), anyString());
@@ -208,7 +209,7 @@ class CohortSyncJobRunnerTest {
         when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), anyString()))
             .thenReturn(FetchOutcome.unchanged("sha-steady"));
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         // B3 AC2 — nothing uploaded, but the observation is still on the record.
         verify(s3StorageService, never()).putObject(anyString(), any(byte[].class), anyString());
@@ -231,7 +232,7 @@ class CohortSyncJobRunnerTest {
         when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), anyString()))
             .thenThrow(new WorkbookParseException("not a valid .xlsx", null));
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         ArgumentCaptor<CohortSyncFile> captor = ArgumentCaptor.forClass(CohortSyncFile.class);
         verify(syncFileRepository).save(captor.capture());
@@ -263,7 +264,7 @@ class CohortSyncJobRunnerTest {
             .thenReturn(changed("Fine.xlsx", goodKey, "ok".getBytes(StandardCharsets.UTF_8)));
         when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         // §4.5 — the healthy sibling still commits.
         verify(s3StorageService).putObject(eq(goodKey), any(byte[].class), anyString());
@@ -289,7 +290,7 @@ class CohortSyncJobRunnerTest {
             .thenReturn(changed("Fine.xlsx", key, "ok".getBytes(StandardCharsets.UTF_8)));
         when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         verify(syncEventService).emit(eq(jobId), eq("folder.failed"), any());
         verify(s3StorageService).putObject(eq(key), any(byte[].class), anyString());
@@ -307,7 +308,7 @@ class CohortSyncJobRunnerTest {
         when(s3StorageService.putObject(anyString(), any(byte[].class), anyString()))
             .thenThrow(new S3StorageException("bucket unreachable"));
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         ArgumentCaptor<CohortSyncFile> captor = ArgumentCaptor.forClass(CohortSyncFile.class);
         verify(syncFileRepository).save(captor.capture());
@@ -320,7 +321,7 @@ class CohortSyncJobRunnerTest {
     }
 
     @Test
-    void callsGradingIngestionBeforeArchivingWithScheduledTriggerType() throws Exception {
+    void callsGradingIngestionWithManualTriggerTypeWhenAnActorIsPresent() throws Exception {
         stubFolderWithOneFile("file-1", "Direct.xlsx");
         when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
 
@@ -329,30 +330,28 @@ class CohortSyncJobRunnerTest {
             .thenReturn(changed("Direct.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
         when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         verify(gradingIngestionService).process(eq(cohort), eq(jobId), eq("Direct.xlsx"), any(), any(),
-            eq("sha-Direct.xlsx"), eq(actorId), eq("SCHEDULED"));
+            eq("sha-Direct.xlsx"), eq(actorId), eq("MANUAL"));
         // The seam must run before the archive write (a processing failure must leave the baseline).
         verify(s3StorageService).putObject(eq(key), any(byte[].class), anyString());
     }
 
     @Test
-    void callsGradingIngestionWithManualTriggerTypeForASingleTargetedFile() throws Exception {
+    void callsGradingIngestionWithScheduledTriggerTypeWhenNoActorIsPresent() throws Exception {
+        stubFolderWithOneFile("file-1", "Direct.xlsx");
         when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
-        when(sharePointProperties.scoresFolder()).thenReturn(SCORES_FOLDER_NAME);
-        when(graphDriveService.getItem(DRIVE_ID, "file-2")).thenReturn(details("Results.xlsx", "Scenario 1"));
 
-        String key = "cohorts/" + cohortId + "/scores/Scenario 1/Results.xlsx";
-        byte[] bytes = "scenario-bytes".getBytes(StandardCharsets.UTF_8);
-        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-2"), any(), eq(key)))
-            .thenReturn(changed("Results.xlsx", key, bytes));
+        String key = "cohorts/" + cohortId + "/scores/Direct.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), anyString()))
+            .thenReturn(changed("Direct.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
         when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
 
-        runner.run(cohortId, jobId, actorId, "file-2");
+        runner.run(cohortId, jobId, null);
 
-        verify(gradingIngestionService).process(eq(cohort), eq(jobId), eq("Results.xlsx"), any(), any(),
-            eq("sha-Results.xlsx"), eq(actorId), eq("MANUAL"));
+        verify(gradingIngestionService).process(eq(cohort), eq(jobId), eq("Direct.xlsx"), any(), any(),
+            eq("sha-Direct.xlsx"), eq((UUID) null), eq("SCHEDULED"));
     }
 
     @Test
@@ -366,7 +365,7 @@ class CohortSyncJobRunnerTest {
         when(gradingIngestionService.process(any(), any(), anyString(), any(), any(), anyString(), any(), anyString()))
             .thenThrow(new IllegalStateException("DB unreachable"));
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         // The processing failure must leave the S3 baseline untouched, so the file retries next run.
         verify(s3StorageService, never()).putObject(anyString(), any(byte[].class), anyString());
@@ -379,6 +378,62 @@ class CohortSyncJobRunnerTest {
         verify(syncEventService).emit(eq(jobId), eq("file.ingestion_failed"), any());
         assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
         verifyAuditCounts(0, 0, 1);
+    }
+
+    @Test
+    void raisesAHighFailureRateAlertWhenOverHalfOfAFilesReadyRowsAreRejected() throws Exception {
+        stubFolderWithOneFile("file-1", "Messy.xlsx");
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        String key = "cohorts/" + cohortId + "/scores/Messy.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), eq(key)))
+            .thenReturn(changed("Messy.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        IngestionRun highFailureRun = IngestionRun.builder().build();
+        highFailureRun.setRowsRead(10);
+        highFailureRun.setSkippedInvalid(7);
+        highFailureRun.setCommittedNew(3);
+        highFailureRun.setHighFailureRate(true);
+        highFailureRun.setFailureRatePercent(70.0);
+        when(gradingIngestionService.process(any(), any(), eq("Messy.xlsx"), any(), any(), anyString(), any(),
+            anyString())).thenReturn(highFailureRun);
+
+        runner.run(cohortId, jobId, actorId);
+
+        // §4.5 / B7 AC3 — a loud alert, but the valid rows still commit (the archive still happens).
+        verify(s3StorageService).putObject(eq(key), any(byte[].class), anyString());
+        verify(syncEventService).emit(eq(jobId), eq("file.high_failure_rate"), any());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(auditEventService).record(eq("HIGH_FAILURE_RATE"), eq(cohortId), eq(actorId), captor.capture());
+        assertThat(captor.getValue()).containsEntry("file", "Messy.xlsx");
+        assertThat(captor.getValue()).containsEntry("failureRatePercent", 70.0);
+        assertThat(captor.getValue()).containsEntry("rowsRead", 10);
+        assertThat(captor.getValue()).containsEntry("skippedInvalid", 7);
+    }
+
+    @Test
+    void doesNotRaiseAHighFailureRateAlertWhenTheRunIsBelowThreshold() throws Exception {
+        stubFolderWithOneFile("file-1", "Fine.xlsx");
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        String key = "cohorts/" + cohortId + "/scores/Fine.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), eq(key)))
+            .thenReturn(changed("Fine.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        IngestionRun healthyRun = IngestionRun.builder().build();
+        healthyRun.setRowsRead(10);
+        healthyRun.setSkippedInvalid(1);
+        healthyRun.setHighFailureRate(false);
+        when(gradingIngestionService.process(any(), any(), eq("Fine.xlsx"), any(), any(), anyString(), any(),
+            anyString())).thenReturn(healthyRun);
+
+        runner.run(cohortId, jobId, actorId);
+
+        verify(syncEventService, never()).emit(eq(jobId), eq("file.high_failure_rate"), any());
+        verify(auditEventService, never()).record(eq("HIGH_FAILURE_RATE"), any(), any(), any());
     }
 
     @Test
@@ -403,29 +458,12 @@ class CohortSyncJobRunnerTest {
             .thenThrow(new IllegalStateException("bad workbook"));
         when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         // The healthy sibling still archives despite the other file's ingestion failure.
         verify(s3StorageService).putObject(eq(goodKey), any(byte[].class), anyString());
         verify(s3StorageService, never()).putObject(eq(badKey), any(byte[].class), anyString());
         verifyAuditCounts(1, 0, 1);
-    }
-
-    @Test
-    void singleFileSyncResolvesScenarioFolderAndBuildsTheSameKeyAFolderWalkWould() throws Exception {
-        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
-        when(sharePointProperties.scoresFolder()).thenReturn(SCORES_FOLDER_NAME);
-        when(graphDriveService.getItem(DRIVE_ID, "file-2")).thenReturn(details("Results.xlsx", "Scenario 1"));
-
-        String expectedKey = "cohorts/" + cohortId + "/scores/Scenario 1/Results.xlsx";
-        byte[] bytes = "scenario-bytes".getBytes(StandardCharsets.UTF_8);
-        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-2"), any(), eq(expectedKey)))
-            .thenReturn(changed("Results.xlsx", expectedKey, bytes));
-        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
-
-        runner.run(cohortId, jobId, actorId, "file-2");
-
-        verify(s3StorageService).putObject(eq(expectedKey), eq(bytes), anyString());
     }
 
     @Test
@@ -438,7 +476,7 @@ class CohortSyncJobRunnerTest {
         when(graphDriveService.getItem(DRIVE_ID, "file-1"))
             .thenThrow(new GraphAccessException("item vanished"));
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         // Without metadata there is no key to record a row against, so only the count and the
         // event carry the failure.
@@ -453,7 +491,7 @@ class CohortSyncJobRunnerTest {
         when(graphDriveService.listChildren(DRIVE_ID, ROOT_ITEM_ID))
             .thenReturn(List.of(item("other", "Reference Data", true)));
 
-        runner.run(cohortId, jobId, actorId, null);
+        runner.run(cohortId, jobId, actorId);
 
         assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.FAILED);
         verify(auditEventService, never()).record(anyString(), any(), any(), any());

@@ -55,9 +55,6 @@ public class CohortSyncJob extends BaseEntity {
     @Column(name = "triggered_by")
     private UUID triggeredBy;
 
-    @Column(name = "target_item_id", length = 200)
-    private String targetItemId;
-
     @JdbcTypeCode(SqlTypes.JSON)
     @Builder.Default
     @Column(name = "sync_events_json", nullable = false, columnDefinition = "jsonb")

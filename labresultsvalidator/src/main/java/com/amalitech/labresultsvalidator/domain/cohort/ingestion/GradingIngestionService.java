@@ -86,9 +86,26 @@ public class GradingIngestionService {
         run.setStatus(allErrors.isEmpty() ? "completed" : "partial");
         run.setErrorReportJson(buildErrorReportJson(allErrors));
 
-        LOG.info("[ingestion] file '{}': read={} new={} updated={} unchanged={} invalid={} conflicts={}",
+        // B7 AC3 / §4.5 — "READY rows" are rows that actually reached F/R validation (a blank
+        // Total Score is skipped silently at B6 AC1 and never counts toward either side of this
+        // ratio). A row that failed validation, or a valid row that failed at commit time
+        // (COMMIT-FAILED), counts as rejected; duplicates/unchanged rows passed validation and
+        // are not rejections.
+        int readyRows = validated.validRows().size() + validated.errors().size();
+        int rejectedRows = validated.errors().size() + commitOutcome.skippedInvalid();
+        double failureRate = readyRows == 0 ? 0.0 : (double) rejectedRows / readyRows;
+        run.setFailureRatePercent(failureRate * 100);
+        run.setHighFailureRate(failureRate > 0.5);
+
+        LOG.info("[ingestion] file '{}': read={} new={} updated={} unchanged={} invalid={} conflicts={} "
+                + "failureRate={}%",
             fileName, run.getRowsRead(), run.getCommittedNew(), run.getUpdatedCount(),
-            run.getSkippedUnchanged(), run.getSkippedInvalid(), run.getConflictsCount());
+            run.getSkippedUnchanged(), run.getSkippedInvalid(), run.getConflictsCount(),
+            String.format("%.1f", run.getFailureRatePercent()));
+        if (run.isHighFailureRate()) {
+            LOG.warn("[ingestion] file '{}': HIGH FAILURE RATE {}% ({} of {} READY rows rejected)",
+                fileName, String.format("%.1f", run.getFailureRatePercent()), rejectedRows, readyRows);
+        }
 
         return ingestionRunRepository.save(run);
     }

@@ -71,7 +71,11 @@ class GradingIngestionServiceTest {
     }
 
     private ParsedScoreRow parsedRow() {
-        return new ParsedScoreRow("Instructor1.xlsx", "BEM01", 2, "2026-01-15",
+        return parsedRowAt(2);
+    }
+
+    private ParsedScoreRow parsedRowAt(int rowNum) {
+        return new ParsedScoreRow("Instructor1.xlsx", "BEM01", rowNum, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "0.9", new BigDecimal("0.9"), "INS-001");
     }
 
@@ -126,6 +130,52 @@ class GradingIngestionServiceTest {
 
         assertThat(run.getStatus()).isEqualTo("partial");
         assertThat(run.getErrorReportJson()).contains("S2-MISSING-COLUMN").contains("missing reviewer");
+    }
+
+    @Test
+    void process_overHalfOfReadyRowsRejected_flagsHighFailureRate() {
+        ValidatedScoreRow validated = validatedRow();
+        List<ParsedScoreRow> rows = List.of(parsedRowAt(2), parsedRowAt(3), parsedRowAt(4));
+        List<RowError> errors = List.of(
+            new RowError("Instructor1.xlsx", "row 3", "R1-UNKNOWN-NSP", "unknown"),
+            new RowError("Instructor1.xlsx", "row 4", "F2-INVALID-SCORE", "not numeric"));
+        when(scoreRowParser.parse("Instructor1.xlsx", workbook))
+            .thenReturn(new ScoreRowParser.SheetParseResult(rows, List.of()));
+        when(validationService.validate(cohort.getId(), rows))
+            .thenReturn(new ScoreRowValidationService.ValidationResult(List.of(validated), errors));
+        RowClassification classification = new RowClassification(ClassificationKind.NEW, validated, null);
+        when(classifier.classify(List.of(validated))).thenReturn(List.of(classification));
+        when(commitService.commit(any(), any(), any(), any()))
+            .thenReturn(new LabResultCommitService.CommitOutcome(1, 0, 0, 0, 0, List.of()));
+
+        IngestionRun run = service.process(cohort, syncJobId, "Instructor1.xlsx", workbook, details, "sha-1",
+            triggeredBy, "SCHEDULED");
+
+        // 2 of 3 READY rows rejected = 66.7% — over the 50% threshold (B7 AC3).
+        assertThat(run.isHighFailureRate()).isTrue();
+        assertThat(run.getFailureRatePercent()).isCloseTo(66.7, org.assertj.core.data.Offset.offset(0.1));
+    }
+
+    @Test
+    void process_atOrBelowHalfOfReadyRowsRejected_doesNotFlagHighFailureRate() {
+        ValidatedScoreRow validated = validatedRow();
+        List<ParsedScoreRow> rows = List.of(parsedRowAt(2), parsedRowAt(3), parsedRowAt(4));
+        List<RowError> errors = List.of(
+            new RowError("Instructor1.xlsx", "row 3", "R1-UNKNOWN-NSP", "unknown"));
+        when(scoreRowParser.parse("Instructor1.xlsx", workbook))
+            .thenReturn(new ScoreRowParser.SheetParseResult(rows, List.of()));
+        when(validationService.validate(cohort.getId(), rows))
+            .thenReturn(new ScoreRowValidationService.ValidationResult(List.of(validated), errors));
+        RowClassification classification = new RowClassification(ClassificationKind.NEW, validated, null);
+        when(classifier.classify(List.of(validated))).thenReturn(List.of(classification));
+        when(commitService.commit(any(), any(), any(), any()))
+            .thenReturn(new LabResultCommitService.CommitOutcome(1, 0, 0, 0, 0, List.of()));
+
+        IngestionRun run = service.process(cohort, syncJobId, "Instructor1.xlsx", workbook, details, "sha-1",
+            triggeredBy, "SCHEDULED");
+
+        // 1 of 3 READY rows rejected = 33.3% — under the threshold.
+        assertThat(run.isHighFailureRate()).isFalse();
     }
 
     @Test

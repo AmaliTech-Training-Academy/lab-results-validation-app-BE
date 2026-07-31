@@ -8,12 +8,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Per-file row-processing counts (B11 AC1) — one entry per workbook the sync run reached.
  * {@code issues} surfaces the actual per-row rejection reasons from {@code errorReportJson} — a
- * count alone ("25 invalid") gives no way to diagnose why.
+ * count alone ("25 invalid") gives no way to diagnose why. {@code rejectionReasons} rolls the
+ * same data up by rule code, so a high-failure-rate file's "why" is readable at a glance instead
+ * of scanning every row.
  */
 public record FileIngestionSummary(
     String workbookFilename,
@@ -24,13 +29,17 @@ public record FileIngestionSummary(
     int skippedInvalid,
     int skippedUnchanged,
     int conflictsCount,
+    boolean highFailureRate,
+    double failureRatePercent,
     OffsetDateTime runAt,
-    List<RowIssueSummary> issues
+    List<RowIssueSummary> issues,
+    List<RejectionReasonSummary> rejectionReasons
 ) {
     private static final Logger LOG = LoggerFactory.getLogger(FileIngestionSummary.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public static FileIngestionSummary from(IngestionRun run) {
+        List<RowIssueSummary> issues = parseIssues(run.getErrorReportJson());
         return new FileIngestionSummary(
             run.getWorkbookFilename(),
             run.getStatus(),
@@ -40,8 +49,11 @@ public record FileIngestionSummary(
             run.getSkippedInvalid(),
             run.getSkippedUnchanged(),
             run.getConflictsCount(),
+            run.isHighFailureRate(),
+            run.getFailureRatePercent(),
             run.getRunAt(),
-            parseIssues(run.getErrorReportJson())
+            issues,
+            summarizeReasons(issues)
         );
     }
 
@@ -55,5 +67,15 @@ public record FileIngestionSummary(
             LOG.warn("Could not parse stored errorReportJson: {}", ex.getMessage());
             return List.of();
         }
+    }
+
+    private static List<RejectionReasonSummary> summarizeReasons(List<RowIssueSummary> issues) {
+        Map<String, Long> counts = issues.stream()
+            .collect(Collectors.groupingBy(RowIssueSummary::rule, Collectors.counting()));
+        return counts.entrySet().stream()
+            .map(e -> new RejectionReasonSummary(e.getKey(), e.getValue()))
+            .sorted(Comparator.comparingLong(RejectionReasonSummary::count).reversed()
+                .thenComparing(RejectionReasonSummary::rule))
+            .toList();
     }
 }

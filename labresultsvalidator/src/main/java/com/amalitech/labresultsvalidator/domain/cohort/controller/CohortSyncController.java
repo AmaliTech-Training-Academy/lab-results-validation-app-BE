@@ -71,28 +71,6 @@ public class CohortSyncController {
             .body(ApiResponse.success("Sync job started.", cohortSyncService.triggerSyncForCohort(id)));
     }
 
-    @Operation(summary = "Trigger a sync run for a single file",
-        description = "Fetches one score sheet, identified by its SharePoint drive item ID, "
-            + "without re-enumerating the whole scores folder.")
-    @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202",
-            description = "Sync job created and running"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
-            description = "Cohort not found"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409",
-            description = "A sync job is already running for this cohort"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422",
-            description = "Cohort is not in STOOD_UP state or missing SharePoint reference")
-    })
-    @PostMapping("/{id}/sync/files/{itemId}")
-    public ResponseEntity<ApiResponse<CohortSyncJobResponse>> syncFile(
-        @PathVariable UUID id,
-        @PathVariable String itemId
-    ) {
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-            .body(ApiResponse.success("Sync job started.", cohortSyncService.triggerSyncForFile(id, itemId)));
-    }
-
     @Operation(summary = "List sync runs",
         description = "Returns a paginated list of all sync jobs for a cohort, newest first.")
     @GetMapping("/{id}/sync/runs")
