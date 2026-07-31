@@ -1,0 +1,3 @@
+ALTER TABLE ingestion_runs
+    ADD COLUMN high_failure_rate   BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN failure_rate_percent DOUBLE PRECISION NOT NULL DEFAULT 0;

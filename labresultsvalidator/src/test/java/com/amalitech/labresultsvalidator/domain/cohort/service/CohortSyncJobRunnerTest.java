@@ -4,6 +4,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.SyncFileChangeState;
 import com.amalitech.labresultsvalidator.domain.cohort.ingestion.GradingIngestionService;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -379,6 +380,62 @@ class CohortSyncJobRunnerTest {
         verify(syncEventService).emit(eq(jobId), eq("file.ingestion_failed"), any());
         assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
         verifyAuditCounts(0, 0, 1);
+    }
+
+    @Test
+    void raisesAHighFailureRateAlertWhenOverHalfOfAFilesReadyRowsAreRejected() throws Exception {
+        stubFolderWithOneFile("file-1", "Messy.xlsx");
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        String key = "cohorts/" + cohortId + "/scores/Messy.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), eq(key)))
+            .thenReturn(changed("Messy.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        IngestionRun highFailureRun = IngestionRun.builder().build();
+        highFailureRun.setRowsRead(10);
+        highFailureRun.setSkippedInvalid(7);
+        highFailureRun.setCommittedNew(3);
+        highFailureRun.setHighFailureRate(true);
+        highFailureRun.setFailureRatePercent(70.0);
+        when(gradingIngestionService.process(any(), any(), eq("Messy.xlsx"), any(), any(), anyString(), any(),
+            anyString())).thenReturn(highFailureRun);
+
+        runner.run(cohortId, jobId, actorId, null);
+
+        // §4.5 / B7 AC3 — a loud alert, but the valid rows still commit (the archive still happens).
+        verify(s3StorageService).putObject(eq(key), any(byte[].class), anyString());
+        verify(syncEventService).emit(eq(jobId), eq("file.high_failure_rate"), any());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(auditEventService).record(eq("HIGH_FAILURE_RATE"), eq(cohortId), eq(actorId), captor.capture());
+        assertThat(captor.getValue()).containsEntry("file", "Messy.xlsx");
+        assertThat(captor.getValue()).containsEntry("failureRatePercent", 70.0);
+        assertThat(captor.getValue()).containsEntry("rowsRead", 10);
+        assertThat(captor.getValue()).containsEntry("skippedInvalid", 7);
+    }
+
+    @Test
+    void doesNotRaiseAHighFailureRateAlertWhenTheRunIsBelowThreshold() throws Exception {
+        stubFolderWithOneFile("file-1", "Fine.xlsx");
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        String key = "cohorts/" + cohortId + "/scores/Fine.xlsx";
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), eq(key)))
+            .thenReturn(changed("Fine.xlsx", key, "bytes".getBytes(StandardCharsets.UTF_8)));
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        IngestionRun healthyRun = IngestionRun.builder().build();
+        healthyRun.setRowsRead(10);
+        healthyRun.setSkippedInvalid(1);
+        healthyRun.setHighFailureRate(false);
+        when(gradingIngestionService.process(any(), any(), eq("Fine.xlsx"), any(), any(), anyString(), any(),
+            anyString())).thenReturn(healthyRun);
+
+        runner.run(cohortId, jobId, actorId, null);
+
+        verify(syncEventService, never()).emit(eq(jobId), eq("file.high_failure_rate"), any());
+        verify(auditEventService, never()).record(eq("HIGH_FAILURE_RATE"), any(), any(), any());
     }
 
     @Test

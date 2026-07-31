@@ -102,7 +102,7 @@ class CohortSyncControllerTest {
 
         GradingSyncOverviewResponse response = new GradingSyncOverviewResponse(
             jobId, cohortId, CohortSyncJobStatus.COMPLETED, OffsetDateTime.now(), OffsetDateTime.now(),
-            2, 5, 2, 1, 1, 0, 1, List.of(file1, file2));
+            2, 5, 2, 1, 1, 0, 1, 0, List.of(file1, file2));
         when(cohortSyncService.getGradingSyncOverview(cohortId, jobId)).thenReturn(response);
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/overview"))
@@ -120,7 +120,9 @@ class CohortSyncControllerTest {
             .andExpect(jsonPath("$.data.files[0].issues.length()").value(0))
             .andExpect(jsonPath("$.data.files[1].issues[0].rule").value("R1-UNKNOWN-NSP"))
             .andExpect(jsonPath("$.data.files[1].issues[0].message")
-                .value("NSP 'Not A Learner' does not match any learner."));
+                .value("NSP 'Not A Learner' does not match any learner."))
+            .andExpect(jsonPath("$.data.files[1].rejectionReasons[0].rule").value("R1-UNKNOWN-NSP"))
+            .andExpect(jsonPath("$.data.files[1].rejectionReasons[0].count").value(1));
     }
 
     @Test

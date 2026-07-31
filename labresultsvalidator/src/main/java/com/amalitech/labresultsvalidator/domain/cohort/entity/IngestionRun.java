@@ -100,6 +100,15 @@ public class IngestionRun {
     @Column(name = "error_report_json", columnDefinition = "jsonb")
     private String errorReportJson;
 
+    /** B7 AC3 — true when {@code rejected / READY rows > 50%} for this file. */
+    @Builder.Default
+    @Column(name = "high_failure_rate", nullable = false)
+    private boolean highFailureRate = false;
+
+    @Builder.Default
+    @Column(name = "failure_rate_percent", nullable = false)
+    private double failureRatePercent = 0.0;
+
     @Builder.Default
     @Column(name = "run_at", nullable = false)
     private OffsetDateTime runAt = OffsetDateTime.now();
