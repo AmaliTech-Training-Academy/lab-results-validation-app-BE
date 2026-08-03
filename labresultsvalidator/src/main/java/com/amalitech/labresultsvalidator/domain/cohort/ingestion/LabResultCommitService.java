@@ -120,14 +120,9 @@ public class LabResultCommitService {
         ValidatedScoreRow row = classification.row();
         BigDecimal oldScore = existing.getScore();
 
-        existing.setScore(row.score());
-        existing.setSubmittedOn(row.submittedOn());
-        existing.setInstructorContactId(row.instructorContactId());
-        existing.setIngestionRunId(ingestionRunId);
-        existing.setRowValueHash(RowFingerprint.compute(row.submittedOn(), row.score()));
-        existing.setUpdatedBy(triggeredBy);
-        labResultRepository.save(existing);
-
+        // D3 AC1 — the prior value must be durable before the update lands: with no enclosing
+        // transaction (see class javadoc), a crash between these two saves must never leave an
+        // updated score with no prior-value record, so this write comes first.
         labReferenceAuditLogRepository.save(LabReferenceAuditLog.builder()
             .tableName("lab_results")
             .recordId(existing.getId())
@@ -137,6 +132,14 @@ public class LabResultCommitService {
             .changedBy(triggeredBy)
             .reason("Re-grade detected during ingestion run " + ingestionRunId)
             .build());
+
+        existing.setScore(row.score());
+        existing.setSubmittedOn(row.submittedOn());
+        existing.setInstructorContactId(row.instructorContactId());
+        existing.setIngestionRunId(ingestionRunId);
+        existing.setRowValueHash(RowFingerprint.compute(row.submittedOn(), row.score()));
+        existing.setUpdatedBy(triggeredBy);
+        labResultRepository.save(existing);
     }
 
     private void commitDuplicate(RowClassification classification, UUID cohortId, UUID ingestionRunId) {
