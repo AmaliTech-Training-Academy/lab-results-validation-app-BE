@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.domain.cohort.service;
 
+import com.amalitech.labresultsvalidator.common.SystemUser;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
@@ -108,13 +109,16 @@ public class CohortSyncJobRunner {
 
             // A human-attributed run is a manual trigger; an unattributed one came from the
             // scheduler (triggerScheduledSyncForCohort/triggerScheduledSyncForAll pass null).
+            // triggerType reflects that distinction; downstream writes attribute the SYSTEM
+            // pseudo-actor rather than leaving triggered_by/created_by/updated_by null (D1 AC3).
             String triggerType = actorId != null ? "MANUAL" : "SCHEDULED";
+            UUID effectiveActorId = actorId != null ? actorId : SystemUser.ID;
             for (PrefetchResult result : prefetched) {
-                processFile(cohort, jobId, result, counts, actorId, triggerType);
+                processFile(cohort, jobId, result, counts, effectiveActorId, triggerType);
             }
 
             finalStatus = CohortSyncJobStatus.COMPLETED;
-            auditEventService.record("SYNC_COMPLETED", cohortId, actorId, counts.toPayload(cohort.getName()));
+            auditEventService.record("SYNC_COMPLETED", cohortId, effectiveActorId, counts.toPayload(cohort.getName()));
             LOG.info("[sync] job={} cohort={} COMPLETED — {}", jobId, cohortId, counts);
         } catch (Exception ex) {
             LOG.error("[sync] job={} cohort={} FAILED: {}", jobId, cohortId, ex.getMessage(), ex);
@@ -314,6 +318,10 @@ public class CohortSyncJobRunner {
             // say "we saw it and nothing changed" rather than leaving silence.
             saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder, s3Key,
                 details, outcome.sha256Hex(), null, SyncFileChangeState.UNCHANGED);
+            // D1 AC2 / D4 AC2 — the hash short-circuit also gets its own ingestion_runs row
+            // (status=skipped), so the audit-log API surfaces the dedup, not just cohort_sync_files.
+            gradingIngestionService.recordSkipped(cohort, jobId, fileName, details,
+                outcome.sha256Hex(), actorId, triggerType);
             syncEventService.emit(jobId, "file.unchanged", payload("file", fileName));
             counts.unchanged++;
             return;
