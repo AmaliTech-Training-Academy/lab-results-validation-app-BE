@@ -4,8 +4,10 @@ import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandle
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.FileIngestionSummary;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.IngestionConflictResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncRunResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionConflict;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortSyncService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.SseGateEventStreamer;
@@ -16,6 +18,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -23,6 +30,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -52,6 +62,7 @@ class CohortSyncControllerTest {
         mockMvc = MockMvcBuilders
             .standaloneSetup(cohortSyncController)
             .setControllerAdvice(new GlobalExceptionHandler())
+            .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
             .build();
     }
 
@@ -133,6 +144,44 @@ class CohortSyncControllerTest {
             .thenThrow(new ResourceNotFoundException("No sync job found with ID " + jobId + " for cohort " + cohortId));
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/overview"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listConflictsForRun_existingJob_returnsConflictsScopedToThatRun() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        UUID ingestionRunId = UUID.randomUUID();
+
+        IngestionConflict conflict = IngestionConflict.builder()
+            .id(UUID.randomUUID())
+            .ingestionRunId(ingestionRunId)
+            .cohortId(cohortId)
+            .conflictKind("in_file_duplicate")
+            .incomingPayloadJson("{}")
+            .status("PENDING")
+            .build();
+        Page<IngestionConflictResponse> response = new PageImpl<>(
+            List.of(IngestionConflictResponse.from(conflict)), PageRequest.of(0, 20), 1);
+        when(cohortSyncService.listConflictsForRun(eq(cohortId), eq(jobId), isNull(), any(Pageable.class)))
+            .thenReturn(response);
+
+        mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/conflicts"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content.length()").value(1))
+            .andExpect(jsonPath("$.data.content[0].ingestionRunId").value(ingestionRunId.toString()))
+            .andExpect(jsonPath("$.data.content[0].cohortId").value(cohortId.toString()))
+            .andExpect(jsonPath("$.data.content[0].status").value("PENDING"));
+    }
+
+    @Test
+    void listConflictsForRun_unknownOrMismatchedCohort_returns404() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        when(cohortSyncService.listConflictsForRun(eq(cohortId), eq(jobId), isNull(), any(Pageable.class)))
+            .thenThrow(new ResourceNotFoundException("No sync job found with ID " + jobId + " for cohort " + cohortId));
+
+        mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/conflicts"))
             .andExpect(status().isNotFound());
     }
 }

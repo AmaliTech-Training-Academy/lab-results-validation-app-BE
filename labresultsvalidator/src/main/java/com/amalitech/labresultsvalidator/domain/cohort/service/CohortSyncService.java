@@ -106,12 +106,26 @@ public class CohortSyncService {
 
     /**
      * Lists held in-file duplicate rows (B10) for a cohort, newest first, optionally narrowed to
-     * one status (PENDING/RESOLVED/DISMISSED).
+     * one status (PENDING/RESOLVED/DISMISSED). Aggregates across every sync run for the cohort.
      */
     public Page<IngestionConflictResponse> listConflicts(UUID cohortId, String status, Pageable pageable) {
         Page<IngestionConflict> conflicts = (status == null || status.isBlank())
             ? ingestionConflictRepository.findByCohortId(cohortId, pageable)
             : ingestionConflictRepository.findByCohortIdAndStatus(cohortId, status.toUpperCase(), pageable);
+        return conflicts.map(IngestionConflictResponse::from);
+    }
+
+    /**
+     * Lists held in-file duplicate rows (B10) for a single sync run, newest first, optionally
+     * narrowed to one status (PENDING/RESOLVED/DISMISSED).
+     */
+    public Page<IngestionConflictResponse> listConflictsForRun(
+        UUID cohortId, UUID jobId, String status, Pageable pageable
+    ) {
+        getJobOrThrow(cohortId, jobId);
+        Page<IngestionConflict> conflicts = (status == null || status.isBlank())
+            ? ingestionConflictRepository.findBySyncJobId(jobId, pageable)
+            : ingestionConflictRepository.findBySyncJobIdAndStatus(jobId, status.toUpperCase(), pageable);
         return conflicts.map(IngestionConflictResponse::from);
     }
 
