@@ -194,4 +194,25 @@ class GradingIngestionServiceTest {
         verify(commitService).commit(any(), any(), runIdCaptor.capture(), any());
         assertThat(runIdCaptor.getValue()).isNotNull();
     }
+
+    @Test
+    void recordSkipped_savesASingleSkippedRunWithProvenanceAndNoRowActivity() {
+        IngestionRun run = service.recordSkipped(cohort, syncJobId, "Instructor1.xlsx", details, "sha-1",
+            triggeredBy, "SCHEDULED");
+
+        assertThat(run.getStatus()).isEqualTo("skipped");
+        assertThat(run.getCohortId()).isEqualTo(cohort.getId());
+        assertThat(run.getSyncJobId()).isEqualTo(syncJobId);
+        assertThat(run.getWorkbookFilename()).isEqualTo("Instructor1.xlsx");
+        assertThat(run.getSharepointFileUrl()).isEqualTo("https://sp/Instructor1.xlsx");
+        assertThat(run.getSharepointVersionId()).isEqualTo("cTag-1");
+        assertThat(run.getQuickXorHash()).isEqualTo("quickxor-1");
+        assertThat(run.getFileSha256()).isEqualTo("sha-1");
+        assertThat(run.getTriggeredBy()).isEqualTo(triggeredBy);
+        assertThat(run.getTriggerType()).isEqualTo("SCHEDULED");
+        assertThat(run.getRowsRead()).isZero();
+        assertThat(run.getErrorReportJson()).isNull();
+
+        verify(ingestionRunRepository, times(1)).save(any());
+    }
 }
