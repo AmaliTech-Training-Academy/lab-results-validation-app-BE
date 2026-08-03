@@ -4,6 +4,7 @@ import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundExcep
 import com.amalitech.labresultsvalidator.domain.cohort.dto.AuditEventResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.IngestionRunAuditResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.IngestionRunDetailResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.AuditEvent;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.AuditEventRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
@@ -47,5 +48,11 @@ public class AuditLogService {
         return auditEventRepository
             .search(cohortId, eventType, from, to, pageable)
             .map(event -> AuditEventResponse.from(event, objectMapper));
+    }
+
+    public AuditEventResponse getAuditEventDetail(UUID id) {
+        AuditEvent event = auditEventRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Audit event not found with ID: " + id));
+        return AuditEventResponse.from(event, objectMapper);
     }
 }

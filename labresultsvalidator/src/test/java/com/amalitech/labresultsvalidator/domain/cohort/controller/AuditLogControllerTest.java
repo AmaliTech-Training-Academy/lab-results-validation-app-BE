@@ -105,4 +105,28 @@ class AuditLogControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.content[0].eventType").value("LINK_SUBMITTED"));
     }
+
+    @Test
+    void getAuditEventDetail_found_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        AuditEventResponse detail = new AuditEventResponse(
+            id, "COHORT_CREATED", UUID.randomUUID(), UUID.randomUUID(),
+            java.util.Map.of("cohortName", "Cohort 2026"), OffsetDateTime.now());
+        when(auditLogService.getAuditEventDetail(id)).thenReturn(detail);
+
+        mockMvc.perform(get(BASE_URL + "/audit-events/" + id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.eventType").value("COHORT_CREATED"))
+            .andExpect(jsonPath("$.data.payload.cohortName").value("Cohort 2026"));
+    }
+
+    @Test
+    void getAuditEventDetail_notFound_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(auditLogService.getAuditEventDetail(id))
+            .thenThrow(new ResourceNotFoundException("Audit event not found with ID: " + id));
+
+        mockMvc.perform(get(BASE_URL + "/audit-events/" + id))
+            .andExpect(status().isNotFound());
+    }
 }
