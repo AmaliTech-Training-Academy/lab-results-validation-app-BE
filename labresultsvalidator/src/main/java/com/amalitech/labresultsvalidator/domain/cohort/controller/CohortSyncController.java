@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.cohort.controller;
 import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortSyncJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.IngestionConflictResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StandupGateEvent;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncBatchResponse;
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -114,6 +117,20 @@ public class CohortSyncController {
     ) {
         return ResponseEntity.ok(ApiResponse.success(
             "Grading sync overview retrieved.", cohortSyncService.getGradingSyncOverview(id, jobId)));
+    }
+
+    @Operation(summary = "List ingestion conflicts",
+        description = "Returns a paginated list of in-file duplicate rows held for manual resolution "
+            + "during grading ingestion (B10), newest first. Optionally filter by status "
+            + "(PENDING/RESOLVED/DISMISSED).")
+    @GetMapping("/{id}/conflicts")
+    public ResponseEntity<ApiResponse<Page<IngestionConflictResponse>>> listConflicts(
+        @PathVariable UUID id,
+        @RequestParam(required = false) String status,
+        @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return ResponseEntity.ok(
+            ApiResponse.success("Conflicts retrieved.", cohortSyncService.listConflicts(id, status, pageable)));
     }
 
     @Operation(
