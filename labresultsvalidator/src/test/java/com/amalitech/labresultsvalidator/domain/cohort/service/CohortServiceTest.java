@@ -141,6 +141,7 @@ class CohortServiceTest {
             cohortId, AttachSharePointLinkRequest.builder().folderUrl("https://sharepoint/x").build());
 
         assertThat(response.getSharepointFolderUrl()).isEqualTo("https://sharepoint/x");
+        verify(auditEventService).record(eq("LINK_SUBMITTED"), eq(cohortId), eq(actor.getId()), any());
     }
 
     @Test

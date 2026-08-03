@@ -60,7 +60,9 @@ public class CohortService {
         UUID actorId = currentUserId();
         cohort.setSharepointFolderUrl(req.getFolderUrl());
         cohort.setUpdatedBy(actorId);
-        return toCohortResponse(cohortRepository.save(cohort));
+        CohortResponse response = toCohortResponse(cohortRepository.save(cohort));
+        auditEventService.record("LINK_SUBMITTED", cohortId, actorId, Map.of("folderUrl", req.getFolderUrl()));
+        return response;
     }
 
     public void acceptReference(UUID cohortId) {
