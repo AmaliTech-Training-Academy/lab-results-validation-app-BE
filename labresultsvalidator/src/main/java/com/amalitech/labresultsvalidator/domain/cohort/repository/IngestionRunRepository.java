@@ -1,12 +1,33 @@
 package com.amalitech.labresultsvalidator.domain.cohort.repository;
 
 import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
 public interface IngestionRunRepository extends JpaRepository<IngestionRun, UUID> {
 
     List<IngestionRun> findBySyncJobId(UUID syncJobId);
+
+    /** D5 AC1 — audit-log browsing, filtered by any combination of cohort/status/date-range/instructor. */
+    @Query("SELECT r FROM IngestionRun r WHERE "
+        + "(:cohortId IS NULL OR r.cohortId = :cohortId) AND "
+        + "(:status IS NULL OR r.status = :status) AND "
+        + "(:from IS NULL OR r.runAt >= :from) AND "
+        + "(:to IS NULL OR r.runAt <= :to) AND "
+        + "(:instructorContactId IS NULL OR r.id IN "
+        + "  (SELECT lr.ingestionRunId FROM LabResult lr WHERE lr.instructorContactId = :instructorContactId))")
+    Page<IngestionRun> search(
+        @Param("cohortId") UUID cohortId,
+        @Param("status") String status,
+        @Param("from") OffsetDateTime from,
+        @Param("to") OffsetDateTime to,
+        @Param("instructorContactId") UUID instructorContactId,
+        Pageable pageable);
 }
