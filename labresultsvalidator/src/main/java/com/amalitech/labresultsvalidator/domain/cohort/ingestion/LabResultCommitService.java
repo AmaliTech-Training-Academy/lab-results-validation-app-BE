@@ -162,7 +162,8 @@ public class LabResultCommitService {
         payload.put("nspName", row.nspName());
         payload.put("submittedOn", row.submittedOn().toString());
         payload.put("score", row.score().toPlainString());
-        payload.put("instructorContactId", row.instructorContactId() != null ? row.instructorContactId().toString() : null);
+        UUID instructorContactId = row.instructorContactId();
+        payload.put("instructorContactId", instructorContactId != null ? instructorContactId.toString() : null);
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException ex) {
