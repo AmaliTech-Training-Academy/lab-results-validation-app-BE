@@ -5,6 +5,7 @@ import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundExcep
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortSyncJobResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.IngestionConflictResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncBatchResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncRunResponse;
@@ -12,8 +13,10 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionConflict;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionConflictRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +45,7 @@ public class CohortSyncService {
     private final CohortRepository cohortRepository;
     private final CohortSyncJobRepository syncJobRepository;
     private final IngestionRunRepository ingestionRunRepository;
+    private final IngestionConflictRepository ingestionConflictRepository;
     private final CohortSyncJobRunner syncJobRunner;
     private final SyncEventService syncEventService;
 
@@ -98,6 +102,17 @@ public class CohortSyncService {
         CohortSyncJob job = getJobOrThrow(cohortId, jobId);
         var runs = ingestionRunRepository.findBySyncJobId(jobId);
         return GradingSyncOverviewResponse.from(job, runs);
+    }
+
+    /**
+     * Lists held in-file duplicate rows (B10) for a cohort, newest first, optionally narrowed to
+     * one status (PENDING/RESOLVED/DISMISSED).
+     */
+    public Page<IngestionConflictResponse> listConflicts(UUID cohortId, String status, Pageable pageable) {
+        Page<IngestionConflict> conflicts = (status == null || status.isBlank())
+            ? ingestionConflictRepository.findByCohortId(cohortId, pageable)
+            : ingestionConflictRepository.findByCohortIdAndStatus(cohortId, status.toUpperCase(), pageable);
+        return conflicts.map(IngestionConflictResponse::from);
     }
 
     /** Resolves the most recent sync job for the SSE stream endpoint. */
