@@ -121,8 +121,8 @@ public class CohortSyncController {
 
     @Operation(summary = "List ingestion conflicts",
         description = "Returns a paginated list of in-file duplicate rows held for manual resolution "
-            + "during grading ingestion (B10), newest first. Optionally filter by status "
-            + "(PENDING/RESOLVED/DISMISSED).")
+            + "during grading ingestion (B10), newest first, aggregated across every sync run for "
+            + "the cohort. Optionally filter by status (PENDING/RESOLVED/DISMISSED).")
     @GetMapping("/{id}/conflicts")
     public ResponseEntity<ApiResponse<Page<IngestionConflictResponse>>> listConflicts(
         @PathVariable UUID id,
@@ -131,6 +131,27 @@ public class CohortSyncController {
     ) {
         return ResponseEntity.ok(
             ApiResponse.success("Conflicts retrieved.", cohortSyncService.listConflicts(id, status, pageable)));
+    }
+
+    @Operation(summary = "List ingestion conflicts for a sync run",
+        description = "Returns a paginated list of in-file duplicate rows held for manual resolution "
+            + "during grading ingestion (B10), newest first, narrowed to one sync run. Optionally "
+            + "filter by status (PENDING/RESOLVED/DISMISSED).")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Conflicts retrieved"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "No sync job with that ID for this cohort")
+    })
+    @GetMapping("/{id}/sync/runs/{jobId}/conflicts")
+    public ResponseEntity<ApiResponse<Page<IngestionConflictResponse>>> listConflictsForRun(
+        @PathVariable UUID id,
+        @PathVariable UUID jobId,
+        @RequestParam(required = false) String status,
+        @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+            "Conflicts retrieved.", cohortSyncService.listConflictsForRun(id, jobId, status, pageable)));
     }
 
     @Operation(
