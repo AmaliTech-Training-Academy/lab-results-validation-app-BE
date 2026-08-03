@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -154,15 +155,16 @@ public class LabResultCommitService {
     }
 
     private String buildPayloadJson(ValidatedScoreRow row) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("fileName", row.fileName());
+        payload.put("sheetName", row.sheetName());
+        payload.put("rowNum", row.rowNum());
+        payload.put("nspName", row.nspName());
+        payload.put("submittedOn", row.submittedOn().toString());
+        payload.put("score", row.score().toPlainString());
+        payload.put("instructorContactId", row.instructorContactId() != null ? row.instructorContactId().toString() : null);
         try {
-            return objectMapper.writeValueAsString(Map.of(
-                "fileName", row.fileName(),
-                "sheetName", row.sheetName(),
-                "rowNum", row.rowNum(),
-                "nspName", row.nspName(),
-                "submittedOn", row.submittedOn().toString(),
-                "score", row.score().toPlainString()
-            ));
+            return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException ex) {
             return "{\"error\":\"serialization failed\"}";
         }
