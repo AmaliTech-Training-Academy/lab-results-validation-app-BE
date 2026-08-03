@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.cohort.controller;
 
 import com.amalitech.labresultsvalidator.common.exceptions.GlobalExceptionHandler;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.FileIngestionSummary;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.IngestionConflictResponse;
@@ -12,6 +13,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.cohort.service.CohortSyncService;
 import com.amalitech.labresultsvalidator.domain.cohort.service.SseGateEventStreamer;
 import com.amalitech.labresultsvalidator.domain.cohort.service.SyncEventService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +30,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -35,6 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -56,6 +60,7 @@ class CohortSyncControllerTest {
     private CohortSyncController cohortSyncController;
 
     private static final String BASE_URL = "/api/v1/cohorts";
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
@@ -183,5 +188,93 @@ class CohortSyncControllerTest {
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/conflicts"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void resolveConflict_keepIncoming_returnsResolvedConflict() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID conflictId = UUID.randomUUID();
+        UUID resolvedBy = UUID.randomUUID();
+
+        IngestionConflict resolved = IngestionConflict.builder()
+            .id(conflictId)
+            .cohortId(cohortId)
+            .incomingPayloadJson("{}")
+            .status("RESOLVED")
+            .resolvedBy(resolvedBy)
+            .resolvedAt(OffsetDateTime.now())
+            .resolutionNote("kept the re-submitted score")
+            .build();
+        when(cohortSyncService.resolveConflict(eq(cohortId), eq(conflictId), any()))
+            .thenReturn(IngestionConflictResponse.from(resolved));
+
+        mockMvc.perform(patch(BASE_URL + "/" + cohortId + "/conflicts/" + conflictId + "/resolve")
+                .contentType("application/json")
+                .content(objectMapper.writeValueAsString(
+                    Map.of("action", "KEEP_INCOMING", "note", "kept the re-submitted score"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("RESOLVED"))
+            .andExpect(jsonPath("$.data.resolvedBy").value(resolvedBy.toString()))
+            .andExpect(jsonPath("$.data.resolutionNote").value("kept the re-submitted score"));
+    }
+
+    @Test
+    void resolveConflict_reject_marksConflictDismissed() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID conflictId = UUID.randomUUID();
+
+        IngestionConflict dismissed = IngestionConflict.builder()
+            .id(conflictId)
+            .cohortId(cohortId)
+            .incomingPayloadJson("{}")
+            .status("DISMISSED")
+            .build();
+        when(cohortSyncService.resolveConflict(eq(cohortId), eq(conflictId), any()))
+            .thenReturn(IngestionConflictResponse.from(dismissed));
+
+        mockMvc.perform(patch(BASE_URL + "/" + cohortId + "/conflicts/" + conflictId + "/resolve")
+                .contentType("application/json")
+                .content(objectMapper.writeValueAsString(Map.of("action", "REJECT"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("DISMISSED"));
+    }
+
+    @Test
+    void resolveConflict_missingAction_returns400() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID conflictId = UUID.randomUUID();
+
+        mockMvc.perform(patch(BASE_URL + "/" + cohortId + "/conflicts/" + conflictId + "/resolve")
+                .contentType("application/json")
+                .content(objectMapper.writeValueAsString(Map.of("note", "missing action"))))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void resolveConflict_unknownConflict_returns404() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID conflictId = UUID.randomUUID();
+        when(cohortSyncService.resolveConflict(eq(cohortId), eq(conflictId), any()))
+            .thenThrow(new ResourceNotFoundException(
+                "No conflict found with ID " + conflictId + " for cohort " + cohortId));
+
+        mockMvc.perform(patch(BASE_URL + "/" + cohortId + "/conflicts/" + conflictId + "/resolve")
+                .contentType("application/json")
+                .content(objectMapper.writeValueAsString(Map.of("action", "KEEP_EXISTING"))))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void resolveConflict_alreadyResolved_returns422() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID conflictId = UUID.randomUUID();
+        when(cohortSyncService.resolveConflict(eq(cohortId), eq(conflictId), any()))
+            .thenThrow(new UnprocessableEntityException(
+                "Conflict " + conflictId + " has already been resolved and cannot be resolved again."));
+
+        mockMvc.perform(patch(BASE_URL + "/" + cohortId + "/conflicts/" + conflictId + "/resolve")
+                .contentType("application/json")
+                .content(objectMapper.writeValueAsString(Map.of("action", "KEEP_EXISTING"))))
+            .andExpect(status().isUnprocessableEntity());
     }
 }
