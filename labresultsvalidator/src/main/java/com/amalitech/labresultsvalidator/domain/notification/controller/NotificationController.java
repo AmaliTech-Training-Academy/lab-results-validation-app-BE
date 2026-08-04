@@ -4,12 +4,10 @@ import com.amalitech.labresultsvalidator.common.response.ApiResponse;
 import com.amalitech.labresultsvalidator.domain.notification.dto.NotificationResponse;
 import com.amalitech.labresultsvalidator.domain.notification.dto.NotificationSettingsResponse;
 import com.amalitech.labresultsvalidator.domain.notification.dto.UpdateNotificationSettingsRequest;
-import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationDispatchService;
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationQueryService;
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationSettingsService;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,7 +40,6 @@ public class NotificationController {
     private final NotificationQueryService notificationQueryService;
     private final NotificationDispatchService notificationDispatchService;
     private final NotificationSettingsService notificationSettingsService;
-    private final ObjectMapper objectMapper;
 
     @Operation(summary = "List notifications",
         description = "Returns a paginated list of staged notifications, newest first. Optionally filter by "
@@ -74,20 +71,54 @@ public class NotificationController {
     }
 
     @Operation(summary = "Send (or retry) a notification",
-        description = "Attempts to send a HELD/FAILED notification now. A notification already SENT is a "
-            + "no-op success. Covers both the manual-send and retry actions.")
+        description = "Queues a HELD/FAILED notification to be sent now and returns immediately — the actual "
+            + "SMTP send happens off-thread. Poll GET /{id} for the resulting SENT/FAILED status. A "
+            + "notification already SENT is a no-op. Covers both the manual-send and retry actions.")
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
-            description = "Send attempted"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202",
+            description = "Send queued"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
             description = "No notification with that ID")
     })
     @PostMapping("/{id}/send")
     public ResponseEntity<ApiResponse<NotificationResponse>> send(@PathVariable UUID id) {
-        Notification sent = notificationDispatchService.sendNow(id, currentUserId());
-        return ResponseEntity.ok(ApiResponse.success(
-            "SENT".equals(sent.getStatus()) ? "Notification sent." : "Send attempted; see status/errorDetail.",
-            NotificationResponse.from(sent, objectMapper)));
+        NotificationResponse current = notificationQueryService.getById(id);
+        notificationDispatchService.sendAsync(id, currentUserId());
+        return ResponseEntity.accepted().body(ApiResponse.success("Send queued.", current));
+    }
+
+    @Operation(summary = "Send all held notifications for a sync run",
+        description = "Queues every currently PENDING HELD notification for the given sync job to be sent "
+            + "now and returns immediately with the count queued — the actual SMTP sends happen off-thread, "
+            + "one after another. AUTO notifications are unaffected; they dispatch automatically at sync-run "
+            + "end. Poll GET / (filtered by syncJobId/status) for outcomes.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202",
+            description = "Send-all queued")
+    })
+    @PostMapping("/send-all")
+    public ResponseEntity<ApiResponse<Long>> sendAll(@RequestParam UUID syncJobId) {
+        long count = notificationDispatchService.countHeldPending(syncJobId);
+        notificationDispatchService.sendAllHeldAsync(syncJobId, currentUserId());
+        return ResponseEntity.accepted().body(ApiResponse.success(count + " notification(s) queued.", count));
+    }
+
+    @Operation(summary = "Dismiss a pending notification",
+        description = "Marks a PENDING notification as SKIPPED so it will never be sent — e.g. the digest "
+            + "is no longer relevant. Only a PENDING notification can be dismissed; anything already SENT, "
+            + "FAILED, or SKIPPED is rejected.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Notification dismissed"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "No notification with that ID"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422",
+            description = "Notification is not PENDING and cannot be dismissed")
+    })
+    @PostMapping("/{id}/dismiss")
+    public ResponseEntity<ApiResponse<NotificationResponse>> dismiss(@PathVariable UUID id) {
+        notificationDispatchService.dismiss(id, currentUserId());
+        return ResponseEntity.ok(ApiResponse.success("Notification dismissed.", notificationQueryService.getById(id)));
     }
 
     @Operation(summary = "Get the notification settings",

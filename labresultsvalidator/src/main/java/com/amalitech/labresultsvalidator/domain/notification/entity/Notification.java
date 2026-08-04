@@ -32,7 +32,8 @@ import java.util.UUID;
  * two are populated today). {@code recipientKind}: {@code instructor} / {@code admin}
  * (chk_notif_kind). {@code dispatchPolicy}: {@code AUTO} / {@code HELD} (chk_notif_policy).
  * {@code status}: {@code PENDING} / {@code SENT} / {@code SKIPPED} / {@code FAILED}
- * (chk_notif_status).
+ * (chk_notif_status) — {@code SKIPPED} is reached only via a manual dismiss of a
+ * {@code PENDING} notification, see {@code NotificationDispatchService#dismiss}.
  */
 @Entity
 @Table(name = "notifications")
@@ -94,6 +95,12 @@ public class Notification {
 
     @Column(name = "sent_at")
     private OffsetDateTime sentAt;
+
+    @Column(name = "dismissed_by")
+    private UUID dismissedBy;
+
+    @Column(name = "dismissed_at")
+    private OffsetDateTime dismissedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

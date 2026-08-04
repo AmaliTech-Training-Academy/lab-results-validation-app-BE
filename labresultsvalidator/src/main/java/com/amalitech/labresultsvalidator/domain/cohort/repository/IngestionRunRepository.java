@@ -27,8 +27,8 @@ public interface IngestionRunRepository extends JpaRepository<IngestionRun, UUID
     @Query("SELECT r FROM IngestionRun r WHERE "
         + "(:cohortId IS NULL OR r.cohortId = :cohortId) AND "
         + "(:status IS NULL OR r.status = :status) AND "
-        + "r.runAt >= COALESCE(:from, r.runAt) AND "
-        + "r.runAt <= COALESCE(:to, r.runAt) AND "
+        + "(CAST(:from AS timestamp) IS NULL OR r.runAt >= :from) AND "
+        + "(CAST(:to AS timestamp) IS NULL OR r.runAt <= :to) AND "
         + "(:instructorContactId IS NULL OR r.id IN "
         + "  (SELECT lr.ingestionRunId FROM LabResult lr WHERE lr.instructorContactId = :instructorContactId))")
     Page<IngestionRun> search(

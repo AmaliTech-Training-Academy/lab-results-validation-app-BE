@@ -19,6 +19,8 @@ public record SharePointProperties(
         String instructors
     ) {}
 
+    // Instructors is deliberately excluded — Gate3ReferenceValidator treats it as optional
+    // (missing means an empty instructor list, not a gate failure).
     public List<String> expectedRefFileNames() {
         return List.of(
             refFiles.specializations(),

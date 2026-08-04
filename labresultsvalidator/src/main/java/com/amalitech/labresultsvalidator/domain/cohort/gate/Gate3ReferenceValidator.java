@@ -45,7 +45,7 @@ public class Gate3ReferenceValidator {
     private static final List<String> LEARNER_COLUMNS =
         List.of("amalitech email", "full name", "specialization");
     private static final List<String> INSTRUCTOR_COLUMNS =
-        List.of("full name", "email", "specialization");
+        List.of("name", "email", "specialization");
 
     private final GraphDriveService graphDriveService;
     private final SharePointProperties sharePointProperties;
@@ -395,7 +395,7 @@ public class Gate3ReferenceValidator {
         return rows;
     }
 
-    // Columns: full name, email, specialization. The same email legitimately repeats across rows
+    // Columns:  name, email, specialization. The same email legitimately repeats across rows
     // with different specialization values (an instructor teaching across specializations), so
     // duplicates are checked on the (email, specialization) pair, not email alone.
     private List<ValidatedReferenceBundle.InstructorRow> validateInstructors(
@@ -409,7 +409,7 @@ public class Gate3ReferenceValidator {
         int headerRowIdx = findHeaderRowIndex(sheet, INSTRUCTOR_COLUMNS);
         Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
         List<GateError> colErrors = checkRequiredColumns(
-            fileName, headers, "full name", "email", "specialization");
+            fileName, headers, "name", "email", "specialization");
         if (!colErrors.isEmpty()) {
             errors.addAll(colErrors);
             return rows;
@@ -422,7 +422,7 @@ public class Gate3ReferenceValidator {
                 continue;
             }
             int rowNum = i + 1;
-            String fullName = getCellString(row, headers.get("full name"));
+            String fullName = getCellString(row, headers.get("name"));
             String email = getCellString(row, headers.get("email"));
             String specialization = getCellString(row, headers.get("specialization"));
 

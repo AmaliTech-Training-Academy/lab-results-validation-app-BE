@@ -24,8 +24,8 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, UUID> {
     @Query("SELECT e FROM AuditEvent e WHERE "
         + "(:cohortId IS NULL OR e.cohortId = :cohortId) AND "
         + "(:eventType IS NULL OR e.eventType = :eventType) AND "
-        + "e.occurredAt >= COALESCE(:from, e.occurredAt) AND "
-        + "e.occurredAt <= COALESCE(:to, e.occurredAt)")
+        + "(CAST(:from AS timestamp) IS NULL OR e.occurredAt >= :from) AND "
+        + "(CAST(:to AS timestamp) IS NULL OR e.occurredAt <= :to)")
     Page<AuditEvent> search(
         @Param("cohortId") UUID cohortId,
         @Param("eventType") String eventType,
