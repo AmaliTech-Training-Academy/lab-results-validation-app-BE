@@ -63,8 +63,10 @@ public class NotificationController {
     @Operation(summary = "Get a single notification",
         description = "Returns one notification's full detail, including its parsed row-issue list.")
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Notification found"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No notification with that ID")
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Notification found"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "No notification with that ID")
     })
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<NotificationResponse>> getById(@PathVariable UUID id) {
@@ -75,8 +77,10 @@ public class NotificationController {
         description = "Attempts to send a HELD/FAILED notification now. A notification already SENT is a "
             + "no-op success. Covers both the manual-send and retry actions.")
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Send attempted"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No notification with that ID")
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Send attempted"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "No notification with that ID")
     })
     @PostMapping("/{id}/send")
     public ResponseEntity<ApiResponse<NotificationResponse>> send(@PathVariable UUID id) {
