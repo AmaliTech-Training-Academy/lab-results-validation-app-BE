@@ -77,6 +77,25 @@ public class EmailService {
         );
     }
 
+    /**
+     * Sends an arbitrary pre-rendered subject/body — used for notification digests, whose content
+     * is built and stored at staging time, not here. Async: use for fire-and-forget dispatch
+     * (the auto-send batch listener). See {@link #sendPlainEmailSync} for the synchronous variant.
+     */
+    @Async("emailTaskExecutor")
+    public void sendPlainEmail(String toEmail, String subject, String htmlContent) {
+        dispatch(toEmail, subject, buildHtmlEmail(htmlContent, frontendUrl, "Open Validata"));
+    }
+
+    /**
+     * Same as {@link #sendPlainEmail} but synchronous — for callers that need immediate
+     * success/failure feedback, such as an admin's manual "send now"/"retry" action, where
+     * fire-and-forget would hide the result from the request that triggered it.
+     */
+    public void sendPlainEmailSync(String toEmail, String subject, String htmlContent) {
+        dispatch(toEmail, subject, buildHtmlEmail(htmlContent, frontendUrl, "Open Validata"));
+    }
+
     // ── Shared internal dispatcher ────────────────────────────────────────────
 
     private static final Map<String, String> INLINE_IMAGES = new LinkedHashMap<>();

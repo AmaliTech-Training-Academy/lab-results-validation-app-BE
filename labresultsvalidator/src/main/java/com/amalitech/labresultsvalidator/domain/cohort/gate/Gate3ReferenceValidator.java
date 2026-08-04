@@ -44,6 +44,8 @@ public class Gate3ReferenceValidator {
     private static final List<String> LAB_COLUMNS = List.of("moduleid", "assessmentid", "lab title");
     private static final List<String> LEARNER_COLUMNS =
         List.of("amalitech email", "full name", "specialization");
+    private static final List<String> INSTRUCTOR_COLUMNS =
+        List.of("full name", "email", "specialization");
 
     private final GraphDriveService graphDriveService;
     private final SharePointProperties sharePointProperties;
@@ -93,7 +95,8 @@ public class Gate3ReferenceValidator {
         String modulesFile = sharePointProperties.refFiles().modules();
         String labsFile = sharePointProperties.refFiles().labs();
         String learnersFile = sharePointProperties.refFiles().learners();
-        String quizRefFile = sharePointProperties.refFiles().instructors();
+        String instructorsFile = sharePointProperties.refFiles().instructors();
+        boolean instructorsFilePresent = childByName.containsKey(instructorsFile.toLowerCase(Locale.ROOT));
 
         Map<String, byte[]> fileBytes = new HashMap<>();
         List<GateError> downloadErrors = new ArrayList<>();
@@ -104,6 +107,16 @@ public class Gate3ReferenceValidator {
             } catch (GraphAccessException ex) {
                 downloadErrors.add(new GateError(fname, null, "G3-DOWNLOAD-FAIL",
                     "Could not download reference file '" + fname + "': " + ex.getMessage()));
+            }
+        }
+        // Instructors file is optional — only attempt a download if it's actually present.
+        if (instructorsFilePresent) {
+            DriveItemInfo info = childByName.get(instructorsFile.toLowerCase(Locale.ROOT));
+            try {
+                fileBytes.put(instructorsFile, graphDriveService.downloadFile(driveId, info.itemId()));
+            } catch (GraphAccessException ex) {
+                downloadErrors.add(new GateError(instructorsFile, null, "G3-DOWNLOAD-FAIL",
+                    "Could not download reference file '" + instructorsFile + "': " + ex.getMessage()));
             }
         }
         if (!downloadErrors.isEmpty()) {
@@ -139,19 +152,22 @@ public class Gate3ReferenceValidator {
         List<ValidatedReferenceBundle.LearnerRow> learners =
             validateLearners(learnersFile, fileBytes.get(learnersFile), specNamesByNormalized, allErrors);
 
+        // Instructors file stays optional (excluded from expectedRefFileNames()) — absent means an
+        // empty instructor list, same as before this file was actually parsed. Present-but-malformed
+        // hard-fails Gate 3 like every sibling reference sheet.
+        List<ValidatedReferenceBundle.InstructorRow> instructors = instructorsFilePresent
+            ? validateInstructors(instructorsFile, fileBytes.get(instructorsFile), specNamesByNormalized, allErrors)
+            : List.of();
+
         if (!allErrors.isEmpty()) {
             return new Gate3Result(GateResult.fail(allErrors), null);
         }
 
-        boolean quizReferencePresent = childByName.containsKey(quizRefFile.toLowerCase(Locale.ROOT));
-        if (quizReferencePresent) {
-            LOG.info("[gate3] optional quiz reference file '{}' found", quizRefFile);
-        } else {
-            LOG.info("[gate3] optional quiz reference file '{}' not present", quizRefFile);
-        }
+        LOG.info("[gate3] optional instructors reference file '{}' {}",
+            instructorsFile, instructorsFilePresent ? "found, " + instructors.size() + " row(s)" : "not present");
 
         return new Gate3Result(GateResult.pass(),
-            new ValidatedReferenceBundle(specializations, modules, labs, learners, quizReferencePresent));
+            new ValidatedReferenceBundle(specializations, modules, labs, learners, instructors));
     }
 
     // Columns: specializationid, specialization
@@ -374,6 +390,88 @@ public class Gate3ReferenceValidator {
 
             if (!rowHasError) {
                 rows.add(new ValidatedReferenceBundle.LearnerRow(email, fullName, specialization));
+            }
+        }
+        return rows;
+    }
+
+    // Columns: full name, email, specialization. The same email legitimately repeats across rows
+    // with different specialization values (an instructor teaching across specializations), so
+    // duplicates are checked on the (email, specialization) pair, not email alone.
+    private List<ValidatedReferenceBundle.InstructorRow> validateInstructors(
+            String fileName, byte[] bytes, Map<String, String> specNamesByNormalized, List<GateError> errors) {
+        List<ValidatedReferenceBundle.InstructorRow> rows = new ArrayList<>();
+        Sheet sheet = openFirstSheet(fileName, bytes, errors);
+        if (sheet == null) {
+            return rows;
+        }
+
+        int headerRowIdx = findHeaderRowIndex(sheet, INSTRUCTOR_COLUMNS);
+        Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
+        List<GateError> colErrors = checkRequiredColumns(
+            fileName, headers, "full name", "email", "specialization");
+        if (!colErrors.isEmpty()) {
+            errors.addAll(colErrors);
+            return rows;
+        }
+
+        Set<String> seenEmailSpecPairs = new HashSet<>();
+        for (int i = headerRowIdx + 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (isBlankRow(row)) {
+                continue;
+            }
+            int rowNum = i + 1;
+            String fullName = getCellString(row, headers.get("full name"));
+            String email = getCellString(row, headers.get("email"));
+            String specialization = getCellString(row, headers.get("specialization"));
+
+            boolean rowHasError = false;
+
+            if (fullName == null || fullName.isBlank()) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-INSTRUCTOR-NAME",
+                    "Full name is blank."));
+                rowHasError = true;
+            }
+            if (email == null || email.isBlank()) {
+                errors.add(new GateError(fileName, "row " + rowNum, "G3-BLANK-INSTRUCTOR-EMAIL",
+                    "Email is blank."));
+                rowHasError = true;
+            }
+
+            String matchedSpecName = null;
+            SpecializationNameMatcher.MatchResult<String> specMatch =
+                SpecializationNameMatcher.resolve(specialization, specNamesByNormalized);
+            switch (specMatch.outcome()) {
+                case NO_MATCH -> {
+                    errors.add(new GateError(fileName, "row " + rowNum, "G3-UNKNOWN-SPEC-NAME",
+                        "Specialization '" + specialization
+                            + "' does not match any entry in Specializations file."));
+                    rowHasError = true;
+                }
+                case AMBIGUOUS -> {
+                    errors.add(new GateError(fileName, "row " + rowNum, "G3-AMBIGUOUS-SPEC-NAME",
+                        "Specialization '" + specialization
+                            + "' matches more than one entry in Specializations file; "
+                            + "use the exact specialization name."));
+                    rowHasError = true;
+                }
+                case MATCHED -> matchedSpecName = specMatch.value();
+                default -> { }
+            }
+
+            if (!rowHasError) {
+                String pairKey = email.trim().toLowerCase(Locale.ROOT) + "|" + matchedSpecName;
+                if (!seenEmailSpecPairs.add(pairKey)) {
+                    errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-INSTRUCTOR-SPECIALIZATION",
+                        "Instructor '" + email + "' is already listed for specialization '"
+                            + matchedSpecName + "'."));
+                    rowHasError = true;
+                }
+            }
+
+            if (!rowHasError) {
+                rows.add(new ValidatedReferenceBundle.InstructorRow(fullName, email, matchedSpecName));
             }
         }
         return rows;

@@ -56,7 +56,7 @@ public class StandupJobRunner {
             donePayload.put("modules", s.moduleCount());
             donePayload.put("labs", s.labCount());
             donePayload.put("learners", s.learnerCount());
-            donePayload.put("quizReferencePresent", s.quizReferencePresent());
+            donePayload.put("instructorCount", s.instructorCount());
         }
         standupEventService.emit(jobId, "pipeline.done", donePayload);
         sseRegistry.complete(jobId);

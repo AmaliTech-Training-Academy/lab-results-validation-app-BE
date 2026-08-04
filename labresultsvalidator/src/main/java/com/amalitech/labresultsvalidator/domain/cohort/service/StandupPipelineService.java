@@ -164,12 +164,12 @@ public class StandupPipelineService {
             bundle.modules().size(),
             bundle.labs().size(),
             bundle.learners().size(),
-            bundle.quizReferencePresent()
+            bundle.instructors().size()
         );
 
-        LOG.info("[standup] cohort={} Gates 1-3 all PASSED — specs={} modules={} labs={} learners={} quizRef={}",
+        LOG.info("[standup] cohort={} Gates 1-3 all PASSED — specs={} modules={} labs={} learners={} instructors={}",
             cohortId, summary.specializationCount(), summary.moduleCount(),
-            summary.labCount(), summary.learnerCount(), summary.quizReferencePresent());
+            summary.labCount(), summary.learnerCount(), summary.instructorCount());
 
         standupEventService.emit(jobId, "gate.passed", Map.of(
             "gate", 3,
@@ -177,7 +177,7 @@ public class StandupPipelineService {
             "modules", summary.moduleCount(),
             "labs", summary.labCount(),
             "learners", summary.learnerCount(),
-            "quizReferencePresent", summary.quizReferencePresent()
+            "instructorCount", summary.instructorCount()
         ));
 
         auditEventService.record("GATE_PASSED", cohortId, actorUserId,
@@ -186,7 +186,7 @@ public class StandupPipelineService {
                 "modulesCount", summary.moduleCount(),
                 "labsCount", summary.labCount(),
                 "learnersCount", summary.learnerCount(),
-                "quizReferencePresent", summary.quizReferencePresent()
+                "instructorCount", summary.instructorCount()
             )));
 
         return new StandupResultDto(

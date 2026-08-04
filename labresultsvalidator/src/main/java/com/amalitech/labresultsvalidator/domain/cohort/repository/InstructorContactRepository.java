@@ -10,6 +10,8 @@ public interface InstructorContactRepository extends JpaRepository<InstructorCon
 
     Optional<InstructorContact> findByInstructorId(String instructorId);
 
+    Optional<InstructorContact> findByEmailIgnoreCase(String email);
+
     boolean existsByInstructorId(String instructorId);
 
     boolean existsByEmail(String email);
