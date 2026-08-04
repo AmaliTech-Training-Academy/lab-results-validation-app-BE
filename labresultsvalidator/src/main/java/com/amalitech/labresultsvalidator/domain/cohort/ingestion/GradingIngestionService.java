@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -138,11 +139,20 @@ public class GradingIngestionService {
         }
         try {
             return objectMapper.writeValueAsString(errors.stream()
-                .map(e -> Map.of(
-                    "file", String.valueOf(e.file()),
-                    "location", String.valueOf(e.location()),
-                    "rule", String.valueOf(e.rule()),
-                    "message", String.valueOf(e.message())))
+                .map(e -> {
+                    // LinkedHashMap, not Map.of — instructorContactId is routinely null (routes
+                    // the error to the admin digest instead of an instructor's), and Map.of
+                    // rejects null values. Left as a real UUID/null (not String.valueOf'd) so it
+                    // deserializes back into RowIssueSummary.instructorContactId as a proper UUID
+                    // or JSON null, not the literal string "null".
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("file", String.valueOf(e.file()));
+                    entry.put("location", String.valueOf(e.location()));
+                    entry.put("rule", String.valueOf(e.rule()));
+                    entry.put("message", String.valueOf(e.message()));
+                    entry.put("instructorContactId", e.instructorContactId());
+                    return entry;
+                })
                 .collect(Collectors.toList()));
         } catch (JsonProcessingException ex) {
             return "{\"error\":\"serialization failed\"}";

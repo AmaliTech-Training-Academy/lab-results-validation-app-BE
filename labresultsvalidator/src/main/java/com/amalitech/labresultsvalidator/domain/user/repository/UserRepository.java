@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.domain.user.repository;
 
+import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -11,4 +12,7 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     Optional<User> findByEmail(String email);
     Optional<User> findById(UUID id);
     Optional<User> findByIdAndIsActiveTrue(UUID id);
+
+    /** Admin-alert recipient resolution — deterministic pick if more than one active admin exists. */
+    Optional<User> findFirstByRoleAndIsActiveTrueOrderByCreatedAtAsc(UserRole role);
 }

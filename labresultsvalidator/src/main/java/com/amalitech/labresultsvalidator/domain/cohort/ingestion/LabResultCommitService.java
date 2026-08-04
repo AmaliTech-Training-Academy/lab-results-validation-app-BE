@@ -90,7 +90,7 @@ public class LabResultCommitService {
                 LOG.warn("[ingestion] could not commit row {}: {}", classification.row().location(),
                     ex.getMessage());
                 rowErrors.add(new RowError(classification.row().fileName(), classification.row().location(),
-                    "COMMIT-FAILED", ex.getMessage()));
+                    "COMMIT-FAILED", ex.getMessage(), classification.row().instructorContactId()));
                 skippedInvalid++;
             }
         }

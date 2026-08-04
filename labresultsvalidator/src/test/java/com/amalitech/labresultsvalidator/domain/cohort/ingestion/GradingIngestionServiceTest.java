@@ -116,7 +116,8 @@ class GradingIngestionServiceTest {
 
     @Test
     void process_withRowErrors_savesAPartialRunWithErrorReportJson() {
-        RowError parseError = new RowError("Instructor1.xlsx", "sheet BEM02", "S2-MISSING-COLUMN", "missing reviewer");
+        RowError parseError =
+            new RowError("Instructor1.xlsx", "sheet BEM02", "S2-MISSING-COLUMN", "missing reviewer", null);
         when(scoreRowParser.parse("Instructor1.xlsx", workbook))
             .thenReturn(new ScoreRowParser.SheetParseResult(List.of(), List.of(parseError)));
         when(validationService.validate(cohort.getId(), List.of()))
@@ -137,8 +138,8 @@ class GradingIngestionServiceTest {
         ValidatedScoreRow validated = validatedRow();
         List<ParsedScoreRow> rows = List.of(parsedRowAt(2), parsedRowAt(3), parsedRowAt(4));
         List<RowError> errors = List.of(
-            new RowError("Instructor1.xlsx", "row 3", "R1-UNKNOWN-NSP", "unknown"),
-            new RowError("Instructor1.xlsx", "row 4", "F2-INVALID-SCORE", "not numeric"));
+            new RowError("Instructor1.xlsx", "row 3", "R1-UNKNOWN-NSP", "unknown", null),
+            new RowError("Instructor1.xlsx", "row 4", "F2-INVALID-SCORE", "not numeric", null));
         when(scoreRowParser.parse("Instructor1.xlsx", workbook))
             .thenReturn(new ScoreRowParser.SheetParseResult(rows, List.of()));
         when(validationService.validate(cohort.getId(), rows))
@@ -161,7 +162,7 @@ class GradingIngestionServiceTest {
         ValidatedScoreRow validated = validatedRow();
         List<ParsedScoreRow> rows = List.of(parsedRowAt(2), parsedRowAt(3), parsedRowAt(4));
         List<RowError> errors = List.of(
-            new RowError("Instructor1.xlsx", "row 3", "R1-UNKNOWN-NSP", "unknown"));
+            new RowError("Instructor1.xlsx", "row 3", "R1-UNKNOWN-NSP", "unknown", null));
         when(scoreRowParser.parse("Instructor1.xlsx", workbook))
             .thenReturn(new ScoreRowParser.SheetParseResult(rows, List.of()));
         when(validationService.validate(cohort.getId(), rows))

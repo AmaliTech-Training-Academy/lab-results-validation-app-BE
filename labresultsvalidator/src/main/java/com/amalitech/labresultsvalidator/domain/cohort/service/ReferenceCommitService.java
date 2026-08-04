@@ -6,6 +6,8 @@ import com.amalitech.labresultsvalidator.common.utils.SpecializationNameMatcher;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortStandupPending;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.InstructorSpecializationAssignment;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.LabModule;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Learner;
@@ -13,6 +15,8 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.cohort.gate.ValidatedReferenceBundle;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandupPendingRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.InstructorSpecializationAssignmentRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LabModuleRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LearnerRepository;
@@ -44,6 +48,8 @@ public class ReferenceCommitService {
     private final LabModuleRepository labModuleRepository;
     private final LabRepository labRepository;
     private final LearnerRepository learnerRepository;
+    private final InstructorContactRepository instructorContactRepository;
+    private final InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository;
     private final AuditEventService auditEventService;
     private final GraphDriveService graphDriveService;
     private final ObjectMapper objectMapper;
@@ -55,6 +61,8 @@ public class ReferenceCommitService {
         LabModuleRepository labModuleRepository,
         LabRepository labRepository,
         LearnerRepository learnerRepository,
+        InstructorContactRepository instructorContactRepository,
+        InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository,
         AuditEventService auditEventService,
         GraphDriveService graphDriveService,
         ObjectMapper objectMapper
@@ -65,6 +73,8 @@ public class ReferenceCommitService {
         this.labModuleRepository = labModuleRepository;
         this.labRepository = labRepository;
         this.learnerRepository = learnerRepository;
+        this.instructorContactRepository = instructorContactRepository;
+        this.instructorSpecializationAssignmentRepository = instructorSpecializationAssignmentRepository;
         this.auditEventService = auditEventService;
         this.graphDriveService = graphDriveService;
         this.objectMapper = objectMapper;
@@ -102,6 +112,7 @@ public class ReferenceCommitService {
         Map<String, LabModule> savedModulesByCode = persistModules(bundle, savedSpecsByCode, actorUserId);
         persistLabs(bundle, savedModulesByCode, actorUserId);
         persistLearners(bundle, cohortId, savedSpecsByCode, actorUserId);
+        persistInstructors(bundle, savedSpecsByCode, actorUserId);
 
         cohort.setLifecycleState(CohortLifecycleState.REFERENCE_ACCEPTED);
         cohort.setReferenceAcceptedAt(OffsetDateTime.now());
@@ -166,6 +177,12 @@ public class ReferenceCommitService {
         learnerRepository.deleteAllByCohortId(cohortId);
 
         List<Specialization> specs = specializationRepository.findAllByCohortId(cohortId);
+        // Instructor-specialization assignments are cohort-scoped through the specialization they
+        // reference, so they follow the same delete-then-recreate lifecycle as the specs themselves.
+        // InstructorContact (the person-level identity) is NOT touched here — it's a global table
+        // shared across every cohort, upserted by email in persistInstructors below, never deleted.
+        instructorSpecializationAssignmentRepository.deleteAllBySpecializationIdIn(
+            specs.stream().map(Specialization::getId).toList());
         for (Specialization spec : specs) {
             List<LabModule> modules = labModuleRepository.findAllBySpecializationIdIn(
                 List.of(spec.getId()));
@@ -270,6 +287,59 @@ public class ReferenceCommitService {
             learner.setCreatedBy(actorUserId);
             learner.setUpdatedBy(actorUserId);
             learnerRepository.save(learner);
+        }
+    }
+
+    private void persistInstructors(
+            ValidatedReferenceBundle bundle,
+            Map<String, Specialization> specsByCode,
+            UUID actorUserId) {
+        Map<String, Specialization> specsByName = specsByCode.values().stream()
+            .collect(Collectors.toMap(
+                s -> SpecializationNameMatcher.normalize(s.getName()),
+                s -> s,
+                (a, b) -> a
+            ));
+
+        for (ValidatedReferenceBundle.InstructorRow row : bundle.instructors()) {
+            SpecializationNameMatcher.MatchResult<Specialization> match =
+                SpecializationNameMatcher.resolve(row.specialization(), specsByName);
+            if (match.outcome() != SpecializationNameMatcher.MatchOutcome.MATCHED) {
+                // Gate 3 already rejects unknown/ambiguous specializations before commit; this is a
+                // defensive guard, not an expected path.
+                continue;
+            }
+            Specialization spec = match.value();
+
+            // InstructorContact is global (not cohort-scoped) — upsert by email rather than
+            // delete-then-recreate, so an instructor already known from another cohort's commit
+            // isn't duplicated or lost.
+            InstructorContact instructor = instructorContactRepository.findByEmailIgnoreCase(row.email())
+                .orElseGet(() -> {
+                    InstructorContact created = InstructorContact.builder()
+                        .instructorId(UUID.randomUUID().toString())
+                        .email(row.email())
+                        .fullName(row.fullName())
+                        .isActive(true)
+                        .build();
+                    created.setCreatedBy(actorUserId);
+                    created.setUpdatedBy(actorUserId);
+                    return instructorContactRepository.save(created);
+                });
+
+            if (!instructor.getFullName().equals(row.fullName())) {
+                instructor.setFullName(row.fullName());
+                instructor.setUpdatedBy(actorUserId);
+                instructor = instructorContactRepository.save(instructor);
+            }
+
+            InstructorSpecializationAssignment assignment = InstructorSpecializationAssignment.builder()
+                .instructorContactId(instructor.getId())
+                .specializationId(spec.getId())
+                .build();
+            assignment.setCreatedBy(actorUserId);
+            assignment.setUpdatedBy(actorUserId);
+            instructorSpecializationAssignmentRepository.save(assignment);
         }
     }
 }
