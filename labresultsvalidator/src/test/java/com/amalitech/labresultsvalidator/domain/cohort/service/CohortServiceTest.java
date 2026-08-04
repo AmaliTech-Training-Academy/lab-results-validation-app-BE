@@ -27,6 +27,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -93,6 +94,11 @@ class CohortServiceTest {
         Cohort saved = captor.getValue();
         assertThat(saved.getCreatedBy()).isEqualTo(actor.getId());
         assertThat(saved.getUpdatedBy()).isEqualTo(actor.getId());
+
+        // The lifecycle's first audit event — everything downstream (link submitted, gates,
+        // reference accepted, stood up) should chain from here.
+        verify(auditEventService).record(eq("COHORT_CREATED"), eq(saved.getId()), eq(actor.getId()),
+            eq(Map.of("cohortName", "Cohort 2026")));
     }
 
     @Test
@@ -104,6 +110,7 @@ class CohortServiceTest {
             .hasMessage("Cohort name must be unique");
 
         verify(cohortRepository, never()).save(any());
+        verify(auditEventService, never()).record(any(), any(), any(), any());
     }
 
     @Test

@@ -77,4 +77,15 @@ public class AuditLogController {
         return ResponseEntity.ok(ApiResponse.success("Audit events retrieved",
             auditLogService.listAuditEvents(cohortId, eventType, from, to, pageable)));
     }
+
+    @Operation(
+        summary = "Get an audit event's detail",
+        description = "A stable, permalinkable lookup for a single audit event by ID."
+    )
+    @GetMapping("/audit-events/{id}")
+    public ResponseEntity<ApiResponse<AuditEventResponse>> getAuditEventDetail(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(
+            "Audit event detail retrieved", auditLogService.getAuditEventDetail(id)));
+    }
 }

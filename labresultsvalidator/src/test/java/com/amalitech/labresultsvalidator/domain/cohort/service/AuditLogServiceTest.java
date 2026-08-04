@@ -118,4 +118,31 @@ class AuditLogServiceTest {
         assertThat(result.getContent().get(0).eventType()).isEqualTo("LINK_SUBMITTED");
         assertThat(result.getContent().get(0).payload()).isEqualTo(Map.of("folderUrl", "https://sharepoint/x"));
     }
+
+    @Test
+    void getAuditEventDetail_found_parsesPayloadJson() {
+        UUID id = UUID.randomUUID();
+        AuditEvent event = AuditEvent.builder()
+            .id(id)
+            .eventType("COHORT_CREATED")
+            .cohortId(UUID.randomUUID())
+            .occurredAt(OffsetDateTime.now())
+            .payloadJson("{\"cohortName\":\"Cohort 2026\"}")
+            .build();
+        when(auditEventRepository.findById(id)).thenReturn(Optional.of(event));
+
+        AuditEventResponse detail = auditLogService.getAuditEventDetail(id);
+
+        assertThat(detail.eventType()).isEqualTo("COHORT_CREATED");
+        assertThat(detail.payload()).isEqualTo(Map.of("cohortName", "Cohort 2026"));
+    }
+
+    @Test
+    void getAuditEventDetail_notFound_throwsResourceNotFoundException() {
+        UUID id = UUID.randomUUID();
+        when(auditEventRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auditLogService.getAuditEventDetail(id))
+            .isInstanceOf(ResourceNotFoundException.class);
+    }
 }
