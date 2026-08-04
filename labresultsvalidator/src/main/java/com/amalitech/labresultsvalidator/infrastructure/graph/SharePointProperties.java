@@ -24,7 +24,8 @@ public record SharePointProperties(
             refFiles.specializations(),
             refFiles.modules(),
             refFiles.labs(),
-            refFiles.learners()
+            refFiles.learners(),
+            refFiles.instructors()
         );
     }
 }

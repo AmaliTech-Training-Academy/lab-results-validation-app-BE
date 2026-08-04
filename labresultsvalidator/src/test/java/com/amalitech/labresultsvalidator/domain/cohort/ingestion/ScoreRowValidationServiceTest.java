@@ -30,9 +30,9 @@ class ScoreRowValidationServiceTest {
 
     private static final String FILE_NAME = "Instructor1.xlsx";
     private static final String SHEET = "Module Setup";
-    // Reviewer is now matched by email, not instructorId (instructorId is system-generated, no
-    // longer sheet-sourced) — this must look like an email for resolution tests to be meaningful.
-    private static final String REVIEWER_EMAIL = "kofi.mensah@example.com";
+    // Reviewer is now matched by full name, not instructorId (instructorId is system-generated,
+    // no longer sheet-sourced).
+    private static final String REVIEWER_NAME = "Kofi Mensah";
 
     @Mock
     private LearnerRepository learnerRepository;
@@ -70,7 +70,7 @@ class ScoreRowValidationServiceTest {
 
     private ParsedScoreRow validParsedRow() {
         return new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15", LocalDate.of(2026, 1, 15),
-            "Ama Owusu", "REST API Basics", "0.9", new BigDecimal("0.9"), REVIEWER_EMAIL);
+            "Ama Owusu", "REST API Basics", "0.9", new BigDecimal("0.9"), REVIEWER_NAME);
     }
 
     // Resolves purely by (Lab Title, specialization) — mirrors Gate4ScoreSheetValidator. The
@@ -89,8 +89,8 @@ class ScoreRowValidationServiceTest {
     void validate_validRowWithKnownReviewer_resolvesEverything() {
         stubLabUnderSpecialization(specId, "REST API Basics", labId);
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
-            .instructorId("INS-001").email(REVIEWER_EMAIL).fullName("Kofi Mensah").build();
-        when(instructorContactRepository.findByEmailIgnoreCase(REVIEWER_EMAIL)).thenReturn(Optional.of(instructor));
+            .instructorId("INS-001").email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+        when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(validParsedRow()));
 
@@ -109,13 +109,13 @@ class ScoreRowValidationServiceTest {
     void validate_arbitrarySheetName_stillResolves_sheetNameIsPurelyCosmetic() {
         stubLabUnderSpecialization(specId, "REST API Basics", labId);
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
-            .instructorId("INS-001").email(REVIEWER_EMAIL).fullName("Kofi Mensah").build();
-        when(instructorContactRepository.findByEmailIgnoreCase(REVIEWER_EMAIL)).thenReturn(Optional.of(instructor));
+            .instructorId("INS-001").email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+        when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
 
         for (String sheetName : List.of("Module-5", "Sheet1", "Whatever", "Module Setup")) {
             ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, sheetName, 2, "2026-01-15",
                 LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "0.9", new BigDecimal("0.9"),
-                REVIEWER_EMAIL);
+                REVIEWER_NAME);
 
             ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
@@ -129,7 +129,7 @@ class ScoreRowValidationServiceTest {
         // Superseded rule (B6 AC4/B12 AC3): unresolved reviewer used to be non-blocking. It's now a
         // hard failure — a row with no identifiable instructor has nowhere to route a digest to.
         stubLabUnderSpecialization(specId, "REST API Basics", labId);
-        when(instructorContactRepository.findByEmailIgnoreCase(REVIEWER_EMAIL)).thenReturn(Optional.empty());
+        when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.empty());
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(validParsedRow()));
 

@@ -114,7 +114,7 @@ public class ScoreRowValidationService {
     private RowError validateOne(ParsedScoreRow row, Map<String, Learner> learnersByName,
                                  Map<String, Map<UUID, Lab>> labsByTitleAndSpecId,
                                  List<ValidatedScoreRow> validRows) {
-        // Reviewer → InstructorContact resolved up front (matched by email, not instructorId —
+        // Reviewer → InstructorContact resolved up front (matched by full name, not instructorId —
         // instructorId is now system-generated, not sheet-sourced) so that whatever error a row
         // ends up failing with below, it still carries the correctly-resolved instructor. An
         // unresolved reviewer is no longer silently allowed through (B6 AC4/B12 AC3 superseded):
@@ -203,7 +203,7 @@ public class ScoreRowValidationService {
         if (isBlank(reviewer)) {
             return null;
         }
-        return instructorContactRepository.findByEmailIgnoreCase(reviewer.trim())
+        return instructorContactRepository.findByFullNameIgnoreCase(reviewer.trim())
             .map(InstructorContact::getId)
             .orElse(null);
     }
