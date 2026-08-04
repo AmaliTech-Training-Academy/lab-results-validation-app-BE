@@ -6,6 +6,8 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortStandupPendi
 import com.amalitech.labresultsvalidator.domain.cohort.gate.ValidatedReferenceBundle;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortStandupPendingRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.InstructorSpecializationAssignmentRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LabModuleRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LearnerRepository;
@@ -51,6 +53,10 @@ class ReferenceCommitServiceTest {
     @Mock
     private LearnerRepository learnerRepository;
     @Mock
+    private InstructorContactRepository instructorContactRepository;
+    @Mock
+    private InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository;
+    @Mock
     private AuditEventService auditEventService;
     @Mock
     private GraphDriveService graphDriveService;
@@ -65,7 +71,9 @@ class ReferenceCommitServiceTest {
     void setUp() throws Exception {
         service = new ReferenceCommitService(
             cohortRepository, pendingRepository, specializationRepository, labModuleRepository,
-            labRepository, learnerRepository, auditEventService, graphDriveService, new ObjectMapper());
+            labRepository, learnerRepository, instructorContactRepository,
+            instructorSpecializationAssignmentRepository, auditEventService, graphDriveService,
+            new ObjectMapper());
 
         cohortId = UUID.randomUUID();
         actorId = UUID.randomUUID();
@@ -79,7 +87,7 @@ class ReferenceCommitServiceTest {
             .build();
 
         String bundleJson = new ObjectMapper().writeValueAsString(
-            new ValidatedReferenceBundle(List.of(), List.of(), List.of(), List.of(), false));
+            new ValidatedReferenceBundle(List.of(), List.of(), List.of(), List.of(), List.of()));
         CohortStandupPending pending = CohortStandupPending.builder()
             .cohortId(cohortId)
             .bundleJson(bundleJson)
