@@ -17,6 +17,9 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     List<Notification> findBySyncJobIdAndStatusAndDispatchPolicy(
         UUID syncJobId, String status, String dispatchPolicy);
 
+    long countBySyncJobIdAndStatusAndDispatchPolicy(
+        UUID syncJobId, String status, String dispatchPolicy);
+
     /** Run-Review screen listing, filtered by any combination of cohort/sync job/status/type/recipient kind. */
     @Query("SELECT n FROM Notification n WHERE "
         + "(:cohortId IS NULL OR n.cohortId = :cohortId) AND "

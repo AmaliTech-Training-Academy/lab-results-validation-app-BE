@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.notification.service;
 
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
+import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.service.EmailService;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.InstructorContact;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.InstructorContactRepository;
@@ -56,9 +57,53 @@ public class NotificationDispatchService {
     }
 
     /**
-     * The single shared send primitive — used by the auto-dispatch listener above and by the
-     * manual admin "send"/"retry" endpoint. Idempotent: a notification already {@code SENT} is a
-     * no-op. {@code actorId} is null for system-triggered auto-dispatch, set for a manual send.
+     * Async front door for the manual admin "send"/"retry" endpoint — hands off to {@link #sendNow}
+     * on {@code emailTaskExecutor} so the HTTP request thread never blocks on the SMTP round-trip.
+     * Exceptions are logged rather than thrown since nothing is left listening for the result.
+     */
+    @Async("emailTaskExecutor")
+    public void sendAsync(UUID notificationId, UUID actorId) {
+        try {
+            sendNow(notificationId, actorId);
+        } catch (RuntimeException ex) {
+            LOG.warn("[notification] manual send failed for {}: {}", notificationId, ex.getMessage());
+        }
+    }
+
+    /**
+     * Count of PENDING/HELD notifications for one sync run a "send all" call would queue — for the
+     * response, before firing it.
+     */
+    @Transactional(readOnly = true)
+    public long countHeldPending(UUID syncJobId) {
+        return notificationRepository.countBySyncJobIdAndStatusAndDispatchPolicy(syncJobId, "PENDING", "HELD");
+    }
+
+    /**
+     * Manual admin action: sends every currently PENDING HELD notification for one sync run at
+     * once, off-thread so the request returns immediately. Same log-and-continue batching as
+     * {@link #onNotificationsStaged} — one bad notification does not stop the rest. Calls
+     * {@link #sendNow} directly (not {@link #sendAsync}) so the whole batch runs as a single async
+     * unit of work rather than one hop per notification.
+     */
+    @Async("emailTaskExecutor")
+    public void sendAllHeldAsync(UUID syncJobId, UUID actorId) {
+        List<Notification> held = notificationRepository
+            .findBySyncJobIdAndStatusAndDispatchPolicy(syncJobId, "PENDING", "HELD");
+        for (Notification notification : held) {
+            try {
+                sendNow(notification.getId(), actorId);
+            } catch (RuntimeException ex) {
+                LOG.warn("[notification] could not send held notification {} via send-all: {}",
+                    notification.getId(), ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * The single shared send primitive — used by the auto-dispatch listener above and by
+     * {@link #sendAsync}. Idempotent: a notification already {@code SENT} is a no-op.
+     * {@code actorId} is null for system-triggered auto-dispatch, set for a manual send.
      */
     @Transactional
     public Notification sendNow(UUID notificationId, UUID actorId) {
@@ -90,6 +135,29 @@ public class NotificationDispatchService {
             notification.setStatus("FAILED");
             notification.setErrorDetail(ex.getMessage());
         }
+        return notificationRepository.save(notification);
+    }
+
+    /**
+     * Manual admin action: takes a {@code PENDING} notification (one not yet sent) permanently out
+     * of the send queue by marking it {@code SKIPPED} — e.g. the digest is no longer relevant.
+     * Anything already {@code SENT}/{@code FAILED}/{@code SKIPPED} is rejected rather than silently
+     * no-op'd, since dismissing an already-sent notification would be a lie about what happened.
+     */
+    @Transactional
+    public Notification dismiss(UUID notificationId, UUID actorId) {
+        Notification notification = notificationRepository.findById(notificationId)
+            .orElseThrow(() -> new ResourceNotFoundException("Notification not found with id: " + notificationId));
+
+        if (!"PENDING".equals(notification.getStatus())) {
+            throw new UnprocessableEntityException(
+                "Notification " + notificationId + " is " + notification.getStatus()
+                    + " and cannot be dismissed; only a PENDING notification can be dismissed.");
+        }
+
+        notification.setStatus("SKIPPED");
+        notification.setDismissedBy(actorId);
+        notification.setDismissedAt(OffsetDateTime.now());
         return notificationRepository.save(notification);
     }
 

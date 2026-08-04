@@ -26,6 +26,8 @@ public record NotificationResponse(
     String status,
     String errorDetail,
     OffsetDateTime sentAt,
+    UUID dismissedBy,
+    OffsetDateTime dismissedAt,
     OffsetDateTime createdAt,
     List<RowIssueSummary> issues
 ) {
@@ -44,6 +46,8 @@ public record NotificationResponse(
             .status(notification.getStatus())
             .errorDetail(notification.getErrorDetail())
             .sentAt(notification.getSentAt())
+            .dismissedBy(notification.getDismissedBy())
+            .dismissedAt(notification.getDismissedAt())
             .createdAt(notification.getCreatedAt())
             .issues(parseIssues(notification.getPayloadJson(), objectMapper))
             .build();
