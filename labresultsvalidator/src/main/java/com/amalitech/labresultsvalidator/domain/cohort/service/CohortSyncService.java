@@ -4,8 +4,10 @@ import com.amalitech.labresultsvalidator.common.exceptions.DuplicateResourceExce
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.CohortSyncJobResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.ConflictResolutionAction;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.GradingSyncOverviewResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.IngestionConflictResponse;
+import com.amalitech.labresultsvalidator.domain.cohort.dto.ResolveConflictRequest;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncBatchResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.dto.SyncRunResponse;
@@ -14,10 +16,15 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleSta
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionConflict;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.LabReferenceAuditLog;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.LabResult;
+import com.amalitech.labresultsvalidator.domain.cohort.ingestion.RowFingerprint;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortSyncJobRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionConflictRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.LabReferenceAuditLogRepository;
+import com.amalitech.labresultsvalidator.domain.cohort.repository.LabResultRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -27,7 +34,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -46,6 +56,8 @@ public class CohortSyncService {
     private final CohortSyncJobRepository syncJobRepository;
     private final IngestionRunRepository ingestionRunRepository;
     private final IngestionConflictRepository ingestionConflictRepository;
+    private final LabResultRepository labResultRepository;
+    private final LabReferenceAuditLogRepository labReferenceAuditLogRepository;
     private final CohortSyncJobRunner syncJobRunner;
     private final SyncEventService syncEventService;
 
@@ -127,6 +139,90 @@ public class CohortSyncService {
             ? ingestionConflictRepository.findBySyncJobId(jobId, pageable)
             : ingestionConflictRepository.findBySyncJobIdAndStatus(jobId, status.toUpperCase(), pageable);
         return conflicts.map(IngestionConflictResponse::from);
+    }
+
+    /**
+     * Resolves a held in-file duplicate conflict (B10): picks the existing committed row, the
+     * incoming row, or neither as authoritative. Only a {@code PENDING} conflict can be resolved.
+     */
+    @Transactional
+    public IngestionConflictResponse resolveConflict(UUID cohortId, UUID conflictId, ResolveConflictRequest request) {
+        IngestionConflict conflict = ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "No conflict found with ID " + conflictId + " for cohort " + cohortId));
+
+        if (!"PENDING".equals(conflict.getStatus())) {
+            throw new UnprocessableEntityException(
+                "Conflict " + conflictId + " has already been " + conflict.getStatus().toLowerCase()
+                    + " and cannot be resolved again.");
+        }
+
+        UUID actorId = currentUser().getId();
+        if (request.getAction() == ConflictResolutionAction.KEEP_INCOMING) {
+            commitIncomingAsAuthoritative(conflict, actorId);
+        }
+        conflict.setStatus(request.getAction() == ConflictResolutionAction.REJECT ? "DISMISSED" : "RESOLVED");
+        conflict.setResolvedBy(actorId);
+        conflict.setResolvedAt(OffsetDateTime.now());
+        conflict.setResolutionNote(request.getNote());
+
+        return IngestionConflictResponse.from(ingestionConflictRepository.save(conflict));
+    }
+
+    /**
+     * Applies the conflict's held incoming payload to {@code lab_results} — updating the existing
+     * row it was held against, if there was one, or creating a new row otherwise.
+     */
+    private void commitIncomingAsAuthoritative(IngestionConflict conflict, UUID actorId) {
+        Map<String, Object> payload = IngestionConflictResponse.parsePayload(conflict.getIncomingPayloadJson());
+        LocalDate submittedOn = LocalDate.parse((String) payload.get("submittedOn"));
+        BigDecimal score = new BigDecimal((String) payload.get("score"));
+        String nspName = (String) payload.get("nspName");
+        Object instructorContactIdRaw = payload.get("instructorContactId");
+        UUID instructorContactId = instructorContactIdRaw != null
+            ? UUID.fromString((String) instructorContactIdRaw)
+            : null;
+        String fingerprint = RowFingerprint.compute(submittedOn, score);
+
+        if (conflict.getExistingResultId() != null) {
+            LabResult existing = labResultRepository.findById(conflict.getExistingResultId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                    "Existing lab result " + conflict.getExistingResultId() + " referenced by conflict "
+                        + conflict.getId() + " no longer exists"));
+            BigDecimal oldScore = existing.getScore();
+
+            existing.setScore(score);
+            existing.setSubmittedOn(submittedOn);
+            existing.setInstructorContactId(instructorContactId);
+            existing.setIngestionRunId(conflict.getIngestionRunId());
+            existing.setRowValueHash(fingerprint);
+            existing.setUpdatedBy(actorId);
+            labResultRepository.save(existing);
+
+            labReferenceAuditLogRepository.save(LabReferenceAuditLog.builder()
+                .tableName("lab_results")
+                .recordId(existing.getId())
+                .fieldName("score")
+                .oldValue(oldScore.toPlainString())
+                .newValue(score.toPlainString())
+                .changedBy(actorId)
+                .reason("Ingestion conflict " + conflict.getId() + " resolved: kept incoming row")
+                .build());
+        } else {
+            LabResult result = LabResult.builder()
+                .learnerId(conflict.getLearnerId())
+                .labId(conflict.getLabId())
+                .ingestionRunId(conflict.getIngestionRunId())
+                .instructorContactId(instructorContactId)
+                .nspName(nspName)
+                .score(score)
+                .submittedOn(submittedOn)
+                .rowValueHash(fingerprint)
+                .build();
+            result.setCreatedBy(actorId);
+            result.setUpdatedBy(actorId);
+            labResultRepository.save(result);
+        }
     }
 
     /** Resolves the most recent sync job for the SSE stream endpoint. */

@@ -53,8 +53,8 @@ public record IngestionConflictResponse(
             conflict.getUpdatedAt()
         );
     }
-
-    private static Map<String, Object> parsePayload(String incomingPayloadJson) {
+    /** Also used by {@code CohortSyncService} to reconstruct the incoming row when resolving a conflict. */
+    public static Map<String, Object> parsePayload(String incomingPayloadJson) {
         if (incomingPayloadJson == null || incomingPayloadJson.isBlank()) {
             return Map.of();
         }
