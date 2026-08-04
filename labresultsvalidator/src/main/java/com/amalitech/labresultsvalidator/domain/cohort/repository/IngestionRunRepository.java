@@ -15,7 +15,15 @@ public interface IngestionRunRepository extends JpaRepository<IngestionRun, UUID
 
     List<IngestionRun> findBySyncJobId(UUID syncJobId);
 
-    /** D5 AC1 — audit-log browsing, filtered by any combination of cohort/status/date-range/instructor. */
+    /**
+     * D5 AC1 — audit-log browsing, filtered by any combination of cohort/status/date-range/instructor.
+     * The date-range bounds use {@code COALESCE(:param, r.runAt)} rather than
+     * {@code :param IS NULL OR ...} — a bare {@code :from IS NULL} check gives Postgres no typed
+     * context to bind an OffsetDateTime parameter against, which fails at prepare time with
+     * "could not determine data type of parameter $N" whenever the filter is omitted. Wrapping
+     * the parameter in COALESCE against the (typed) column it's compared to gives Postgres that
+     * context, and is a no-op filter-wise when the bound value is null.
+     */
     @Query("SELECT r FROM IngestionRun r WHERE "
         + "(:cohortId IS NULL OR r.cohortId = :cohortId) AND "
         + "(:status IS NULL OR r.status = :status) AND "

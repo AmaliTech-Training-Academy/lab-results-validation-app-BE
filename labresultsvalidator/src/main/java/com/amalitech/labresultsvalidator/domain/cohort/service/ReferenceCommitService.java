@@ -21,8 +21,12 @@ import com.amalitech.labresultsvalidator.domain.cohort.repository.LabModuleRepos
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.LearnerRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.SpecializationRepository;
+import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
+import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphAccessException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +40,8 @@ import java.util.stream.Collectors;
 @Service
 public class ReferenceCommitService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(ReferenceCommitService.class);
+
     private final CohortRepository cohortRepository;
     private final CohortStandupPendingRepository pendingRepository;
     private final SpecializationRepository specializationRepository;
@@ -45,6 +51,7 @@ public class ReferenceCommitService {
     private final InstructorContactRepository instructorContactRepository;
     private final InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository;
     private final AuditEventService auditEventService;
+    private final GraphDriveService graphDriveService;
     private final ObjectMapper objectMapper;
 
     public ReferenceCommitService(
@@ -57,6 +64,7 @@ public class ReferenceCommitService {
         InstructorContactRepository instructorContactRepository,
         InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository,
         AuditEventService auditEventService,
+        GraphDriveService graphDriveService,
         ObjectMapper objectMapper
     ) {
         this.cohortRepository = cohortRepository;
@@ -68,6 +76,7 @@ public class ReferenceCommitService {
         this.instructorContactRepository = instructorContactRepository;
         this.instructorSpecializationAssignmentRepository = instructorSpecializationAssignmentRepository;
         this.auditEventService = auditEventService;
+        this.graphDriveService = graphDriveService;
         this.objectMapper = objectMapper;
     }
 
@@ -119,8 +128,29 @@ public class ReferenceCommitService {
                 "driveId", cohort.getSharepointDriveId() != null
                     ? cohort.getSharepointDriveId() : "",
                 "itemId", cohort.getSharepointItemId() != null
-                    ? cohort.getSharepointItemId() : ""
+                    ? cohort.getSharepointItemId() : "",
+                "sharepointVersionId", resolveSharepointVersionId(cohort)
             ));
+    }
+
+    /**
+     * D2 AC2 — the reference folder's content tag at accept time, so the audit trail captures
+     * which SharePoint version the bundle was accepted from. A metadata-fetch failure must not
+     * block acceptance itself, so this degrades to "" rather than propagating.
+     */
+    private String resolveSharepointVersionId(Cohort cohort) {
+        String driveId = cohort.getSharepointDriveId();
+        String itemId = cohort.getSharepointItemId();
+        if (driveId == null || itemId == null) {
+            return "";
+        }
+        try {
+            String versionId = graphDriveService.getItem(driveId, itemId).versionId();
+            return versionId != null ? versionId : "";
+        } catch (GraphAccessException ex) {
+            LOG.warn("Could not resolve SharePoint version for cohort {}: {}", cohort.getId(), ex.getMessage());
+            return "";
+        }
     }
 
     @Transactional

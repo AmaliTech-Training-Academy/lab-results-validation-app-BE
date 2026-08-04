@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -123,6 +124,23 @@ class LabResultCommitServiceTest {
         assertThat(audit.getOldValue()).isEqualTo("85.00");
         assertThat(audit.getNewValue()).isEqualTo("90.00");
         assertThat(audit.getChangedBy()).isEqualTo(triggeredBy);
+    }
+
+    @Test
+    void commit_changedRow_writesPriorValueBeforeApplyingUpdate() {
+        // D3 AC1 — with no enclosing transaction, the prior-value record must be durable before
+        // the update is applied, so a crash between the two writes can never lose it.
+        BigDecimal oldScore = new BigDecimal("85.00");
+        LabResult existing = LabResult.builder().id(UUID.randomUUID()).score(oldScore).submittedOn(SUBMITTED_ON)
+            .build();
+        ValidatedScoreRow row = row(new BigDecimal("90.00"));
+        RowClassification classification = new RowClassification(ClassificationKind.CHANGED, row, existing);
+
+        service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+
+        InOrder inOrder = org.mockito.Mockito.inOrder(labReferenceAuditLogRepository, labResultRepository);
+        inOrder.verify(labReferenceAuditLogRepository).save(any());
+        inOrder.verify(labResultRepository).save(any());
     }
 
     @Test

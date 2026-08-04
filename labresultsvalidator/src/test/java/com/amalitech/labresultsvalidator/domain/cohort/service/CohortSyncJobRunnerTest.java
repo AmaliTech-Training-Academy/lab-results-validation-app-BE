@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.domain.cohort.service;
 
+import com.amalitech.labresultsvalidator.common.SystemUser;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortSyncJob;
@@ -224,7 +225,26 @@ class CohortSyncJobRunnerTest {
         assertThat(captor.getValue().getS3VersionId()).isNull();
         assertThat(captor.getValue().getFileSha256()).isEqualTo("sha-steady");
 
+        // D1 AC2 / D4 AC2 — the dedup also gets its own ingestion_runs row (status=skipped), so
+        // it's auditable via the same API as changed/new files, not just cohort_sync_files.
+        verify(gradingIngestionService).recordSkipped(eq(cohort), eq(jobId), eq("Steady.xlsx"),
+            any(DriveItemDetails.class), eq("sha-steady"), eq(actorId), eq("MANUAL"));
+
         verifyAuditCounts(0, 1, 0);
+    }
+
+    @Test
+    void recordsASkippedFileWithTheSystemActorWhenTheRunIsScheduled() throws Exception {
+        stubFolderWithOneFile("file-1", "Steady.xlsx");
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), eq("file-1"), any(), anyString()))
+            .thenReturn(FetchOutcome.unchanged("sha-steady"));
+
+        runner.run(cohortId, jobId, null);
+
+        verify(gradingIngestionService).recordSkipped(eq(cohort), eq(jobId), eq("Steady.xlsx"),
+            any(DriveItemDetails.class), eq("sha-steady"), eq(SystemUser.ID), eq("SCHEDULED"));
     }
 
     @Test
@@ -353,8 +373,10 @@ class CohortSyncJobRunnerTest {
 
         runner.run(cohortId, jobId, null);
 
+        // D1 AC3 — a scheduled run has no human actor, so triggered_by falls back to the SYSTEM
+        // pseudo-user rather than being left null.
         verify(gradingIngestionService).process(eq(cohort), eq(jobId), eq("Direct.xlsx"), any(), any(),
-            eq("sha-Direct.xlsx"), eq((UUID) null), eq("SCHEDULED"));
+            eq("sha-Direct.xlsx"), eq(SystemUser.ID), eq("SCHEDULED"));
     }
 
     @Test

@@ -42,7 +42,10 @@ public class CohortService {
             .build();
         cohort.setCreatedBy(actorId);
         cohort.setUpdatedBy(actorId);
-        return toCohortResponse(cohortRepository.save(cohort));
+        Cohort saved = cohortRepository.save(cohort);
+        auditEventService.record("COHORT_CREATED", saved.getId(), actorId,
+            Map.of("cohortName", saved.getName()));
+        return toCohortResponse(saved);
     }
 
     public Page<CohortResponse> getCohorts(Pageable pageable) {

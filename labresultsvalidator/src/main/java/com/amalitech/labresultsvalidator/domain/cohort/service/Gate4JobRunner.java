@@ -78,9 +78,15 @@ public class Gate4JobRunner {
                 LOG.info("[gate4] job={} cohort={} COMPLETED — all score sheets valid", jobId, cohortId);
             } else {
                 LOG.warn("[gate4] job={} cohort={} FAILED — score sheet errors found", jobId, cohortId);
+                // Matches gates 1-3's convention (StandupPipelineService) so GATE_FAILED rows are
+                // distinguished by the "gate" payload key rather than a separate event type.
+                auditEventService.record("GATE_FAILED", cohortId, actorId,
+                    Map.of("gate", 4, "errors", result.gate().errors()));
             }
         } catch (Exception ex) {
             LOG.error("[gate4] job={} cohort={} FAILED unexpectedly: {}", jobId, cohortId, ex.getMessage(), ex);
+            auditEventService.record("GATE_FAILED", cohortId, actorId,
+                Map.of("gate", 4, "error", String.valueOf(ex.getMessage())));
         }
 
         gate4EventService.emit(jobId, "gate4.done", Map.of("status", finalStatus.name()));

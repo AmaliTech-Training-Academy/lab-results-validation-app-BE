@@ -111,6 +111,28 @@ public class GradingIngestionService {
         return ingestionRunRepository.save(run);
     }
 
+    /**
+     * Persists the audit row for a file the hash short-circuit deduped (D1 AC2 / D4 AC2) — a
+     * single {@code skipped} row so "we saw it, nothing changed" is auditable rather than the
+     * file being silently absent from {@code ingestion_runs}.
+     */
+    public IngestionRun recordSkipped(Cohort cohort, UUID syncJobId, String fileName,
+                                      DriveItemDetails details, String fileSha256Hex,
+                                      UUID triggeredBy, String triggerType) {
+        return ingestionRunRepository.save(IngestionRun.builder()
+            .cohortId(cohort.getId())
+            .syncJobId(syncJobId)
+            .workbookFilename(fileName)
+            .sharepointFileUrl(details == null ? null : details.webUrl())
+            .sharepointVersionId(details == null ? null : details.versionId())
+            .quickXorHash(details == null ? null : details.quickXorHash())
+            .fileSha256(fileSha256Hex)
+            .triggeredBy(triggeredBy)
+            .triggerType(triggerType)
+            .status("skipped")
+            .build());
+    }
+
     private String buildErrorReportJson(List<RowError> errors) {
         if (errors.isEmpty()) {
             return null;
