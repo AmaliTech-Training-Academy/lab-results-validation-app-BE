@@ -13,6 +13,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.sync.FetchOutcome;
 import com.amalitech.labresultsvalidator.domain.cohort.sync.FetchedWorkbook;
 import com.amalitech.labresultsvalidator.domain.cohort.sync.WorkbookFetchService;
 import com.amalitech.labresultsvalidator.domain.cohort.sync.WorkbookParseException;
+import com.amalitech.labresultsvalidator.domain.notification.service.NotificationStagingService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemDetails;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
@@ -80,6 +81,7 @@ public class CohortSyncJobRunner {
     private final S3StorageService s3StorageService;
     private final WorkbookFetchService workbookFetchService;
     private final GradingIngestionService gradingIngestionService;
+    private final NotificationStagingService notificationStagingService;
 
     @Async("syncTaskExecutor")
     public void run(UUID cohortId, UUID jobId, UUID actorId) {
@@ -116,6 +118,16 @@ public class CohortSyncJobRunner {
             finalStatus = CohortSyncJobStatus.COMPLETED;
             auditEventService.record("SYNC_COMPLETED", cohortId, actorId, counts.toPayload(cohort.getName()));
             LOG.info("[sync] job={} cohort={} COMPLETED — {}", jobId, cohortId, counts);
+
+            // Staging is a distinct concern from the sync itself — a bug here must never turn an
+            // otherwise-successful sync into a FAILED one, so it gets its own narrow try/catch
+            // rather than sharing the outer one.
+            try {
+                notificationStagingService.stageForSyncJob(cohortId, jobId, actorId);
+            } catch (Exception ex) {
+                LOG.warn("[sync] job={} cohort={} notification staging failed: {}",
+                    jobId, cohortId, ex.getMessage(), ex);
+            }
         } catch (Exception ex) {
             LOG.error("[sync] job={} cohort={} FAILED: {}", jobId, cohortId, ex.getMessage(), ex);
         }

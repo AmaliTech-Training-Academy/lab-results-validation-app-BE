@@ -114,15 +114,22 @@ public class ScoreRowValidationService {
     private RowError validateOne(ParsedScoreRow row, Map<String, Learner> learnersByName,
                                  Map<String, Map<UUID, Lab>> labsByTitleAndSpecId,
                                  List<ValidatedScoreRow> validRows) {
+        // Reviewer → InstructorContact resolved up front (matched by email, not instructorId —
+        // instructorId is now system-generated, not sheet-sourced) so that whatever error a row
+        // ends up failing with below, it still carries the correctly-resolved instructor. An
+        // unresolved reviewer is no longer silently allowed through (B6 AC4/B12 AC3 superseded):
+        // it becomes its own hard failure, R5-UNKNOWN-REVIEWER, further down.
+        UUID instructorContactId = resolveInstructor(row.reviewer());
+
         // F1 — required fields non-blank.
         if (isBlank(row.nspName())) {
-            return fieldError(row, "F1-BLANK-NSP", "Name of NSP is blank.");
+            return fieldError(row, "F1-BLANK-NSP", "Name of NSP is blank.", instructorContactId);
         }
         if (isBlank(row.labTitle())) {
-            return fieldError(row, "F1-BLANK-LAB-TITLE", "Lab Title is blank.");
+            return fieldError(row, "F1-BLANK-LAB-TITLE", "Lab Title is blank.", instructorContactId);
         }
         if (isBlank(row.reviewDateRaw())) {
-            return fieldError(row, "F1-BLANK-REVIEW-DATE", "Review Date is blank.");
+            return fieldError(row, "F1-BLANK-REVIEW-DATE", "Review Date is blank.", instructorContactId);
         }
         if (isBlank(row.totalScoreRaw())) {
             // Not yet graded — a real, identified row awaiting a score. Not an error; just
@@ -133,46 +140,49 @@ public class ScoreRowValidationService {
         // F3 — review date parses to a valid date.
         if (row.reviewDate() == null) {
             return fieldError(row, "F3-INVALID-DATE",
-                "Review Date '" + row.reviewDateRaw() + "' is not a valid date.");
+                "Review Date '" + row.reviewDateRaw() + "' is not a valid date.", instructorContactId);
         }
 
         // F2 — total score numeric and within range after ×100.
         if (row.totalScore() == null) {
             return fieldError(row, "F2-INVALID-SCORE",
-                "Total Score '" + row.totalScoreRaw() + "' is not numeric.");
+                "Total Score '" + row.totalScoreRaw() + "' is not numeric.", instructorContactId);
         }
         BigDecimal score = row.totalScore().multiply(HUNDRED).setScale(2, RoundingMode.HALF_UP);
         if (score.compareTo(BigDecimal.ZERO) < 0 || score.compareTo(HUNDRED) > 0) {
             return fieldError(row, "F2-SCORE-OUT-OF-RANGE",
-                "Total Score '" + row.totalScoreRaw() + "' resolves to " + score + ", outside 0-100.");
+                "Total Score '" + row.totalScoreRaw() + "' resolves to " + score + ", outside 0-100.",
+                instructorContactId);
         }
 
         // R1 — NSP resolves to an active learner in this cohort.
         Learner learner = learnersByName.get(row.nspName().trim().toLowerCase(Locale.ROOT));
         if (learner == null) {
             return fieldError(row, "R1-UNKNOWN-NSP",
-                "NSP '" + row.nspName() + "' does not match any learner in this cohort.");
+                "NSP '" + row.nspName() + "' does not match any learner in this cohort.", instructorContactId);
         }
 
         // R4 — Lab Title resolves to a lab, cross-referenced against the NSP's specialization.
         Map<UUID, Lab> labsForTitle = labsByTitleAndSpecId.get(row.labTitle().trim().toLowerCase(Locale.ROOT));
         if (labsForTitle == null || labsForTitle.isEmpty()) {
             return fieldError(row, "R4-UNKNOWN-LAB",
-                "Lab Title '" + row.labTitle() + "' does not match any lab configured for this cohort.");
+                "Lab Title '" + row.labTitle() + "' does not match any lab configured for this cohort.",
+                instructorContactId);
         }
         Lab lab = labsForTitle.get(learner.getSpecializationId());
         if (lab == null) {
             return fieldError(row, "R4-LAB-SPEC-MISMATCH",
                 "NSP '" + row.nspName() + "' specialization '" + specializationName(learner.getSpecializationId())
-                    + "' does not match the specialization configured for lab '" + row.labTitle() + "'.");
+                    + "' does not match the specialization configured for lab '" + row.labTitle() + "'.",
+                instructorContactId);
         }
 
-        // Reviewer → InstructorContact. Unresolved is non-blocking (B6 AC4/B12 AC3).
-        UUID instructorContactId = null;
-        if (!isBlank(row.reviewer())) {
-            instructorContactId = instructorContactRepository.findByInstructorId(row.reviewer().trim())
-                .map(InstructorContact::getId)
-                .orElse(null);
+        // R5 — reviewer must resolve to a known, active instructor. Unlike R1/R4 above, a failure
+        // here carries no instructorContactId — there is no one to attribute this row's digest to,
+        // so it routes to the admin notification instead of an instructor's.
+        if (instructorContactId == null) {
+            return fieldError(row, "R5-UNKNOWN-REVIEWER",
+                "Reviewer '" + row.reviewer() + "' does not match any active instructor.", null);
         }
 
         validRows.add(new ValidatedScoreRow(
@@ -189,8 +199,17 @@ public class ScoreRowValidationService {
         return null;
     }
 
-    private RowError fieldError(ParsedScoreRow row, String rule, String message) {
-        return new RowError(row.fileName(), row.location(), rule, message);
+    private UUID resolveInstructor(String reviewer) {
+        if (isBlank(reviewer)) {
+            return null;
+        }
+        return instructorContactRepository.findByEmailIgnoreCase(reviewer.trim())
+            .map(InstructorContact::getId)
+            .orElse(null);
+    }
+
+    private RowError fieldError(ParsedScoreRow row, String rule, String message, UUID instructorContactId) {
+        return new RowError(row.fileName(), row.location(), rule, message, instructorContactId);
     }
 
     private boolean isBlank(String value) {

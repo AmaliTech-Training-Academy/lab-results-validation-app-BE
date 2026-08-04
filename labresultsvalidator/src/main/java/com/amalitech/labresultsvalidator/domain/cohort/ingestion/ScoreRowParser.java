@@ -56,7 +56,7 @@ public class ScoreRowParser {
             if (!missing.isEmpty()) {
                 for (String col : missing) {
                     errors.add(new RowError(fileName, "sheet " + sheetName, "S2-MISSING-COLUMN",
-                        "Required column '" + col + "' not found in sheet '" + sheetName + "'."));
+                        "Required column '" + col + "' not found in sheet '" + sheetName + "'.", null));
                 }
                 continue;
             }
