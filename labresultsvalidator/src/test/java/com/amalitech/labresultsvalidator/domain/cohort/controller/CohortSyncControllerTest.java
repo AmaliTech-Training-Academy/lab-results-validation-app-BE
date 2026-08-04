@@ -138,6 +138,8 @@ class CohortSyncControllerTest {
             .andExpect(jsonPath("$.data.files[1].issues[0].message")
                 .value("NSP 'Not A Learner' does not match any learner."))
             .andExpect(jsonPath("$.data.files[1].rejectionReasons[0].rule").value("R1-UNKNOWN-NSP"))
+            .andExpect(jsonPath("$.data.files[1].rejectionReasons[0].description")
+                .value("The trainee named in 'Name of NSP' could not be matched to a learner in this cohort."))
             .andExpect(jsonPath("$.data.files[1].rejectionReasons[0].count").value(1));
     }
 

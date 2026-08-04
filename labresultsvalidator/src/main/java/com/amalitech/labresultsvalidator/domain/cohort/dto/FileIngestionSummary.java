@@ -73,7 +73,8 @@ public record FileIngestionSummary(
         Map<String, Long> counts = issues.stream()
             .collect(Collectors.groupingBy(RowIssueSummary::rule, Collectors.counting()));
         return counts.entrySet().stream()
-            .map(e -> new RejectionReasonSummary(e.getKey(), e.getValue()))
+            .map(e -> new RejectionReasonSummary(
+                e.getKey(), RejectionRuleDescriptions.describe(e.getKey()), e.getValue()))
             .sorted(Comparator.comparingLong(RejectionReasonSummary::count).reversed()
                 .thenComparing(RejectionReasonSummary::rule))
             .toList();
