@@ -9,6 +9,7 @@ import java.util.UUID;
 public record IngestionRunAuditResponse(
     UUID id,
     UUID cohortId,
+    UUID syncJobId,
     String workbookFilename,
     String status,
     String triggerType,
@@ -27,6 +28,7 @@ public record IngestionRunAuditResponse(
         return new IngestionRunAuditResponse(
             run.getId(),
             run.getCohortId(),
+            run.getSyncJobId(),
             run.getWorkbookFilename(),
             run.getStatus(),
             run.getTriggerType(),

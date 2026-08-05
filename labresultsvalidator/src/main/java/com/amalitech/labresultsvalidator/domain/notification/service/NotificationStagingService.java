@@ -22,7 +22,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,8 +32,10 @@ import java.util.stream.Collectors;
 /**
  * Stages (persists as {@code PENDING}) one {@code instructor_digest} {@link Notification} per
  * instructor and, if any row's reviewer couldn't be resolved, exactly one {@code admin_run_digest}
- * — bundled across every {@link IngestionRun}/file in the whole sync job, not per file. Staging
- * never sends email; dispatch is {@code NotificationDispatchService}'s concern, triggered off
+ * — plus, independently, one {@code high_failure} admin digest if any file in the job crossed the
+ * B7 AC3 high-failure-rate threshold. Each admin digest is bundled across every
+ * {@link IngestionRun}/file in the whole sync job, not per file. Staging never sends email;
+ * dispatch is {@code NotificationDispatchService}'s concern, triggered off
  * {@link SyncJobNotificationsStagedEvent} after this method's transaction commits.
  */
 @Service
@@ -59,7 +63,15 @@ public class NotificationStagingService {
         for (IngestionRun run : runs) {
             allIssues.addAll(parseIssues(run.getErrorReportJson()));
         }
-        if (allIssues.isEmpty()) {
+
+        // B7 AC3 — a file where more than half its READY rows were rejected gets its own admin
+        // alert, independent of whether those rejected rows had a resolvable instructor. This is
+        // a data-quality signal (something about the sheet itself is wrong), not a per-row one.
+        List<IngestionRun> highFailureRuns = runs.stream()
+            .filter(IngestionRun::isHighFailureRate)
+            .toList();
+
+        if (allIssues.isEmpty() && highFailureRuns.isEmpty()) {
             // Zero notifiable outcomes for this job — stage nothing, publish nothing.
             return;
         }
@@ -93,13 +105,19 @@ public class NotificationStagingService {
             }
         }
 
-        if (!unattributed.isEmpty()) {
+        if (!unattributed.isEmpty() || !highFailureRuns.isEmpty()) {
             userRepository.findFirstByRoleAndIsActiveTrueOrderByCreatedAtAsc(UserRole.ADMIN)
-                .ifPresentOrElse(
-                    admin -> toStage.add(buildAdminDigest(cohortId, syncJobId, admin, unattributed)),
-                    () -> LOG.warn(
-                        "[notification] syncJob={} {} unattributed issue(s) but no active admin found",
-                        syncJobId, unattributed.size()));
+                .ifPresentOrElse(admin -> {
+                    if (!unattributed.isEmpty()) {
+                        toStage.add(buildAdminDigest(cohortId, syncJobId, admin, unattributed));
+                    }
+                    if (!highFailureRuns.isEmpty()) {
+                        toStage.add(buildHighFailureRateDigest(cohortId, syncJobId, admin, highFailureRuns));
+                    }
+                }, () -> LOG.warn(
+                        "[notification] syncJob={} {} unattributed issue(s) and {} high-failure-rate "
+                            + "file(s) but no active admin found",
+                        syncJobId, unattributed.size(), highFailureRuns.size()));
         }
 
         if (toStage.isEmpty()) {
@@ -153,9 +171,48 @@ public class NotificationStagingService {
             .build();
     }
 
+    /**
+     * B7 AC3 — one bundled alert per sync job covering every file that crossed the 50%
+     * rejected-of-READY threshold, independent of the per-row instructor digests above.
+     */
+    private Notification buildHighFailureRateDigest(UUID cohortId, UUID syncJobId, User admin,
+                                                     List<IngestionRun> highFailureRuns) {
+        return Notification.builder()
+            .cohortId(cohortId)
+            .syncJobId(syncJobId)
+            .type("high_failure")
+            .recipientKind("admin")
+            .recipientUserId(admin.getId())
+            .dispatchPolicy("AUTO")
+            .subject("High failure rate — " + highFailureRuns.size() + " file(s) need review")
+            .body(renderHighFailureRateBody(highFailureRuns))
+            .payloadJson(writeHighFailureRateJson(highFailureRuns))
+            .status("PENDING")
+            .build();
+    }
+
     private String writeIssuesJson(List<RowIssueSummary> issues) {
         try {
             return objectMapper.writeValueAsString(issues);
+        } catch (JsonProcessingException ex) {
+            return "[]";
+        }
+    }
+
+    private String writeHighFailureRateJson(List<IngestionRun> runs) {
+        try {
+            List<Map<String, Object>> payload = runs.stream()
+                .map(run -> {
+                    Map<String, Object> entry = new LinkedHashMap<String, Object>();
+                    entry.put("ingestionRunId", run.getId());
+                    entry.put("file", run.getWorkbookFilename());
+                    entry.put("failureRatePercent", run.getFailureRatePercent());
+                    entry.put("rowsRead", run.getRowsRead());
+                    entry.put("skippedInvalid", run.getSkippedInvalid());
+                    return entry;
+                })
+                .toList();
+            return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException ex) {
             return "[]";
         }
@@ -173,6 +230,24 @@ public class NotificationStagingService {
                 .append("<td>").append(escape(issue.location())).append("</td>")
                 .append("<td>").append(escape(issue.rule())).append("</td>")
                 .append("<td>").append(escape(issue.message())).append("</td>")
+                .append("</tr>");
+        }
+        sb.append("</table>");
+        return sb.toString();
+    }
+
+    // Kept as a plain content fragment for the same reason as renderDigestBody above.
+    private String renderHighFailureRateBody(List<IngestionRun> runs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<table style=\"width:100%;border-collapse:collapse;\">");
+        sb.append("<tr><th>File</th><th>Failure rate</th><th>Rows read</th><th>Rejected</th></tr>");
+        for (IngestionRun run : runs) {
+            sb.append("<tr>")
+                .append("<td>").append(escape(run.getWorkbookFilename())).append("</td>")
+                .append("<td>").append(String.format(Locale.ROOT, "%.1f%%", run.getFailureRatePercent()))
+                .append("</td>")
+                .append("<td>").append(run.getRowsRead()).append("</td>")
+                .append("<td>").append(run.getSkippedInvalid()).append("</td>")
                 .append("</tr>");
         }
         sb.append("</table>");
