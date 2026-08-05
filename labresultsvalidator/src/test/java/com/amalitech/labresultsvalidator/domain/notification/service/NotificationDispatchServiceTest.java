@@ -3,7 +3,7 @@ package com.amalitech.labresultsvalidator.domain.notification.service;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.service.EmailService;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;

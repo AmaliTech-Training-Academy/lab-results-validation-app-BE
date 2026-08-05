@@ -1,6 +1,6 @@
 package com.amalitech.labresultsvalidator.domain.notification.dto;
 
-import com.amalitech.labresultsvalidator.domain.cohort.dto.RowIssueSummary;
+import com.amalitech.labresultsvalidator.domain.grading.dto.RowIssueSummary;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
