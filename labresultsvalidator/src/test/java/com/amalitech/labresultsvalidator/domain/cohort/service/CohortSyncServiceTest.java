@@ -35,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,6 +59,8 @@ class CohortSyncServiceTest {
     private CohortSyncJobRunner syncJobRunner;
     @Mock
     private SyncEventService syncEventService;
+    @Mock
+    private AuditEventService auditEventService;
 
     @InjectMocks
     private CohortSyncService cohortSyncService;
@@ -103,7 +106,7 @@ class CohortSyncServiceTest {
     @Test
     void resolveConflict_keepExisting_marksResolvedWithoutTouchingLabResults() {
         IngestionConflict conflict = pendingConflict(UUID.randomUUID());
-        when(ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)).thenReturn(Optional.of(conflict));
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId)).thenReturn(Optional.of(conflict));
         when(ingestionConflictRepository.save(any(IngestionConflict.class))).thenAnswer(inv -> inv.getArgument(0));
 
         IngestionConflictResponse response = cohortSyncService.resolveConflict(
@@ -113,6 +116,7 @@ class CohortSyncServiceTest {
         assertThat(response.resolvedBy()).isEqualTo(actor.getId());
         verify(labResultRepository, never()).save(any());
         verify(labReferenceAuditLogRepository, never()).save(any());
+        verify(auditEventService).record(eq("CONFLICT_RESOLVED"), eq(cohortId), eq(actor.getId()), any());
     }
 
     @Test
@@ -125,7 +129,7 @@ class CohortSyncServiceTest {
             .submittedOn(LocalDate.of(2026, 1, 1))
             .build();
 
-        when(ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)).thenReturn(Optional.of(conflict));
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId)).thenReturn(Optional.of(conflict));
         when(labResultRepository.findById(existingResultId)).thenReturn(Optional.of(existing));
         when(ingestionConflictRepository.save(any(IngestionConflict.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -143,12 +147,14 @@ class CohortSyncServiceTest {
         verify(labReferenceAuditLogRepository).save(auditCaptor.capture());
         assertThat(auditCaptor.getValue().getOldValue()).isEqualTo("80.00");
         assertThat(auditCaptor.getValue().getNewValue()).isEqualTo("95.00");
+
+        verify(auditEventService).record(eq("CONFLICT_RESOLVED"), eq(cohortId), eq(actor.getId()), any());
     }
 
     @Test
     void resolveConflict_keepIncomingWithNoExistingResult_createsNewLabResult() {
         IngestionConflict conflict = pendingConflict(null);
-        when(ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)).thenReturn(Optional.of(conflict));
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId)).thenReturn(Optional.of(conflict));
         when(ingestionConflictRepository.save(any(IngestionConflict.class))).thenAnswer(inv -> inv.getArgument(0));
 
         cohortSyncService.resolveConflict(
@@ -161,12 +167,13 @@ class CohortSyncServiceTest {
         assertThat(resultCaptor.getValue().getLabId()).isEqualTo(conflict.getLabId());
         assertThat(resultCaptor.getValue().getScore()).isEqualByComparingTo("95.00");
         verify(labReferenceAuditLogRepository, never()).save(any());
+        verify(auditEventService).record(eq("CONFLICT_RESOLVED"), eq(cohortId), eq(actor.getId()), any());
     }
 
     @Test
     void resolveConflict_reject_marksDismissedWithoutTouchingLabResults() {
         IngestionConflict conflict = pendingConflict(UUID.randomUUID());
-        when(ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)).thenReturn(Optional.of(conflict));
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId)).thenReturn(Optional.of(conflict));
         when(ingestionConflictRepository.save(any(IngestionConflict.class))).thenAnswer(inv -> inv.getArgument(0));
 
         IngestionConflictResponse response = cohortSyncService.resolveConflict(
@@ -174,27 +181,82 @@ class CohortSyncServiceTest {
 
         assertThat(response.status()).isEqualTo("DISMISSED");
         verify(labResultRepository, never()).save(any());
+        verify(auditEventService).record(eq("CONFLICT_DISMISSED"), eq(cohortId), eq(actor.getId()), any());
     }
 
     @Test
     void resolveConflict_unknownConflict_throwsNotFound() {
-        when(ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)).thenReturn(Optional.empty());
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> cohortSyncService.resolveConflict(
             cohortId, conflictId, ResolveConflictRequest.builder().action(ConflictResolutionAction.KEEP_EXISTING).build()))
             .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(auditEventService, never()).record(any(), any(), any(), any());
     }
 
     @Test
     void resolveConflict_alreadyResolved_throwsUnprocessable() {
         IngestionConflict conflict = pendingConflict(UUID.randomUUID());
         conflict.setStatus("RESOLVED");
-        when(ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)).thenReturn(Optional.of(conflict));
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId)).thenReturn(Optional.of(conflict));
 
         assertThatThrownBy(() -> cohortSyncService.resolveConflict(
             cohortId, conflictId, ResolveConflictRequest.builder().action(ConflictResolutionAction.KEEP_EXISTING).build()))
             .isInstanceOf(UnprocessableEntityException.class);
 
         verify(ingestionConflictRepository, never()).save(any());
+        verify(auditEventService, never()).record(any(), any(), any(), any());
+    }
+
+    /**
+     * Reproduces the fallback path in LabResultCommitService#buildPayloadJson: when the incoming
+     * row failed to serialize at ingestion time, the conflict's payload is stored as the sentinel
+     * {@code {"error":"serialization failed"}} rather than the real row. Resolving such a conflict
+     * with KEEP_INCOMING must not crash the request with a raw NPE.
+     */
+    @Test
+    void resolveConflict_keepIncomingWithCorruptedPayload_throwsUnprocessableInsteadOfCrashing() {
+        IngestionConflict conflict = IngestionConflict.builder()
+            .id(conflictId)
+            .ingestionRunId(UUID.randomUUID())
+            .cohortId(cohortId)
+            .learnerId(UUID.randomUUID())
+            .labId(UUID.randomUUID())
+            .incomingPayloadJson("{\"error\":\"serialization failed\"}")
+            .status("PENDING")
+            .build();
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId))
+            .thenReturn(Optional.of(conflict));
+
+        assertThatThrownBy(() -> cohortSyncService.resolveConflict(
+            cohortId, conflictId, ResolveConflictRequest.builder().action(ConflictResolutionAction.KEEP_INCOMING).build()))
+            .isInstanceOf(UnprocessableEntityException.class);
+
+        verify(labResultRepository, never()).save(any());
+        verify(ingestionConflictRepository, never()).save(any());
+    }
+
+    @Test
+    void resolveConflict_keepIncomingWithMalformedInstructorContactId_throwsUnprocessableInsteadOfCrashing() {
+        IngestionConflict conflict = IngestionConflict.builder()
+            .id(conflictId)
+            .ingestionRunId(UUID.randomUUID())
+            .cohortId(cohortId)
+            .learnerId(UUID.randomUUID())
+            .labId(UUID.randomUUID())
+            .incomingPayloadJson(
+                "{\"nspName\":\"ama owusu\",\"submittedOn\":\"2026-01-15\",\"score\":\"95.00\","
+                    + "\"instructorContactId\":\"not-a-uuid\"}")
+            .status("PENDING")
+            .build();
+        when(ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId))
+            .thenReturn(Optional.of(conflict));
+
+        assertThatThrownBy(() -> cohortSyncService.resolveConflict(
+            cohortId, conflictId, ResolveConflictRequest.builder().action(ConflictResolutionAction.KEEP_INCOMING).build()))
+            .isInstanceOf(UnprocessableEntityException.class);
+
+        verify(labResultRepository, never()).save(any());
     }
 }
