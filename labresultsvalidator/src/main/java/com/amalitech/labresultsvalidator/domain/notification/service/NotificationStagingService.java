@@ -1,10 +1,10 @@
 package com.amalitech.labresultsvalidator.domain.notification.service;
 
-import com.amalitech.labresultsvalidator.domain.cohort.dto.RowIssueSummary;
-import com.amalitech.labresultsvalidator.domain.cohort.entity.IngestionRun;
-import com.amalitech.labresultsvalidator.domain.cohort.entity.InstructorContact;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.InstructorContactRepository;
-import com.amalitech.labresultsvalidator.domain.cohort.repository.IngestionRunRepository;
+import com.amalitech.labresultsvalidator.domain.grading.dto.RowIssueSummary;
+import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.grading.repository.IngestionRunRepository;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.event.SyncJobNotificationsStagedEvent;
