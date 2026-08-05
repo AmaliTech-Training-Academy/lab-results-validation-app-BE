@@ -57,7 +57,7 @@ class AuditLogControllerTest {
     void listIngestionRuns_returns200() throws Exception {
         UUID cohortId = UUID.randomUUID();
         IngestionRunAuditResponse run = new IngestionRunAuditResponse(
-            UUID.randomUUID(), cohortId, "BEM01.xlsx", "completed", "MANUAL", UUID.randomUUID(),
+            UUID.randomUUID(), cohortId, UUID.randomUUID(), "BEM01.xlsx", "completed", "MANUAL", UUID.randomUUID(),
             10, 8, 1, 1, 0, 0, false, 0.0, OffsetDateTime.now());
         when(auditLogService.listIngestionRuns(eq(cohortId), isNull(), isNull(), isNull(), isNull(), any()))
             .thenReturn(new PageImpl<>(List.of(run), PageRequest.of(0, 20), 1));
@@ -71,7 +71,7 @@ class AuditLogControllerTest {
     void getIngestionRunDetail_found_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         IngestionRunDetailResponse detail = new IngestionRunDetailResponse(
-            id, UUID.randomUUID(), "BEM01.xlsx", null, null, "partial", "SCHEDULED", null,
+            id, UUID.randomUUID(), UUID.randomUUID(), "BEM01.xlsx", null, null, "partial", "SCHEDULED", null,
             10, 8, 1, 1, 0, 0, false, 0.0, java.util.Map.of("rejectedRows", 1), OffsetDateTime.now());
         when(auditLogService.getIngestionRunDetail(id)).thenReturn(detail);
 

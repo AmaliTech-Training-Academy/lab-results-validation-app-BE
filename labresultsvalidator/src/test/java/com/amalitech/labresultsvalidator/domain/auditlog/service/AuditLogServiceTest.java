@@ -48,12 +48,14 @@ class AuditLogServiceTest {
     @Test
     void listIngestionRuns_passesFiltersThroughToRepository() {
         UUID cohortId = UUID.randomUUID();
+        UUID syncJobId = UUID.randomUUID();
         UUID instructorContactId = UUID.randomUUID();
         OffsetDateTime from = OffsetDateTime.now().minusDays(7);
         OffsetDateTime to = OffsetDateTime.now();
         IngestionRun run = IngestionRun.builder()
             .id(UUID.randomUUID())
             .cohortId(cohortId)
+            .syncJobId(syncJobId)
             .workbookFilename("BEM01.xlsx")
             .status("completed")
             .triggerType("MANUAL")
@@ -68,6 +70,7 @@ class AuditLogServiceTest {
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).workbookFilename()).isEqualTo("BEM01.xlsx");
+        assertThat(result.getContent().get(0).syncJobId()).isEqualTo(syncJobId);
     }
 
     @Test
