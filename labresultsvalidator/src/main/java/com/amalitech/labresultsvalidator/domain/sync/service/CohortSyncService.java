@@ -17,6 +17,7 @@ import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionConflict;
 import com.amalitech.labresultsvalidator.domain.auditlog.entity.LabReferenceAuditLog;
+import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
 import com.amalitech.labresultsvalidator.domain.grading.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.grading.ingestion.RowFingerprint;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -39,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -60,6 +62,7 @@ public class CohortSyncService {
     private final LabReferenceAuditLogRepository labReferenceAuditLogRepository;
     private final CohortSyncJobRunner syncJobRunner;
     private final SyncEventService syncEventService;
+    private final AuditEventService auditEventService;
 
     public CohortSyncJobResponse triggerSyncForCohort(UUID cohortId) {
         Cohort cohort = getEligibleCohort(cohortId);
@@ -147,7 +150,9 @@ public class CohortSyncService {
      */
     @Transactional
     public IngestionConflictResponse resolveConflict(UUID cohortId, UUID conflictId, ResolveConflictRequest request) {
-        IngestionConflict conflict = ingestionConflictRepository.findByIdAndCohortId(conflictId, cohortId)
+        // Row-level lock: without it, two concurrent resolve calls for the same conflict can both
+        // read PENDING before either commits, double-applying the resolution (see B10 race notes).
+        IngestionConflict conflict = ingestionConflictRepository.findByIdAndCohortIdForUpdate(conflictId, cohortId)
             .orElseThrow(() -> new ResourceNotFoundException(
                 "No conflict found with ID " + conflictId + " for cohort " + cohortId));
 
@@ -166,7 +171,17 @@ public class CohortSyncService {
         conflict.setResolvedAt(OffsetDateTime.now());
         conflict.setResolutionNote(request.getNote());
 
-        return IngestionConflictResponse.from(ingestionConflictRepository.save(conflict));
+        IngestionConflictResponse response = IngestionConflictResponse.from(ingestionConflictRepository.save(conflict));
+
+        Map<String, Object> auditPayload = new LinkedHashMap<>();
+        auditPayload.put("conflictId", conflictId.toString());
+        auditPayload.put("action", request.getAction().name());
+        auditPayload.put("note", request.getNote() != null ? request.getNote() : "");
+        auditEventService.record(
+            request.getAction() == ConflictResolutionAction.REJECT ? "CONFLICT_DISMISSED" : "CONFLICT_RESOLVED",
+            cohortId, actorId, auditPayload);
+
+        return response;
     }
 
     /**
@@ -175,13 +190,27 @@ public class CohortSyncService {
      */
     private void commitIncomingAsAuthoritative(IngestionConflict conflict, UUID actorId) {
         Map<String, Object> payload = IngestionConflictResponse.parsePayload(conflict.getIncomingPayloadJson());
-        LocalDate submittedOn = LocalDate.parse((String) payload.get("submittedOn"));
-        BigDecimal score = new BigDecimal((String) payload.get("score"));
-        String nspName = (String) payload.get("nspName");
-        Object instructorContactIdRaw = payload.get("instructorContactId");
-        UUID instructorContactId = instructorContactIdRaw != null
-            ? UUID.fromString((String) instructorContactIdRaw)
-            : null;
+
+        LocalDate submittedOn;
+        BigDecimal score;
+        String nspName;
+        UUID instructorContactId;
+        try {
+            submittedOn = LocalDate.parse((String) payload.get("submittedOn"));
+            score = new BigDecimal((String) payload.get("score"));
+            nspName = (String) payload.get("nspName");
+            Object instructorContactIdRaw = payload.get("instructorContactId");
+            instructorContactId = instructorContactIdRaw != null
+                ? UUID.fromString((String) instructorContactIdRaw)
+                : null;
+        } catch (NullPointerException | IllegalArgumentException | DateTimeParseException ex) {
+            // The stored payload is missing fields or unparseable — e.g. LabResultCommitService's
+            // own serialization fallback stored the `{"error":"serialization failed"}` sentinel
+            // instead of the real row. Surface a clean 422 instead of a raw NPE/500.
+            throw new UnprocessableEntityException(
+                "Conflict " + conflict.getId() + " has an incomplete or corrupted stored payload "
+                    + "and cannot be committed as authoritative. Reject it and re-sync the file instead.");
+        }
         String fingerprint = RowFingerprint.compute(submittedOn, score);
 
         if (conflict.getExistingResultId() != null) {
