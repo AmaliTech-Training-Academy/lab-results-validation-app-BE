@@ -151,6 +151,7 @@ public class GradingIngestionService {
                     entry.put("rule", String.valueOf(e.rule()));
                     entry.put("message", String.valueOf(e.message()));
                     entry.put("instructorContactId", e.instructorContactId());
+                    entry.put("labTitle", e.labTitle());
                     return entry;
                 })
                 .collect(Collectors.toList()));

@@ -55,8 +55,10 @@ public class ScoreRowParser {
             List<String> missing = ScoreSheetRowReader.findMissingColumns(headers);
             if (!missing.isEmpty()) {
                 for (String col : missing) {
+                    // Sheet-level: no row exists, so neither a reviewer nor a lab title does.
                     errors.add(new RowError(fileName, "sheet " + sheetName, "S2-MISSING-COLUMN",
-                        "Required column '" + col + "' not found in sheet '" + sheetName + "'.", null));
+                        "Required column '" + col + "' not found in sheet '" + sheetName + "'.",
+                        null, null));
                 }
                 continue;
             }

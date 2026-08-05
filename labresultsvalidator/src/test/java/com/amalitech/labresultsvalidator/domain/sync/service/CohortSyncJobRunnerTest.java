@@ -18,6 +18,7 @@ import com.amalitech.labresultsvalidator.domain.grading.sync.FetchOutcome;
 import com.amalitech.labresultsvalidator.domain.grading.sync.FetchedWorkbook;
 import com.amalitech.labresultsvalidator.domain.grading.sync.WorkbookFetchService;
 import com.amalitech.labresultsvalidator.domain.grading.sync.WorkbookParseException;
+import com.amalitech.labresultsvalidator.domain.notification.service.NotificationAlertService;
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationStagingService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemDetails;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
@@ -82,6 +83,8 @@ class CohortSyncJobRunnerTest {
     private GradingIngestionService gradingIngestionService;
     @Mock
     private NotificationStagingService notificationStagingService;
+    @Mock
+    private NotificationAlertService notificationAlertService;
 
     private CohortSyncJobRunner runner;
 
@@ -96,7 +99,8 @@ class CohortSyncJobRunnerTest {
         runner = new CohortSyncJobRunner(
             cohortRepository, syncJobRepository, syncFileRepository, syncEventService,
             sseRegistry, auditEventService, graphDriveService, sharePointProperties,
-            s3StorageService, workbookFetchService, gradingIngestionService, notificationStagingService
+            s3StorageService, workbookFetchService, gradingIngestionService, notificationStagingService,
+            notificationAlertService
         );
 
         cohortId = UUID.randomUUID();

@@ -5,6 +5,7 @@ import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityEx
 import com.amalitech.labresultsvalidator.common.service.EmailService;
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.notification.NotificationTypes;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.event.SyncJobNotificationsStagedEvent;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
@@ -114,8 +115,20 @@ public class NotificationDispatchService {
             return notification;
         }
 
-        String recipientEmail = resolveRecipientEmail(notification);
         notification.setSentBy(actorId);
+
+        if (!NotificationTypes.isEmailed(notification.getType())) {
+            // C5 AC2 — raised in-app on purpose and never emailed. SKIPPED is the terminal state for
+            // "we deliberately sent nothing", which is not the same thing as FAILED.
+            notification.setStatus("SKIPPED");
+            notification.setSentAt(OffsetDateTime.now());
+            notification.setErrorDetail(null);
+            LOG.info("[notification] {} type={} raised in-app only (no email by design)",
+                notification.getId(), notification.getType());
+            return notificationRepository.save(notification);
+        }
+
+        String recipientEmail = resolveRecipientEmail(notification);
 
         if (recipientEmail == null) {
             notification.setStatus("FAILED");
