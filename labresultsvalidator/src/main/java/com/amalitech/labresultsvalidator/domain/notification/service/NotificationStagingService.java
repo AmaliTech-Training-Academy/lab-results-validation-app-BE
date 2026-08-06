@@ -101,6 +101,13 @@ public class NotificationStagingService {
         // gets its admin digest. Only the instructor digests are conditional on there being issues.
         RunTotals totals = RunTotals.from(runs);
 
+        // B7 AC3 — a file where more than half its READY rows were rejected gets its own admin
+        // alert, independent of whether those rejected rows had a resolvable instructor. This is
+        // a data-quality signal (something about the sheet itself is wrong), not a per-row one.
+        List<IngestionRun> highFailureRuns = runs.stream()
+            .filter(IngestionRun::isHighFailureRate)
+            .toList();
+
         Map<UUID, List<RowIssueSummary>> byInstructor = allIssues.stream()
             .filter(i -> i.instructorContactId() != null)
             .collect(Collectors.groupingBy(RowIssueSummary::instructorContactId));
@@ -154,6 +161,9 @@ public class NotificationStagingService {
         } else {
             for (User admin : admins) {
                 toStage.add(buildAdminDigest(cohortId, syncJobId, admin, unattributed, totals));
+                if (!highFailureRuns.isEmpty()) {
+                    toStage.add(buildHighFailureRateDigest(cohortId, syncJobId, admin, highFailureRuns));
+                }
             }
         }
 
@@ -291,6 +301,64 @@ public class NotificationStagingService {
             return new RunTotals(runs.size(), rowsRead, committedNew, updatedCount, skippedInvalid,
                 skippedUnchanged, conflictsCount, List.copyOf(highFailureFiles));
         }
+    }
+
+    /**
+     * B7 AC3 — one bundled alert per sync job covering every file that crossed the 50%
+     * rejected-of-READY threshold, independent of the per-row instructor digests above. Staged for
+     * every active admin, like the run digest: a data-quality problem is not one admin's to notice.
+     */
+    private Notification buildHighFailureRateDigest(UUID cohortId, UUID syncJobId, User admin,
+                                                    List<IngestionRun> highFailureRuns) {
+        return Notification.builder()
+            .cohortId(cohortId)
+            .syncJobId(syncJobId)
+            .type("high_failure")
+            .recipientKind("admin")
+            .recipientUserId(admin.getId())
+            .dispatchPolicy("AUTO")
+            .subject("High failure rate — " + highFailureRuns.size() + " file(s) need review")
+            .body(provisionalBanner() + renderHighFailureRateBody(highFailureRuns))
+            .payloadJson(writeHighFailureRateJson(highFailureRuns))
+            .status("PENDING")
+            .build();
+    }
+
+    private String writeHighFailureRateJson(List<IngestionRun> runs) {
+        try {
+            List<Map<String, Object>> payload = runs.stream()
+                .map(run -> {
+                    Map<String, Object> entry = new LinkedHashMap<String, Object>();
+                    entry.put("ingestionRunId", run.getId());
+                    entry.put("file", run.getWorkbookFilename());
+                    entry.put("failureRatePercent", run.getFailureRatePercent());
+                    entry.put("rowsRead", run.getRowsRead());
+                    entry.put("skippedInvalid", run.getSkippedInvalid());
+                    return entry;
+                })
+                .toList();
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException ex) {
+            return "[]";
+        }
+    }
+
+    // Kept as a plain content fragment for the same reason as renderIssueTable below.
+    private String renderHighFailureRateBody(List<IngestionRun> runs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<table style=\"width:100%;border-collapse:collapse;\">");
+        sb.append("<tr><th>File</th><th>Failure rate</th><th>Rows read</th><th>Rejected</th></tr>");
+        for (IngestionRun run : runs) {
+            sb.append("<tr>")
+                .append("<td>").append(escape(run.getWorkbookFilename())).append("</td>")
+                .append("<td>").append(String.format(Locale.ROOT, "%.1f%%", run.getFailureRatePercent()))
+                .append("</td>")
+                .append("<td>").append(run.getRowsRead()).append("</td>")
+                .append("<td>").append(run.getSkippedInvalid()).append("</td>")
+                .append("</tr>");
+        }
+        sb.append("</table>");
+        return sb.toString();
     }
 
     private String writeIssuesJson(List<RowIssueSummary> issues) {

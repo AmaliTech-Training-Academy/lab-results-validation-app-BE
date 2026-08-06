@@ -178,6 +178,62 @@ class NotificationStagingServiceTest {
         assertThat(adminDigests().get(0).getBody()).contains("PROVISIONAL FORMAT", "Decision Log Q3");
     }
 
+    /**
+     * B7 AC3 — a flagged file raises its own {@code high_failure} digest even when every rejected
+     * row had a resolvable reviewer, because the signal is about the sheet, not the rows.
+     */
+    @Test
+    void stageForSyncJob_highFailureRateRun_stagesAHighFailureDigestForEveryAdmin() {
+        IngestionRun flagged = run(6, 1, 0, 4, 0, 0);
+        flagged.setWorkbookFilename("scores.xlsx");
+        flagged.setHighFailureRate(true);
+        flagged.setFailureRatePercent(66.7);
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(flagged));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        List<Notification> highFailure = digestsOfType("high_failure");
+        assertThat(highFailure).hasSize(2);
+        assertThat(highFailure).extracting(Notification::getRecipientUserId)
+            .containsExactlyInAnyOrder(adminOneId, adminTwoId);
+        assertThat(highFailure).allSatisfy(digest -> {
+            assertThat(digest.getRecipientKind()).isEqualTo("admin");
+            assertThat(digest.getDispatchPolicy()).isEqualTo("AUTO");
+            assertThat(digest.getStatus()).isEqualTo("PENDING");
+            assertThat(digest.getSubject()).contains("High failure rate");
+            assertThat(digest.getBody()).contains("scores.xlsx").contains("66.7%");
+        });
+    }
+
+    /** A flagged file and an unresolved reviewer are separate concerns and stay separate messages. */
+    @Test
+    void stageForSyncJob_highFailureAndUnattributedIssue_stagesBothDigestTypes() {
+        IngestionRun flagged = run(6, 1, 0, 4, 0, 0);
+        flagged.setHighFailureRate(true);
+        flagged.setErrorReportJson("""
+            [{"file":"scores.xlsx","location":"A2","rule":"R5-UNKNOWN-REVIEWER",
+              "message":"Unknown reviewer","instructorContactId":null,"labTitle":"REST API Basics"}]
+            """);
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(flagged));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        assertThat(staged()).extracting(Notification::getType)
+            .containsExactlyInAnyOrder("admin_run_digest", "admin_run_digest",
+                "high_failure", "high_failure");
+    }
+
+    @Test
+    void stageForSyncJob_noActiveAdmins_stagesNothingAndPublishesNothing() {
+        when(userRepository.findAllByRoleAndIsActiveTrue(UserRole.ADMIN)).thenReturn(List.of());
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(1, 1, 0, 0, 0, 0)));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        verify(notificationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+        verify(eventPublisher, never()).publishEvent(org.mockito.ArgumentMatchers.any());
+    }
+
     @Test
     void stageForSyncJob_noRunsForTheJob_stagesNothing() {
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of());

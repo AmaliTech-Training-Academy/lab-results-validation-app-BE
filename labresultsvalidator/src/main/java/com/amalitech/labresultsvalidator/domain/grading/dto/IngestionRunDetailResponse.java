@@ -12,6 +12,7 @@ import java.util.UUID;
 public record IngestionRunDetailResponse(
     UUID id,
     UUID cohortId,
+    UUID syncJobId,
     String workbookFilename,
     String sharepointFileUrl,
     String sharepointVersionId,
@@ -35,6 +36,7 @@ public record IngestionRunDetailResponse(
         return new IngestionRunDetailResponse(
             run.getId(),
             run.getCohortId(),
+            run.getSyncJobId(),
             run.getWorkbookFilename(),
             run.getSharepointFileUrl(),
             run.getSharepointVersionId(),
