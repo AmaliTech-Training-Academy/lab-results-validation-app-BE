@@ -18,6 +18,7 @@ import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
@@ -134,6 +135,18 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(
                         "A database error occurred while processing your request. "
                                 + "No changes were saved. Please try again."));
+    }
+
+    /**
+     * The client disconnected mid-response — most commonly a closed SSE/EventSource tab that our
+     * background heartbeat (see {@code NotificationSseRegistry}) or a live push then tries to write
+     * to. The container already knows the socket is gone; attempting to write any response body
+     * here (even an error one) would itself throw, since this response's Content-Type is likely
+     * already committed to something other than JSON. Log at debug and write nothing.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+        LOG.debug("[sse] client disconnected mid-response: {}", ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
