@@ -3,11 +3,13 @@ package com.amalitech.labresultsvalidator.domain.notification.service;
 import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.grading.repository.IngestionRunRepository;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.entity.NotificationSettings;
-import com.amalitech.labresultsvalidator.domain.notification.event.SyncJobNotificationsStagedEvent;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
+import com.amalitech.labresultsvalidator.domain.reference.dto.LabModuleName;
+import com.amalitech.labresultsvalidator.domain.reference.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,24 +19,28 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.lenient;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class NotificationStagingServiceTest {
 
     @Mock
     private IngestionRunRepository ingestionRunRepository;
+    @Mock
+    private LabRepository labRepository;
     @Mock
     private InstructorContactRepository instructorContactRepository;
     @Mock
@@ -50,114 +56,225 @@ class NotificationStagingServiceTest {
 
     private UUID cohortId;
     private UUID syncJobId;
-    private UUID actorId;
-    private User admin;
+    private UUID instructorId;
+    private UUID adminOneId;
+    private UUID adminTwoId;
 
     @BeforeEach
     void setUp() {
-        service = new NotificationStagingService(ingestionRunRepository, instructorContactRepository,
-            userRepository, notificationRepository, notificationSettingsService, eventPublisher,
-            new ObjectMapper());
+        service = new NotificationStagingService(ingestionRunRepository, labRepository,
+            instructorContactRepository, userRepository, notificationRepository,
+            notificationSettingsService, eventPublisher, new ObjectMapper(), true);
 
         cohortId = UUID.randomUUID();
         syncJobId = UUID.randomUUID();
-        actorId = UUID.randomUUID();
-        admin = User.builder().id(UUID.randomUUID()).email("admin@example.com").role(UserRole.ADMIN).build();
+        instructorId = UUID.randomUUID();
+        adminOneId = UUID.randomUUID();
+        adminTwoId = UUID.randomUUID();
 
-        lenient().when(notificationSettingsService.getSettings())
+        when(notificationSettingsService.getSettings())
             .thenReturn(NotificationSettings.builder().autoSendInstructorEmails(false).build());
+        when(labRepository.findLabModuleNamesByCohortId(cohortId))
+            .thenReturn(List.of(new LabModuleName("REST API Basics", "Backend Module 1")));
+        when(instructorContactRepository.findAllById(anyCollection())).thenReturn(List.of(
+            InstructorContact.builder().id(instructorId).instructorId("INS-001")
+                .fullName("Kofi Mensah").email("kofi@amalitech.com").isActive(true).build()));
+        when(userRepository.findAllByRoleAndIsActiveTrue(UserRole.ADMIN)).thenReturn(List.of(
+            User.builder().id(adminOneId).email("admin1@amalitech.com").passwordHash("h").build(),
+            User.builder().id(adminTwoId).email("admin2@amalitech.com").passwordHash("h").build()));
     }
 
-    private IngestionRun highFailureRun(String filename) {
-        return IngestionRun.builder()
-            .id(UUID.randomUUID())
-            .cohortId(cohortId)
-            .syncJobId(syncJobId)
-            .workbookFilename(filename)
-            .highFailureRate(true)
-            .failureRatePercent(66.7)
-            .rowsRead(9)
-            .skippedInvalid(6)
-            .errorReportJson(null)
-            .build();
-    }
-
+    /** C4 AC1 — every active admin gets their own digest, not one standing in for the rest. */
     @Test
-    void stageForSyncJob_highFailureRateRun_stagesAdminNotificationEvenWithNoRowIssues() {
-        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(highFailureRun("scores.xlsx")));
-        when(userRepository.findFirstByRoleAndIsActiveTrueOrderByCreatedAtAsc(UserRole.ADMIN))
-            .thenReturn(Optional.of(admin));
-        when(notificationRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+    void stageForSyncJob_adminDigest_isStagedForEveryActiveAdmin() {
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(10, 4, 2, 1, 3, 0)));
 
-        service.stageForSyncJob(cohortId, syncJobId, actorId);
+        service.stageForSyncJob(cohortId, syncJobId, null);
 
-        ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
-        verify(notificationRepository).saveAll(captor.capture());
-        List<Notification> staged = captor.getValue();
-
-        assertThat(staged).hasSize(1);
-        Notification notification = staged.get(0);
-        assertThat(notification.getType()).isEqualTo("high_failure");
-        assertThat(notification.getRecipientKind()).isEqualTo("admin");
-        assertThat(notification.getRecipientUserId()).isEqualTo(admin.getId());
-        assertThat(notification.getDispatchPolicy()).isEqualTo("AUTO");
-        assertThat(notification.getStatus()).isEqualTo("PENDING");
-        assertThat(notification.getSubject()).contains("High failure rate");
-        assertThat(notification.getBody()).contains("scores.xlsx").contains("66.7%");
-        verify(eventPublisher).publishEvent(any(SyncJobNotificationsStagedEvent.class));
+        assertThat(adminDigests()).hasSize(2);
+        assertThat(adminDigests()).extracting(Notification::getRecipientUserId)
+            .containsExactlyInAnyOrder(adminOneId, adminTwoId);
+        assertThat(adminDigests()).allSatisfy(digest ->
+            assertThat(digest.getDispatchPolicy()).isEqualTo("AUTO"));
     }
 
+    /** C4 AC1 — "given a run completes", so a run with nothing wrong still reports its counts. */
     @Test
-    void stageForSyncJob_highFailureRateButNoActiveAdmin_stagesNothingAndPublishesNothing() {
-        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(highFailureRun("scores.xlsx")));
-        when(userRepository.findFirstByRoleAndIsActiveTrueOrderByCreatedAtAsc(UserRole.ADMIN))
-            .thenReturn(Optional.empty());
+    void stageForSyncJob_cleanRunWithNoIssues_stillStagesTheAdminDigest() {
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(10, 10, 0, 0, 0, 0)));
 
-        service.stageForSyncJob(cohortId, syncJobId, actorId);
+        service.stageForSyncJob(cohortId, syncJobId, null);
 
-        verify(notificationRepository, never()).saveAll(any());
-        verify(eventPublisher, never()).publishEvent(any());
+        assertThat(adminDigests()).hasSize(2);
+        assertThat(adminDigests().get(0).getBody()).contains("Rows read", "Skipped");
     }
 
+    /** C4 AC1 — all six counts, summed across the run's files, plus the high-failure roll-up. */
     @Test
-    void stageForSyncJob_noIssuesAndNoHighFailureRate_stagesNothing() {
-        IngestionRun cleanRun = IngestionRun.builder()
-            .id(UUID.randomUUID())
-            .cohortId(cohortId)
-            .syncJobId(syncJobId)
-            .workbookFilename("clean.xlsx")
-            .highFailureRate(false)
-            .errorReportJson(null)
-            .build();
-        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(cleanRun));
+    void stageForSyncJob_adminDigestBody_carriesAllSixCountsAndHighFailureFiles() {
+        IngestionRun flagged = run(6, 1, 0, 4, 1, 2);
+        flagged.setHighFailureRate(true);
+        flagged.setWorkbookFilename("Messy.xlsx");
+        when(ingestionRunRepository.findBySyncJobId(syncJobId))
+            .thenReturn(List.of(run(10, 4, 2, 1, 3, 0), flagged));
 
-        service.stageForSyncJob(cohortId, syncJobId, actorId);
+        service.stageForSyncJob(cohortId, syncJobId, null);
 
-        verify(notificationRepository, never()).saveAll(any());
-        verify(eventPublisher, never()).publishEvent(any());
-        verify(userRepository, never()).findFirstByRoleAndIsActiveTrueOrderByCreatedAtAsc(any());
+        Notification digest = adminDigests().get(0);
+        assertThat(digest.getSubject()).contains("2 file(s)", "16 row(s) read");
+        assertThat(digest.getBody())
+            .contains("Rows read")
+            .contains("Skipped — invalid")
+            .contains("Skipped — unchanged")
+            .contains("Conflicts awaiting resolution")
+            .contains("Files flagged high-failure")
+            .contains("Messy.xlsx");
+        assertThat(digest.getPayloadJson()).contains("\"rowsRead\":16", "\"skippedUnchanged\":4");
     }
 
+    /** C3 AC2 — rejected rows are grouped under their module, with the run date stated. */
     @Test
-    void stageForSyncJob_highFailureRateAndUnattributedIssue_stagesTwoDistinctAdminNotifications() {
-        String issuesJson = "[{\"file\":\"scores.xlsx\",\"location\":\"A2\",\"rule\":\"R5-UNKNOWN-REVIEWER\","
-            + "\"message\":\"Unknown reviewer\",\"instructorContactId\":null}]";
-        IngestionRun run = highFailureRun("scores.xlsx");
-        run.setErrorReportJson(issuesJson);
-
+    void stageForSyncJob_instructorDigest_groupsRowsByModuleAndStatesTheRunDate() {
+        IngestionRun run = run(2, 0, 0, 2, 0, 0);
+        run.setRunAt(OffsetDateTime.parse("2026-08-03T10:00:00Z"));
+        run.setErrorReportJson("""
+            [{"file":"Backend.xlsx","location":"sheet BEM01 row 4","rule":"F2-INVALID-SCORE",
+              "message":"not numeric","instructorContactId":"%s","labTitle":"REST API Basics"},
+             {"file":"Backend.xlsx","location":"sheet BEM01 row 5","rule":"R1-UNKNOWN-NSP",
+              "message":"unknown NSP","instructorContactId":"%s","labTitle":"Mystery Lab"}]
+            """.formatted(instructorId, instructorId));
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run));
-        when(userRepository.findFirstByRoleAndIsActiveTrueOrderByCreatedAtAsc(UserRole.ADMIN))
-            .thenReturn(Optional.of(admin));
-        when(notificationRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.stageForSyncJob(cohortId, syncJobId, actorId);
+        service.stageForSyncJob(cohortId, syncJobId, null);
 
+        Notification digest = digestsOfType("instructor_digest").get(0);
+        assertThat(digest.getBody())
+            .contains("Run of 2026-08-03")
+            .contains("Backend Module 1")
+            // A lab title matching no configured lab must not be silently dropped.
+            .contains("Unmatched labs")
+            .contains("Rejected: 1");
+    }
+
+    /** C11 AC1 — provisional while the flag is set; nothing when sign-off flips it off. */
+    @Test
+    void stageForSyncJob_provisionalFlagOff_omitsTheBanner() {
+        service = new NotificationStagingService(ingestionRunRepository, labRepository,
+            instructorContactRepository, userRepository, notificationRepository,
+            notificationSettingsService, eventPublisher, new ObjectMapper(), false);
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(1, 1, 0, 0, 0, 0)));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        assertThat(adminDigests().get(0).getBody()).doesNotContain("PROVISIONAL FORMAT");
+    }
+
+    @Test
+    void stageForSyncJob_provisionalFlagOn_rendersTheBanner() {
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(1, 1, 0, 0, 0, 0)));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        assertThat(adminDigests().get(0).getBody()).contains("PROVISIONAL FORMAT", "Decision Log Q3");
+    }
+
+    /**
+     * B7 AC3 — a flagged file raises its own {@code high_failure} digest even when every rejected
+     * row had a resolvable reviewer, because the signal is about the sheet, not the rows.
+     */
+    @Test
+    void stageForSyncJob_highFailureRateRun_stagesAHighFailureDigestForEveryAdmin() {
+        IngestionRun flagged = run(6, 1, 0, 4, 0, 0);
+        flagged.setWorkbookFilename("scores.xlsx");
+        flagged.setHighFailureRate(true);
+        flagged.setFailureRatePercent(66.7);
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(flagged));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        List<Notification> highFailure = digestsOfType("high_failure");
+        assertThat(highFailure).hasSize(2);
+        assertThat(highFailure).extracting(Notification::getRecipientUserId)
+            .containsExactlyInAnyOrder(adminOneId, adminTwoId);
+        assertThat(highFailure).allSatisfy(digest -> {
+            assertThat(digest.getRecipientKind()).isEqualTo("admin");
+            assertThat(digest.getDispatchPolicy()).isEqualTo("AUTO");
+            assertThat(digest.getStatus()).isEqualTo("PENDING");
+            assertThat(digest.getSubject()).contains("High failure rate");
+            assertThat(digest.getBody()).contains("scores.xlsx").contains("66.7%");
+        });
+    }
+
+    /** A flagged file and an unresolved reviewer are separate concerns and stay separate messages. */
+    @Test
+    void stageForSyncJob_highFailureAndUnattributedIssue_stagesBothDigestTypes() {
+        IngestionRun flagged = run(6, 1, 0, 4, 0, 0);
+        flagged.setHighFailureRate(true);
+        flagged.setErrorReportJson("""
+            [{"file":"scores.xlsx","location":"A2","rule":"R5-UNKNOWN-REVIEWER",
+              "message":"Unknown reviewer","instructorContactId":null,"labTitle":"REST API Basics"}]
+            """);
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(flagged));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        assertThat(staged()).extracting(Notification::getType)
+            .containsExactlyInAnyOrder("admin_run_digest", "admin_run_digest",
+                "high_failure", "high_failure");
+    }
+
+    @Test
+    void stageForSyncJob_noActiveAdmins_stagesNothingAndPublishesNothing() {
+        when(userRepository.findAllByRoleAndIsActiveTrue(UserRole.ADMIN)).thenReturn(List.of());
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(1, 1, 0, 0, 0, 0)));
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        verify(notificationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+        verify(eventPublisher, never()).publishEvent(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void stageForSyncJob_noRunsForTheJob_stagesNothing() {
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of());
+
+        service.stageForSyncJob(cohortId, syncJobId, null);
+
+        verify(notificationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+    }
+
+    // ── fixtures ──────────────────────────────────────────────────────────────
+
+    @SuppressWarnings("unchecked")
+    private List<Notification> staged() {
         ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
         verify(notificationRepository).saveAll(captor.capture());
-        List<Notification> staged = captor.getValue();
+        return captor.getValue();
+    }
 
-        assertThat(staged).extracting(Notification::getType)
-            .containsExactlyInAnyOrder("admin_run_digest", "high_failure");
-        assertThat(staged).allMatch(n -> n.getRecipientUserId().equals(admin.getId()));
+    private List<Notification> adminDigests() {
+        return digestsOfType("admin_run_digest");
+    }
+
+    private List<Notification> digestsOfType(String type) {
+        return staged().stream().filter(n -> type.equals(n.getType())).toList();
+    }
+
+    private IngestionRun run(int rowsRead, int committedNew, int updatedCount, int skippedInvalid,
+                             int skippedUnchanged, int conflictsCount) {
+        IngestionRun run = IngestionRun.builder()
+            .id(UUID.randomUUID())
+            .cohortId(cohortId)
+            .syncJobId(syncJobId)
+            .workbookFilename("Backend.xlsx")
+            .build();
+        run.setStatus("completed");
+        run.setRowsRead(rowsRead);
+        run.setCommittedNew(committedNew);
+        run.setUpdatedCount(updatedCount);
+        run.setSkippedInvalid(skippedInvalid);
+        run.setSkippedUnchanged(skippedUnchanged);
+        run.setConflictsCount(conflictsCount);
+        return run;
     }
 }

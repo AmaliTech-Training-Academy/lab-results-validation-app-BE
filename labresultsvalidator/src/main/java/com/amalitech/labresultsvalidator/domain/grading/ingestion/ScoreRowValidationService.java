@@ -209,7 +209,8 @@ public class ScoreRowValidationService {
     }
 
     private RowError fieldError(ParsedScoreRow row, String rule, String message, UUID instructorContactId) {
-        return new RowError(row.fileName(), row.location(), rule, message, instructorContactId);
+        return new RowError(row.fileName(), row.location(), rule, message, instructorContactId,
+            row.labTitle());
     }
 
     private boolean isBlank(String value) {

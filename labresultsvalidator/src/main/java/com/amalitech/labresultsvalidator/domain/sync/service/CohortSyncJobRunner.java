@@ -17,6 +17,7 @@ import com.amalitech.labresultsvalidator.domain.grading.sync.FetchOutcome;
 import com.amalitech.labresultsvalidator.domain.grading.sync.FetchedWorkbook;
 import com.amalitech.labresultsvalidator.domain.grading.sync.WorkbookFetchService;
 import com.amalitech.labresultsvalidator.domain.grading.sync.WorkbookParseException;
+import com.amalitech.labresultsvalidator.domain.notification.service.NotificationAlertService;
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationStagingService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemDetails;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
@@ -86,6 +87,7 @@ public class CohortSyncJobRunner {
     private final WorkbookFetchService workbookFetchService;
     private final GradingIngestionService gradingIngestionService;
     private final NotificationStagingService notificationStagingService;
+    private final NotificationAlertService notificationAlertService;
 
     @Async("syncTaskExecutor")
     public void run(UUID cohortId, UUID jobId, UUID actorId) {
@@ -131,6 +133,10 @@ public class CohortSyncJobRunner {
             // rather than sharing the outer one.
             try {
                 notificationStagingService.stageForSyncJob(cohortId, jobId, actorId);
+                if (counts.conflicts > 0) {
+                    // C5 AC1 — dispatched immediately rather than held for the digest.
+                    notificationAlertService.alertConflictsPending(cohortId, jobId, counts.conflicts);
+                }
             } catch (Exception ex) {
                 LOG.warn("[sync] job={} cohort={} notification staging failed: {}",
                     jobId, cohortId, ex.getMessage(), ex);
@@ -369,6 +375,11 @@ public class CohortSyncJobRunner {
                 if (ingestionRun != null && ingestionRun.isHighFailureRate()) {
                     raiseHighFailureRateAlert(cohort, jobId, fileName, ingestionRun, actorId);
                 }
+                if (ingestionRun != null) {
+                    // Tallied across the run so C5 AC1's conflict alert is one email per run rather
+                    // than one per workbook that happened to contain a duplicate.
+                    counts.conflicts += ingestionRun.getConflictsCount();
+                }
             } catch (RuntimeException ex) {
                 LOG.warn("[sync] job={} grading ingestion failed for '{}': {}",
                     jobId, fileName, ex.getMessage());
@@ -430,6 +441,10 @@ public class CohortSyncJobRunner {
             "updatedCount", run.getUpdatedCount());
         syncEventService.emit(jobId, "file.high_failure_rate", payload);
         auditEventService.record("HIGH_FAILURE_RATE", cohort.getId(), actorId, payload);
+
+        // The admin-facing high_failure notification is staged once per run by
+        // NotificationStagingService (B7 AC3), covering every flagged file in one message. Alerting
+        // again here would send a second notification of the same type for the same condition.
     }
 
     private void countChanged(SyncFileChangeState state, SyncCounts counts) {
@@ -508,6 +523,8 @@ public class CohortSyncJobRunner {
         private int changed;
         private int unchanged;
         private int failed;
+        /** Rows queued for conflict resolution across every workbook in the run (C5 AC1). */
+        private int conflicts;
 
         private int filesSeen() {
             return newFiles + changed + unchanged + failed;

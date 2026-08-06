@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.standup.service;
 import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
 
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
+import com.amalitech.labresultsvalidator.domain.notification.service.NotificationAlertService;
 import com.amalitech.labresultsvalidator.domain.standup.entity.CohortGate4Job;
 import com.amalitech.labresultsvalidator.domain.standup.entity.CohortGate4JobStatus;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
@@ -60,6 +61,8 @@ class Gate4JobRunnerTest {
     private GraphDriveService graphDriveService;
     @Mock
     private SharePointProperties sharePointProperties;
+    @Mock
+    private NotificationAlertService notificationAlertService;
 
     private Gate4JobRunner runner;
 
@@ -72,7 +75,8 @@ class Gate4JobRunnerTest {
     @BeforeEach
     void setUp() {
         runner = new Gate4JobRunner(gate4Validator, gate4EventService, sseRegistry, gate4JobRepository,
-            cohortRepository, auditEventService, graphDriveService, sharePointProperties);
+            cohortRepository, auditEventService, graphDriveService, sharePointProperties,
+            notificationAlertService);
 
         cohortId = UUID.randomUUID();
         jobId = UUID.randomUUID();

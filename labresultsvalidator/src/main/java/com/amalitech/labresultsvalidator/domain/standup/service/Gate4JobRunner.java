@@ -9,6 +9,7 @@ import com.amalitech.labresultsvalidator.domain.standup.gate.Gate4Result;
 import com.amalitech.labresultsvalidator.domain.standup.gate.Gate4ScoreSheetValidator;
 import com.amalitech.labresultsvalidator.domain.standup.repository.CohortGate4JobRepository;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
+import com.amalitech.labresultsvalidator.domain.notification.service.NotificationAlertService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointProperties;
@@ -38,6 +39,7 @@ public class Gate4JobRunner {
     private final AuditEventService auditEventService;
     private final GraphDriveService graphDriveService;
     private final SharePointProperties sharePointProperties;
+    private final NotificationAlertService notificationAlertService;
 
     @Async("standupTaskExecutor")
     public void run(UUID cohortId, UUID jobId, UUID actorId) {
@@ -78,12 +80,18 @@ public class Gate4JobRunner {
                 auditEventService.record("STOOD_UP", cohortId, actorId,
                     Map.of("cohortName", cohort.getName()));
                 LOG.info("[gate4] job={} cohort={} COMPLETED — all score sheets valid", jobId, cohortId);
+                // C5 AC2 — in-app confirmation, no email.
+                stageAlert(() -> notificationAlertService.confirmStoodUp(cohortId),
+                    cohortId, jobId);
             } else {
                 LOG.warn("[gate4] job={} cohort={} FAILED — score sheet errors found", jobId, cohortId);
                 // Matches gates 1-3's convention (StandupPipelineService) so GATE_FAILED rows are
                 // distinguished by the "gate" payload key rather than a separate event type.
                 auditEventService.record("GATE_FAILED", cohortId, actorId,
                     Map.of("gate", 4, "errors", result.gate().errors()));
+                // C5 AC1 — this branch previously reached nobody outside the audit log.
+                stageAlert(() -> notificationAlertService.alertStandupFailure(cohortId,
+                    "Gate 4 (score sheets)", result.gate().errors()), cohortId, jobId);
             }
         } catch (Exception ex) {
             LOG.error("[gate4] job={} cohort={} FAILED unexpectedly: {}", jobId, cohortId, ex.getMessage(), ex);
@@ -100,5 +108,15 @@ public class Gate4JobRunner {
             job.setCompletedAt(OffsetDateTime.now());
             gate4JobRepository.save(job);
         });
+    }
+
+    /** A notification must never be able to change the gate's outcome. */
+    private void stageAlert(Runnable staging, UUID cohortId, UUID jobId) {
+        try {
+            staging.run();
+        } catch (RuntimeException ex) {
+            LOG.error("[gate4] job={} cohort={} could not stage notification: {}",
+                jobId, cohortId, ex.getMessage(), ex);
+        }
     }
 }

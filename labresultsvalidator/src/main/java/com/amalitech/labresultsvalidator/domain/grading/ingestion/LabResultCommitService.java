@@ -89,8 +89,10 @@ public class LabResultCommitService {
             } catch (RuntimeException ex) {
                 LOG.warn("[ingestion] could not commit row {}: {}", classification.row().location(),
                     ex.getMessage());
+                // No labTitle: a validated row carries the resolved labId, not the raw title cell. The
+                // digest falls back to "module unknown" for these, which is rare (a commit failure).
                 rowErrors.add(new RowError(classification.row().fileName(), classification.row().location(),
-                    "COMMIT-FAILED", ex.getMessage(), classification.row().instructorContactId()));
+                    "COMMIT-FAILED", ex.getMessage(), classification.row().instructorContactId(), null));
                 skippedInvalid++;
             }
         }
