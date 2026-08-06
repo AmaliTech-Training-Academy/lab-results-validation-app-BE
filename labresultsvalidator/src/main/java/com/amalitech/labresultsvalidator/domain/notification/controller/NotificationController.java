@@ -7,6 +7,7 @@ import com.amalitech.labresultsvalidator.domain.notification.dto.UpdateNotificat
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationDispatchService;
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationQueryService;
 import com.amalitech.labresultsvalidator.domain.notification.service.NotificationSettingsService;
+import com.amalitech.labresultsvalidator.domain.notification.service.NotificationSseRegistry;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -17,6 +18,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.UUID;
 
@@ -40,6 +43,22 @@ public class NotificationController {
     private final NotificationQueryService notificationQueryService;
     private final NotificationDispatchService notificationDispatchService;
     private final NotificationSettingsService notificationSettingsService;
+    private final NotificationSseRegistry notificationSseRegistry;
+
+    @Operation(
+        summary = "Stream live notification status updates",
+        description = "Opens an SSE stream that broadcasts a notification.updated event (the same shape "
+            + "as GET /{id}) to every connected client whenever any notification's status changes — "
+            + "auto-dispatch after a sync run, manual send/retry, send-all, or dismiss. Unlike the "
+            + "cohort/sync/standup job streams, this is a broadcast: every connected client gets every "
+            + "update, there is no per-notification scoping, and there is no replay of events missed while "
+            + "disconnected — reconcile with GET / on (re)connect. Pass the JWT via ?token= since browser "
+            + "EventSource cannot send Authorization headers."
+    )
+    @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        return notificationSseRegistry.register();
+    }
 
     @Operation(summary = "List notifications",
         description = "Returns a paginated list of staged notifications, newest first. Optionally filter by "

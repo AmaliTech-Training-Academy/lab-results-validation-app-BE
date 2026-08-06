@@ -6,11 +6,13 @@ import com.amalitech.labresultsvalidator.common.service.EmailService;
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
 import com.amalitech.labresultsvalidator.domain.notification.NotificationTypes;
+import com.amalitech.labresultsvalidator.domain.notification.dto.NotificationResponse;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.event.SyncJobNotificationsStagedEvent;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +41,8 @@ public class NotificationDispatchService {
     private final InstructorContactRepository instructorContactRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final NotificationSseRegistry sseRegistry;
+    private final ObjectMapper objectMapper;
 
     /** Auto-dispatch: fires once the staging transaction that produced these rows has committed. */
     @Async("emailTaskExecutor")
@@ -125,7 +129,7 @@ public class NotificationDispatchService {
             notification.setErrorDetail(null);
             LOG.info("[notification] {} type={} raised in-app only (no email by design)",
                 notification.getId(), notification.getType());
-            return notificationRepository.save(notification);
+            return saveAndBroadcast(notification);
         }
 
         String recipientEmail = resolveRecipientEmail(notification);
@@ -133,7 +137,7 @@ public class NotificationDispatchService {
         if (recipientEmail == null) {
             notification.setStatus("FAILED");
             notification.setErrorDetail("Could not resolve a recipient email address.");
-            return notificationRepository.save(notification);
+            return saveAndBroadcast(notification);
         }
 
         try {
@@ -148,7 +152,7 @@ public class NotificationDispatchService {
             notification.setStatus("FAILED");
             notification.setErrorDetail(ex.getMessage());
         }
-        return notificationRepository.save(notification);
+        return saveAndBroadcast(notification);
     }
 
     /**
@@ -171,7 +175,20 @@ public class NotificationDispatchService {
         notification.setStatus("SKIPPED");
         notification.setDismissedBy(actorId);
         notification.setDismissedAt(OffsetDateTime.now());
-        return notificationRepository.save(notification);
+        return saveAndBroadcast(notification);
+    }
+
+    /**
+     * Saves the status change and pushes it to every client connected to
+     * {@code GET /api/v1/notifications/stream} as a {@code notification.updated} event carrying the
+     * same shape as the REST resource, so the frontend can patch its list in place instead of
+     * re-polling. One event name for every transition (SENT/FAILED/SKIPPED) — consumers key off the
+     * {@code status} field in the payload rather than the event name.
+     */
+    private Notification saveAndBroadcast(Notification notification) {
+        Notification saved = notificationRepository.save(notification);
+        sseRegistry.broadcast("notification.updated", NotificationResponse.from(saved, objectMapper));
+        return saved;
     }
 
     private String resolveRecipientEmail(Notification notification) {

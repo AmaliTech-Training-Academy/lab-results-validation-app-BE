@@ -7,6 +7,7 @@ import com.amalitech.labresultsvalidator.domain.instructor.repository.Instructor
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,10 @@ class NotificationDispatchServiceTest {
     private UserRepository userRepository;
     @Mock
     private EmailService emailService;
+    @Mock
+    private NotificationSseRegistry sseRegistry;
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private NotificationDispatchService notificationDispatchService;

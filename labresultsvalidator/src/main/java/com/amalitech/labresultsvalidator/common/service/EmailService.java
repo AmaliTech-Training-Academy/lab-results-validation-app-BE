@@ -4,6 +4,8 @@ import com.amalitech.labresultsvalidator.domain.user.event.AdminProvisionedEvent
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -38,6 +40,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class EmailService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(EmailService.class);
+
     private final JavaMailSender mailSender;
 
     @Value("${spring.mail.username}")
@@ -53,6 +57,7 @@ public class EmailService {
     @Async("emailTaskExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onAdminProvisioned(AdminProvisionedEvent event) {
+        LOG.info("[email] admin-provisioned welcome email queued to={}", event.email());
         dispatch(
             event.email(),
             "Welcome to Amalitech Training Validata — Your Account Details",
@@ -66,6 +71,7 @@ public class EmailService {
 
     @Async("emailTaskExecutor")
     public void sendPasswordResetEmail(String toEmail, String resetLink) {
+        LOG.info("[email] password-reset email queued to={}", toEmail);
         dispatch(
             toEmail,
             "AmalitechTraining — Password Reset Request",
@@ -84,6 +90,7 @@ public class EmailService {
      */
     @Async("emailTaskExecutor")
     public void sendPlainEmail(String toEmail, String subject, String htmlContent) {
+        LOG.info("[email] async plain email queued to={} subject={}", toEmail, subject);
         dispatch(toEmail, subject, buildHtmlEmail(htmlContent, frontendUrl, "Open Validata"));
     }
 
@@ -93,6 +100,7 @@ public class EmailService {
      * fire-and-forget would hide the result from the request that triggered it.
      */
     public void sendPlainEmailSync(String toEmail, String subject, String htmlContent) {
+        LOG.info("[email] sync plain email queued to={} subject={}", toEmail, subject);
         dispatch(toEmail, subject, buildHtmlEmail(htmlContent, frontendUrl, "Open Validata"));
     }
 
@@ -107,6 +115,8 @@ public class EmailService {
     }
 
     private void dispatch(String to, String subject, String htmlBody) {
+        long start = System.currentTimeMillis();
+        LOG.debug("[email] dispatch starting to={} subject={} from={}", to, subject, fromEmail);
         MimeMessage message = mailSender.createMimeMessage();
         try {
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
@@ -118,8 +128,15 @@ public class EmailService {
                 helper.addInline(entry.getKey(), new ClassPathResource(entry.getValue()));
             }
             mailSender.send(message);
+            LOG.info("[email] sent to={} subject={} elapsed={}ms", to, subject, System.currentTimeMillis() - start);
         } catch (MessagingException e) {
+            LOG.error("[email] failed to send to={} subject={} elapsed={}ms: {}",
+                to, subject, System.currentTimeMillis() - start, e.getMessage(), e);
             throw new RuntimeException("Failed to send email to " + to, e);
+        } catch (RuntimeException e) {
+            LOG.error("[email] unexpected failure sending to={} subject={} elapsed={}ms: {}",
+                to, subject, System.currentTimeMillis() - start, e.getMessage(), e);
+            throw e;
         }
     }
 
@@ -139,7 +156,9 @@ public class EmailService {
                     try (InputStream in = new ClassPathResource("templates/email-template.html")
                             .getInputStream()) {
                         template = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                        LOG.debug("[email] template loaded ({} bytes)", template.length());
                     } catch (IOException e) {
+                        LOG.error("[email] failed to load email template: {}", e.getMessage(), e);
                         throw new RuntimeException("Failed to load email template", e);
                     }
                 }
