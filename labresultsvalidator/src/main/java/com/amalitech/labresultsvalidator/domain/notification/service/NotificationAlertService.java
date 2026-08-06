@@ -73,35 +73,6 @@ public class NotificationAlertService {
             "Stand-up failed — " + cohortName + " (" + gateLabel + ")", body, payload);
     }
 
-    /** C5 AC1 — a workbook where more than half its graded rows were rejected. */
-    public void alertHighFailureRate(UUID cohortId, UUID syncJobId, UUID ingestionRunId,
-                                     String fileName, double failureRatePercent, int rowsRead,
-                                     int skippedInvalid) {
-        String cohortName = cohortName(cohortId);
-        String rate = String.format(java.util.Locale.ROOT, "%.1f%%", failureRatePercent);
-
-        String body = renderAlert(
-            "High rejection rate — " + fileName,
-            "More than half the graded rows in this workbook were rejected. Valid rows were still "
-                + "committed, but the sheet needs attention.",
-            details("Cohort", cohortName,
-                "Workbook", fileName,
-                "Rejection rate", rate,
-                "Rows read", String.valueOf(rowsRead),
-                "Rows rejected", String.valueOf(skippedInvalid)),
-            List.of());
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("cohortName", cohortName);
-        payload.put("file", fileName);
-        payload.put("failureRatePercent", failureRatePercent);
-        payload.put("rowsRead", rowsRead);
-        payload.put("skippedInvalid", skippedInvalid);
-
-        stageForAllAdmins(NotificationTypes.HIGH_FAILURE, cohortId, syncJobId, ingestionRunId,
-            "High rejection rate — " + fileName + " (" + cohortName + ")", body, payload);
-    }
-
     /** C5 AC1 — duplicates queued for resolution. One alert per run, however many files produced them. */
     public void alertConflictsPending(UUID cohortId, UUID syncJobId, int conflictCount) {
         String cohortName = cohortName(cohortId);

@@ -95,20 +95,6 @@ class NotificationAlertServiceTest {
     }
 
     @Test
-    void alertHighFailureRate_carriesTheRunReferenceAndRate() {
-        UUID ingestionRunId = UUID.randomUUID();
-
-        service.alertHighFailureRate(cohortId, syncJobId, ingestionRunId, "Messy.xlsx", 70.0, 10, 7);
-
-        Notification notification = staged(2).get(0);
-        assertThat(notification.getType()).isEqualTo("high_failure");
-        assertThat(notification.getSyncJobId()).isEqualTo(syncJobId);
-        assertThat(notification.getIngestionRunId()).isEqualTo(ingestionRunId);
-        assertThat(notification.getBody()).contains("70.0%", "Messy.xlsx");
-        assertThat(notification.getPayloadJson()).contains("\"skippedInvalid\":7");
-    }
-
-    @Test
     void alertConflictsPending_namesTheConflictCount() {
         service.alertConflictsPending(cohortId, syncJobId, 3);
 

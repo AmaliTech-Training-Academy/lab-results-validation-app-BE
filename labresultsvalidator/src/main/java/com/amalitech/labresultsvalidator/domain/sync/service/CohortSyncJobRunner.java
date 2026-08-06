@@ -442,14 +442,9 @@ public class CohortSyncJobRunner {
         syncEventService.emit(jobId, "file.high_failure_rate", payload);
         auditEventService.record("HIGH_FAILURE_RATE", cohort.getId(), actorId, payload);
 
-        // C5 AC1 — dispatched to admins immediately, not held for the run digest.
-        try {
-            notificationAlertService.alertHighFailureRate(cohort.getId(), jobId, run.getId(), fileName,
-                run.getFailureRatePercent(), run.getRowsRead(), run.getSkippedInvalid());
-        } catch (RuntimeException ex) {
-            LOG.error("[sync] job={} could not stage high-failure alert for '{}': {}",
-                jobId, fileName, ex.getMessage(), ex);
-        }
+        // The admin-facing high_failure notification is staged once per run by
+        // NotificationStagingService (B7 AC3), covering every flagged file in one message. Alerting
+        // again here would send a second notification of the same type for the same condition.
     }
 
     private void countChanged(SyncFileChangeState state, SyncCounts counts) {
