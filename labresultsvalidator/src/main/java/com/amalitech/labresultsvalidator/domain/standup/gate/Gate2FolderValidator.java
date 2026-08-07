@@ -35,7 +35,7 @@ public class Gate2FolderValidator {
         } catch (GraphAccessException ex) {
             return new Gate2Result(
                 GateResult.fail(null, null, "G2-ACCESS",
-                    "Cannot list contents of the cohort folder. Check LabGate permissions."),
+                    "Cannot list contents of the cohort folder. Check Validata permissions."),
                 null, null
             );
         }

@@ -72,7 +72,7 @@ public class NotificationStagingService {
         NotificationSettingsService notificationSettingsService,
         ApplicationEventPublisher eventPublisher,
         ObjectMapper objectMapper,
-        @Value("${labgate.notification.formats-provisional:true}") boolean formatsProvisional
+        @Value("${validata.notification.formats-provisional:true}") boolean formatsProvisional
     ) {
         this.ingestionRunRepository = ingestionRunRepository;
         this.labRepository = labRepository;
@@ -255,7 +255,7 @@ public class NotificationStagingService {
             .recipientUserId(admin.getId())
             // C4 AC3 — internal, so no moderation.
             .dispatchPolicy("AUTO")
-            .subject("LabGate run summary — " + totals.filesProcessed() + " file(s), "
+            .subject("Validata run summary — " + totals.filesProcessed() + " file(s), "
                 + totals.rowsRead() + " row(s) read")
             .body(renderAdminDigestBody(issues, totals))
             .payloadJson(writeAdminPayloadJson(issues, totals))
@@ -443,7 +443,7 @@ public class NotificationStagingService {
 
     /**
      * C11 AC1 — until the PO signs the formats off (Decision Log Q3), every digest says so at the
-     * top. Flipping {@code labgate.notification.formats-provisional} to false is the only change
+     * top. Flipping {@code validata.notification.formats-provisional} to false is the only change
      * sign-off requires.
      */
     private String provisionalBanner() {

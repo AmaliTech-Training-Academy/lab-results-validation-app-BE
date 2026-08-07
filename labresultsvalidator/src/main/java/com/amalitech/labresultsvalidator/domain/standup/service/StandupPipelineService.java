@@ -54,7 +54,7 @@ public class StandupPipelineService {
         AuditEventService auditEventService,
         StandupEventService standupEventService,
         ObjectMapper objectMapper,
-        @Value("${labgate.standup.pending-bundle-ttl-seconds}") long pendingBundleTtlSeconds
+        @Value("${validata.standup.pending-bundle-ttl-seconds}") long pendingBundleTtlSeconds
     ) {
         this.gate1 = gate1;
         this.gate2 = gate2;

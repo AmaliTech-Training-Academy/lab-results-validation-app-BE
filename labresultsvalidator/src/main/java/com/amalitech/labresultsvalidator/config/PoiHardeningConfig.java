@@ -29,8 +29,8 @@ public class PoiHardeningConfig {
     private final long maxEntryBytes;
 
     public PoiHardeningConfig(
-        @Value("${labgate.poi.min-inflate-ratio}") double minInflateRatio,
-        @Value("${labgate.poi.max-entry-bytes}") long maxEntryBytes
+        @Value("${validata.poi.min-inflate-ratio}") double minInflateRatio,
+        @Value("${validata.poi.max-entry-bytes}") long maxEntryBytes
     ) {
         this.minInflateRatio = minInflateRatio;
         this.maxEntryBytes = maxEntryBytes;

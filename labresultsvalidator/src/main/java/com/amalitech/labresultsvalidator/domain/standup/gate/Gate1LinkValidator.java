@@ -45,7 +45,7 @@ public class Gate1LinkValidator {
             return new Gate1Result(
                 GateResult.fail("link", null, "G1-ACCESS",
                     "Cannot access the SharePoint folder at " + sharepointUrl
-                        + ". Check the path and that LabGate has been granted access."),
+                        + ". Check the path and that Validata has been granted access."),
                 null
             );
         } catch (GraphItemTypeException ex) {
