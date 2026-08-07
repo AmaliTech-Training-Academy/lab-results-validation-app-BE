@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *                             oversized value cannot stall a run
  * @param maxTotalWaitMillis   ceiling on cumulative sleeping across all retries for one call
  */
-@ConfigurationProperties(prefix = "labgate.graph.retry")
+@ConfigurationProperties(prefix = "validata.graph.retry")
 public record GraphRetryProperties(
     int maxAttempts,
     long initialBackoffMillis,

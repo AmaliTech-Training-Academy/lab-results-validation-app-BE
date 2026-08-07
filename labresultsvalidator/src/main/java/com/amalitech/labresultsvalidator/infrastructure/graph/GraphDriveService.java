@@ -65,7 +65,7 @@ public class GraphDriveService {
             .encodeToString(sharepointUrl.getBytes(StandardCharsets.UTF_8));
 
         String notAccessible = "Cannot access the SharePoint folder at " + sharepointUrl
-            + ". Check the path and that LabGate has been granted access.";
+            + ". Check the path and that Validata has been granted access.";
 
         DriveItem item;
         try {

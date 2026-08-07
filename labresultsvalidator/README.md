@@ -1,6 +1,6 @@
 # labresultsvalidator
 
-Backend for LabGate — a Spring Boot service that validates and syncs cohort grading data against
+Backend for Validata — a Spring Boot service that validates and syncs cohort grading data against
 reference data pulled from SharePoint.
 
 ## Local Postgres setup

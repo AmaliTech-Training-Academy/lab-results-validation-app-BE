@@ -154,16 +154,16 @@ class CohortControllerTest {
             .endDate(LocalDate.of(2026, 12, 31))
             .lifecycleState(CohortLifecycleState.DRAFT)
             .isActive(true)
-            .sharepointFolderUrl("https://amalitech.sharepoint.com/sites/labgate/cohort-2026")
+            .sharepointFolderUrl("https://amalitech.sharepoint.com/sites/validata/cohort-2026")
             .createdAt(OffsetDateTime.now())
             .build();
         when(cohortService.attachSharePointLink(any(), any())).thenReturn(withLink);
 
         mockMvc.perform(patch(BASE_URL + "/" + id + "/sharepoint-link")
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/labgate/cohort-2026"))))
+                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/validata/cohort-2026"))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.sharepointFolderUrl").value("https://amalitech.sharepoint.com/sites/labgate/cohort-2026"));
+            .andExpect(jsonPath("$.data.sharepointFolderUrl").value("https://amalitech.sharepoint.com/sites/validata/cohort-2026"));
     }
 
     @Test
@@ -174,7 +174,7 @@ class CohortControllerTest {
 
         mockMvc.perform(patch(BASE_URL + "/" + id + "/sharepoint-link")
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/labgate/cohort-2026"))))
+                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/validata/cohort-2026"))))
             .andExpect(status().isNotFound());
     }
 
@@ -186,7 +186,7 @@ class CohortControllerTest {
 
         mockMvc.perform(patch(BASE_URL + "/" + id + "/sharepoint-link")
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/labgate/cohort-2026"))))
+                .content(objectMapper.writeValueAsString(Map.of("folderUrl", "https://amalitech.sharepoint.com/sites/validata/cohort-2026"))))
             .andExpect(status().is(422));
     }
 

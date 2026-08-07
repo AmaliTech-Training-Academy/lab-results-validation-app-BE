@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
 
-@ConfigurationProperties(prefix = "labgate.sharepoint")
+@ConfigurationProperties(prefix = "validata.sharepoint")
 public record SharePointProperties(
     String referenceFolder,
     String scoresFolder,

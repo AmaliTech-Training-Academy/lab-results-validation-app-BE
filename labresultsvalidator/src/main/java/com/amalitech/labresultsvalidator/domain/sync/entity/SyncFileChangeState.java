@@ -8,7 +8,7 @@ package com.amalitech.labresultsvalidator.domain.sync.entity;
  */
 public enum SyncFileChangeState {
 
-    /** No object existed at the file's S3 key: first time LabGate has seen it. */
+    /** No object existed at the file's S3 key: first time Validata has seen it. */
     NEW,
 
     /** SharePoint's bytes differ from the archived copy — the instructor edited the sheet. */
