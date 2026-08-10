@@ -35,11 +35,14 @@ public record IngestionConflictResponse(
     private static final Logger LOG = LoggerFactory.getLogger(IngestionConflictResponse.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    public static IngestionConflictResponse from(IngestionConflict conflict) {
+    // cohortId isn't stored on IngestionConflict (see its javadoc) — every caller already has it
+    // in scope (it's the path/method parameter that resolved the conflict in the first place), so
+    // it's passed in here rather than read off the entity.
+    public static IngestionConflictResponse from(IngestionConflict conflict, UUID cohortId) {
         return new IngestionConflictResponse(
             conflict.getId(),
             conflict.getIngestionRunId(),
-            conflict.getCohortId(),
+            cohortId,
             conflict.getLearnerId(),
             conflict.getLabId(),
             conflict.getConflictKind(),

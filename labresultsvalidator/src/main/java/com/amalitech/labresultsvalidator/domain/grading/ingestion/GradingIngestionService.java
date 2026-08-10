@@ -71,7 +71,7 @@ public class GradingIngestionService {
             validationService.validate(cohort.getId(), parsed.rows());
         List<RowClassification> classifications = classifier.classify(validated.validRows());
         LabResultCommitService.CommitOutcome commitOutcome =
-            commitService.commit(classifications, cohort.getId(), run.getId(), triggeredBy);
+            commitService.commit(classifications, run.getId(), triggeredBy);
 
         List<RowError> allErrors = new ArrayList<>();
         allErrors.addAll(parsed.errors());

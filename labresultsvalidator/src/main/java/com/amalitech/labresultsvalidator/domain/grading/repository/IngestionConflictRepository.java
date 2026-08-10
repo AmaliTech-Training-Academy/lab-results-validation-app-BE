@@ -14,7 +14,13 @@ import java.util.UUID;
 
 public interface IngestionConflictRepository extends JpaRepository<IngestionConflict, UUID> {
 
-    Optional<IngestionConflict> findByIdAndCohortId(UUID id, UUID cohortId);
+    // cohortId isn't a column on this entity (removed in V32, see IngestionConflict's javadoc) —
+    // every cohort-scoped lookup below resolves it via ingestionRunId -> IngestionRun.cohortId,
+    // mirroring the existing findBySyncJobId/findBySyncJobIdAndStatus pattern.
+
+    @Query("SELECT c FROM IngestionConflict c WHERE c.id = :id AND c.ingestionRunId IN "
+        + "(SELECT r.id FROM IngestionRun r WHERE r.cohortId = :cohortId)")
+    Optional<IngestionConflict> findByIdAndCohortId(@Param("id") UUID id, @Param("cohortId") UUID cohortId);
 
     /**
      * Same lookup as {@link #findByIdAndCohortId}, but takes a row-level write lock so two
@@ -23,12 +29,18 @@ public interface IngestionConflictRepository extends JpaRepository<IngestionConf
      * {@code CohortSyncService#startJob} for the analogous double-trigger race).
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT c FROM IngestionConflict c WHERE c.id = :id AND c.cohortId = :cohortId")
+    @Query("SELECT c FROM IngestionConflict c WHERE c.id = :id AND c.ingestionRunId IN "
+        + "(SELECT r.id FROM IngestionRun r WHERE r.cohortId = :cohortId)")
     Optional<IngestionConflict> findByIdAndCohortIdForUpdate(@Param("id") UUID id, @Param("cohortId") UUID cohortId);
 
-    Page<IngestionConflict> findByCohortId(UUID cohortId, Pageable pageable);
+    @Query("SELECT c FROM IngestionConflict c WHERE c.ingestionRunId IN "
+        + "(SELECT r.id FROM IngestionRun r WHERE r.cohortId = :cohortId)")
+    Page<IngestionConflict> findByCohortId(@Param("cohortId") UUID cohortId, Pageable pageable);
 
-    Page<IngestionConflict> findByCohortIdAndStatus(UUID cohortId, String status, Pageable pageable);
+    @Query("SELECT c FROM IngestionConflict c WHERE c.status = :status AND c.ingestionRunId IN "
+        + "(SELECT r.id FROM IngestionRun r WHERE r.cohortId = :cohortId)")
+    Page<IngestionConflict> findByCohortIdAndStatus(
+        @Param("cohortId") UUID cohortId, @Param("status") String status, Pageable pageable);
 
     @Query("SELECT c FROM IngestionConflict c WHERE c.ingestionRunId IN "
         + "(SELECT r.id FROM IngestionRun r WHERE r.syncJobId = :syncJobId)")

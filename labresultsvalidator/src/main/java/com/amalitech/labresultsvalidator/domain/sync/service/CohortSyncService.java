@@ -127,7 +127,7 @@ public class CohortSyncService {
         Page<IngestionConflict> conflicts = (status == null || status.isBlank())
             ? ingestionConflictRepository.findByCohortId(cohortId, pageable)
             : ingestionConflictRepository.findByCohortIdAndStatus(cohortId, status.toUpperCase(), pageable);
-        return conflicts.map(IngestionConflictResponse::from);
+        return conflicts.map(c -> IngestionConflictResponse.from(c, cohortId));
     }
 
     /**
@@ -141,7 +141,7 @@ public class CohortSyncService {
         Page<IngestionConflict> conflicts = (status == null || status.isBlank())
             ? ingestionConflictRepository.findBySyncJobId(jobId, pageable)
             : ingestionConflictRepository.findBySyncJobIdAndStatus(jobId, status.toUpperCase(), pageable);
-        return conflicts.map(IngestionConflictResponse::from);
+        return conflicts.map(c -> IngestionConflictResponse.from(c, cohortId));
     }
 
     /**
@@ -171,7 +171,8 @@ public class CohortSyncService {
         conflict.setResolvedAt(OffsetDateTime.now());
         conflict.setResolutionNote(request.getNote());
 
-        IngestionConflictResponse response = IngestionConflictResponse.from(ingestionConflictRepository.save(conflict));
+        IngestionConflictResponse response =
+            IngestionConflictResponse.from(ingestionConflictRepository.save(conflict), cohortId);
 
         Map<String, Object> auditPayload = new LinkedHashMap<>();
         auditPayload.put("conflictId", conflictId.toString());

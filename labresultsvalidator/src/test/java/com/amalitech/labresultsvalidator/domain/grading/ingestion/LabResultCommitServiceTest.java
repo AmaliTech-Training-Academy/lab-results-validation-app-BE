@@ -41,7 +41,6 @@ class LabResultCommitServiceTest {
 
     private LabResultCommitService service;
 
-    private UUID cohortId;
     private UUID ingestionRunId;
     private UUID triggeredBy;
 
@@ -49,7 +48,6 @@ class LabResultCommitServiceTest {
     void setUp() {
         service = new LabResultCommitService(
             labResultRepository, ingestionConflictRepository, labReferenceAuditLogRepository, new ObjectMapper());
-        cohortId = UUID.randomUUID();
         ingestionRunId = UUID.randomUUID();
         triggeredBy = UUID.randomUUID();
     }
@@ -65,7 +63,7 @@ class LabResultCommitServiceTest {
         RowClassification classification = new RowClassification(ClassificationKind.NEW, row, null);
 
         LabResultCommitService.CommitOutcome outcome =
-            service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+            service.commit(List.of(classification), ingestionRunId, triggeredBy);
 
         assertThat(outcome.committedNew()).isEqualTo(1);
         ArgumentCaptor<LabResult> captor = ArgumentCaptor.forClass(LabResult.class);
@@ -88,7 +86,7 @@ class LabResultCommitServiceTest {
         RowClassification classification = new RowClassification(ClassificationKind.UNCHANGED, row, existing);
 
         LabResultCommitService.CommitOutcome outcome =
-            service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+            service.commit(List.of(classification), ingestionRunId, triggeredBy);
 
         assertThat(outcome.skippedUnchanged()).isEqualTo(1);
         verify(labResultRepository, never()).save(any());
@@ -105,7 +103,7 @@ class LabResultCommitServiceTest {
         RowClassification classification = new RowClassification(ClassificationKind.CHANGED, row, existing);
 
         LabResultCommitService.CommitOutcome outcome =
-            service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+            service.commit(List.of(classification), ingestionRunId, triggeredBy);
 
         assertThat(outcome.updatedCount()).isEqualTo(1);
 
@@ -136,7 +134,7 @@ class LabResultCommitServiceTest {
         ValidatedScoreRow row = row(new BigDecimal("90.00"));
         RowClassification classification = new RowClassification(ClassificationKind.CHANGED, row, existing);
 
-        service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+        service.commit(List.of(classification), ingestionRunId, triggeredBy);
 
         InOrder inOrder = org.mockito.Mockito.inOrder(labReferenceAuditLogRepository, labResultRepository);
         inOrder.verify(labReferenceAuditLogRepository).save(any());
@@ -153,7 +151,7 @@ class LabResultCommitServiceTest {
             UUID.randomUUID(), null, NSP_NAME, regradeDate, score);
         RowClassification classification = new RowClassification(ClassificationKind.CHANGED, row, existing);
 
-        service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+        service.commit(List.of(classification), ingestionRunId, triggeredBy);
 
         ArgumentCaptor<LabResult> resultCaptor = ArgumentCaptor.forClass(LabResult.class);
         verify(labResultRepository).save(resultCaptor.capture());
@@ -170,7 +168,7 @@ class LabResultCommitServiceTest {
             new RowClassification(ClassificationKind.DUPLICATE, second, existing));
 
         LabResultCommitService.CommitOutcome outcome =
-            service.commit(classifications, cohortId, ingestionRunId, triggeredBy);
+            service.commit(classifications, ingestionRunId, triggeredBy);
 
         assertThat(outcome.conflictsCount()).isEqualTo(2);
         assertThat(outcome.committedNew()).isZero();
@@ -180,7 +178,6 @@ class LabResultCommitServiceTest {
         verify(ingestionConflictRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         assertThat(captor.getAllValues()).allSatisfy(c -> {
             assertThat(c.getIngestionRunId()).isEqualTo(ingestionRunId);
-            assertThat(c.getCohortId()).isEqualTo(cohortId);
             assertThat(c.getExistingResultId()).isEqualTo(existing.getId());
             assertThat(c.getIncomingPayloadJson()).contains(NSP_NAME);
         });
@@ -204,7 +201,7 @@ class LabResultCommitServiceTest {
         });
 
         LabResultCommitService.CommitOutcome outcome =
-            service.commit(classifications, cohortId, ingestionRunId, triggeredBy);
+            service.commit(classifications, ingestionRunId, triggeredBy);
 
         assertThat(outcome.committedNew()).isEqualTo(1);
         assertThat(outcome.skippedInvalid()).isEqualTo(1);

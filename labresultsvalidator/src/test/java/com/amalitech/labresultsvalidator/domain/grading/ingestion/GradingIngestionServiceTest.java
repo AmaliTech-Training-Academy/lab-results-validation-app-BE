@@ -93,7 +93,7 @@ class GradingIngestionServiceTest {
             .thenReturn(new ScoreRowValidationService.ValidationResult(List.of(validated), List.of()));
         RowClassification classification = new RowClassification(ClassificationKind.NEW, validated, null);
         when(classifier.classify(List.of(validated))).thenReturn(List.of(classification));
-        when(commitService.commit(any(), any(), any(), any()))
+        when(commitService.commit(any(), any(), any()))
             .thenReturn(new LabResultCommitService.CommitOutcome(1, 0, 0, 0, 0, List.of()));
 
         IngestionRun run = service.process(cohort, syncJobId, "Instructor1.xlsx", workbook, details, "sha-1",
@@ -123,7 +123,7 @@ class GradingIngestionServiceTest {
         when(validationService.validate(cohort.getId(), List.of()))
             .thenReturn(new ScoreRowValidationService.ValidationResult(List.of(), List.of()));
         when(classifier.classify(List.of())).thenReturn(List.of());
-        when(commitService.commit(any(), any(), any(), any()))
+        when(commitService.commit(any(), any(), any()))
             .thenReturn(new LabResultCommitService.CommitOutcome(0, 0, 0, 0, 0, List.of()));
 
         IngestionRun run = service.process(cohort, syncJobId, "Instructor1.xlsx", workbook, details, "sha-1",
@@ -146,7 +146,7 @@ class GradingIngestionServiceTest {
             .thenReturn(new ScoreRowValidationService.ValidationResult(List.of(validated), errors));
         RowClassification classification = new RowClassification(ClassificationKind.NEW, validated, null);
         when(classifier.classify(List.of(validated))).thenReturn(List.of(classification));
-        when(commitService.commit(any(), any(), any(), any()))
+        when(commitService.commit(any(), any(), any()))
             .thenReturn(new LabResultCommitService.CommitOutcome(1, 0, 0, 0, 0, List.of()));
 
         IngestionRun run = service.process(cohort, syncJobId, "Instructor1.xlsx", workbook, details, "sha-1",
@@ -169,7 +169,7 @@ class GradingIngestionServiceTest {
             .thenReturn(new ScoreRowValidationService.ValidationResult(List.of(validated), errors));
         RowClassification classification = new RowClassification(ClassificationKind.NEW, validated, null);
         when(classifier.classify(List.of(validated))).thenReturn(List.of(classification));
-        when(commitService.commit(any(), any(), any(), any()))
+        when(commitService.commit(any(), any(), any()))
             .thenReturn(new LabResultCommitService.CommitOutcome(1, 0, 0, 0, 0, List.of()));
 
         IngestionRun run = service.process(cohort, syncJobId, "Instructor1.xlsx", workbook, details, "sha-1",
@@ -186,13 +186,13 @@ class GradingIngestionServiceTest {
         when(validationService.validate(any(), any()))
             .thenReturn(new ScoreRowValidationService.ValidationResult(List.of(), List.of()));
         when(classifier.classify(any())).thenReturn(List.of());
-        when(commitService.commit(any(), any(), any(), any()))
+        when(commitService.commit(any(), any(), any()))
             .thenReturn(new LabResultCommitService.CommitOutcome(0, 0, 0, 0, 0, List.of()));
 
         service.process(cohort, syncJobId, "Instructor1.xlsx", workbook, details, "sha-1", triggeredBy, "SCHEDULED");
 
         ArgumentCaptor<UUID> runIdCaptor = ArgumentCaptor.forClass(UUID.class);
-        verify(commitService).commit(any(), any(), runIdCaptor.capture(), any());
+        verify(commitService).commit(any(), runIdCaptor.capture(), any());
         assertThat(runIdCaptor.getValue()).isNotNull();
     }
 
