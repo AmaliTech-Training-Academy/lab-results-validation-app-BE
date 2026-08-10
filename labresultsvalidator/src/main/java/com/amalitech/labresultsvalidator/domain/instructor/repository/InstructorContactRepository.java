@@ -8,13 +8,9 @@ import java.util.UUID;
 
 public interface InstructorContactRepository extends JpaRepository<InstructorContact, UUID> {
 
-    Optional<InstructorContact> findByInstructorId(String instructorId);
-
     Optional<InstructorContact> findByEmailIgnoreCase(String email);
 
     Optional<InstructorContact> findByFullNameIgnoreCase(String fullName);
-
-    boolean existsByInstructorId(String instructorId);
 
     boolean existsByEmail(String email);
 }

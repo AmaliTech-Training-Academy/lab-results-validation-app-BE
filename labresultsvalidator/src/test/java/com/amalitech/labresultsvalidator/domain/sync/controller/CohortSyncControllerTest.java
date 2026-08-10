@@ -163,13 +163,12 @@ class CohortSyncControllerTest {
         IngestionConflict conflict = IngestionConflict.builder()
             .id(UUID.randomUUID())
             .ingestionRunId(ingestionRunId)
-            .cohortId(cohortId)
             .conflictKind("in_file_duplicate")
             .incomingPayloadJson("{}")
             .status("PENDING")
             .build();
         Page<IngestionConflictResponse> response = new PageImpl<>(
-            List.of(IngestionConflictResponse.from(conflict)), PageRequest.of(0, 20), 1);
+            List.of(IngestionConflictResponse.from(conflict, cohortId)), PageRequest.of(0, 20), 1);
         when(cohortSyncService.listConflictsForRun(eq(cohortId), eq(jobId), isNull(), any(Pageable.class)))
             .thenReturn(response);
 
@@ -200,7 +199,6 @@ class CohortSyncControllerTest {
 
         IngestionConflict resolved = IngestionConflict.builder()
             .id(conflictId)
-            .cohortId(cohortId)
             .incomingPayloadJson("{}")
             .status("RESOLVED")
             .resolvedBy(resolvedBy)
@@ -208,7 +206,7 @@ class CohortSyncControllerTest {
             .resolutionNote("kept the re-submitted score")
             .build();
         when(cohortSyncService.resolveConflict(eq(cohortId), eq(conflictId), any()))
-            .thenReturn(IngestionConflictResponse.from(resolved));
+            .thenReturn(IngestionConflictResponse.from(resolved, cohortId));
 
         mockMvc.perform(patch(BASE_URL + "/" + cohortId + "/conflicts/" + conflictId + "/resolve")
                 .contentType("application/json")
@@ -227,12 +225,11 @@ class CohortSyncControllerTest {
 
         IngestionConflict dismissed = IngestionConflict.builder()
             .id(conflictId)
-            .cohortId(cohortId)
             .incomingPayloadJson("{}")
             .status("DISMISSED")
             .build();
         when(cohortSyncService.resolveConflict(eq(cohortId), eq(conflictId), any()))
-            .thenReturn(IngestionConflictResponse.from(dismissed));
+            .thenReturn(IngestionConflictResponse.from(dismissed, cohortId));
 
         mockMvc.perform(patch(BASE_URL + "/" + cohortId + "/conflicts/" + conflictId + "/resolve")
                 .contentType("application/json")

@@ -85,10 +85,10 @@ class Gate4ScoreSheetValidatorTest {
         Lab lab = Lab.builder().id(UUID.randomUUID()).moduleId(moduleId).title("REST API Basics").build();
         when(labRepository.findAllByModuleIdIn(any())).thenReturn(List.of(lab));
 
-        Learner sweLearner = Learner.builder().id(UUID.randomUUID()).learnerId("ama.owusu@example.com")
+        Learner sweLearner = Learner.builder().id(UUID.randomUUID())
             .fullName("Ama Owusu").email("ama.owusu@example.com").cohortId(cohortId)
             .specializationId(sweSpecId).build();
-        Learner dataLearner = Learner.builder().id(UUID.randomUUID()).learnerId("kwame.boateng@example.com")
+        Learner dataLearner = Learner.builder().id(UUID.randomUUID())
             .fullName("Kwame Boateng").email("kwame.boateng@example.com").cohortId(cohortId)
             .specializationId(dataSpecId).build();
         when(learnerRepository.findAllByCohortId(cohortId)).thenReturn(List.of(sweLearner, dataLearner));

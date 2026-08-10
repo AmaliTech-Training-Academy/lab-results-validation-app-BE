@@ -23,6 +23,10 @@ import java.util.UUID;
  * A held in-file duplicate row awaiting manual resolution (B8 AC4, B10). No
  * {@code created_by}/{@code updated_by} columns on this table, so it does not extend
  * {@code BaseEntity}.
+ *
+ * <p>No {@code cohortId} either — it was a denormalized copy of
+ * {@code ingestionRunId -> IngestionRun.cohortId} (see V32); {@code IngestionConflictRepository}
+ * scopes by cohort via a join/subquery on {@code ingestionRunId} instead.
  */
 @Entity
 @Table(name = "ingestion_conflicts")
@@ -40,9 +44,6 @@ public class IngestionConflict {
 
     @Column(name = "ingestion_run_id", nullable = false)
     private UUID ingestionRunId;
-
-    @Column(name = "cohort_id", nullable = false)
-    private UUID cohortId;
 
     @Column(name = "learner_id")
     private UUID learnerId;

@@ -29,9 +29,8 @@ public class InstructorContact extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "instructor_id", nullable = false, unique = true, length = 50)
-    private String instructorId;
-
+    // No instructor_id column exists (dropped in V33) — it was always set to a throwaway random
+    // UUID string, never a real external identifier. email is the natural unique key.
     @Column(nullable = false, unique = true, length = 254)
     private String email;
 

@@ -58,7 +58,7 @@ public class LabResultCommitService {
     ) {
     }
 
-    public CommitOutcome commit(List<RowClassification> classifications, UUID cohortId, UUID ingestionRunId,
+    public CommitOutcome commit(List<RowClassification> classifications, UUID ingestionRunId,
                                 UUID triggeredBy) {
         int committedNew = 0;
         int updatedCount = 0;
@@ -80,7 +80,7 @@ public class LabResultCommitService {
                         updatedCount++;
                     }
                     case DUPLICATE -> {
-                        commitDuplicate(classification, cohortId, ingestionRunId);
+                        commitDuplicate(classification, ingestionRunId);
                         conflictsCount++;
                     }
                     default -> throw new IllegalStateException(
@@ -145,13 +145,12 @@ public class LabResultCommitService {
         labResultRepository.save(existing);
     }
 
-    private void commitDuplicate(RowClassification classification, UUID cohortId, UUID ingestionRunId) {
+    private void commitDuplicate(RowClassification classification, UUID ingestionRunId) {
         ValidatedScoreRow row = classification.row();
         LabResult existing = classification.existing();
 
         ingestionConflictRepository.save(IngestionConflict.builder()
             .ingestionRunId(ingestionRunId)
-            .cohortId(cohortId)
             .learnerId(row.learnerId())
             .labId(row.labId())
             .existingResultId(existing != null ? existing.getId() : null)

@@ -94,7 +94,6 @@ class CohortSyncServiceTest {
         return IngestionConflict.builder()
             .id(conflictId)
             .ingestionRunId(UUID.randomUUID())
-            .cohortId(cohortId)
             .learnerId(UUID.randomUUID())
             .labId(UUID.randomUUID())
             .existingResultId(existingResultId)
@@ -221,7 +220,6 @@ class CohortSyncServiceTest {
         IngestionConflict conflict = IngestionConflict.builder()
             .id(conflictId)
             .ingestionRunId(UUID.randomUUID())
-            .cohortId(cohortId)
             .learnerId(UUID.randomUUID())
             .labId(UUID.randomUUID())
             .incomingPayloadJson("{\"error\":\"serialization failed\"}")
@@ -243,7 +241,6 @@ class CohortSyncServiceTest {
         IngestionConflict conflict = IngestionConflict.builder()
             .id(conflictId)
             .ingestionRunId(UUID.randomUUID())
-            .cohortId(cohortId)
             .learnerId(UUID.randomUUID())
             .labId(UUID.randomUUID())
             .incomingPayloadJson(
