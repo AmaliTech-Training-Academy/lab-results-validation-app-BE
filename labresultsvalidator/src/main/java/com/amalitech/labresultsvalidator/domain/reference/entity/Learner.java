@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -16,7 +17,10 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
-@Table(name = "learners")
+@Table(name = "learners", uniqueConstraints = {
+    @UniqueConstraint(name = "uq_learners_cohort_learner_id", columnNames = {"cohort_id", "learner_id"}),
+    @UniqueConstraint(name = "uq_learners_cohort_email", columnNames = {"cohort_id", "email"})
+})
 @Getter
 @Setter
 @Builder
@@ -29,13 +33,15 @@ public class Learner extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "learner_id", nullable = false, unique = true, length = 50)
+    // Unique per cohort, not globally — see uq_learners_cohort_learner_id (V30).
+    @Column(name = "learner_id", nullable = false, length = 50)
     private String learnerId;
 
     @Column(name = "full_name", nullable = false, length = 200)
     private String fullName;
 
-    @Column(nullable = false, unique = true, length = 254)
+    // Unique per cohort, not globally — see uq_learners_cohort_email (V30).
+    @Column(nullable = false, length = 254)
     private String email;
 
     @Column(name = "cohort_id", nullable = false)
