@@ -70,7 +70,7 @@ class ScoreRowValidationServiceTest {
 
     private ParsedScoreRow validParsedRow() {
         return new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15", LocalDate.of(2026, 1, 15),
-            "Ama Owusu", "REST API Basics", "0.9", new BigDecimal("0.9"), REVIEWER_NAME);
+            "Ama Owusu", "REST API Basics", "90", new BigDecimal("90"), REVIEWER_NAME);
     }
 
     // Resolves purely by (Lab Title, specialization) — mirrors Gate4ScoreSheetValidator. The
@@ -114,7 +114,7 @@ class ScoreRowValidationServiceTest {
 
         for (String sheetName : List.of("Module-5", "Sheet1", "Whatever", "Module Setup")) {
             ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, sheetName, 2, "2026-01-15",
-                LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "0.9", new BigDecimal("0.9"),
+                LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "90", new BigDecimal("90"),
                 REVIEWER_NAME);
 
             ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
@@ -153,7 +153,7 @@ class ScoreRowValidationServiceTest {
     @Test
     void validate_blankNspName_reportsF1Error() {
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
-            LocalDate.of(2026, 1, 15), "", "REST API Basics", "0.9", new BigDecimal("0.9"), "INS-001");
+            LocalDate.of(2026, 1, 15), "", "REST API Basics", "90", new BigDecimal("90"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
@@ -164,7 +164,7 @@ class ScoreRowValidationServiceTest {
     @Test
     void validate_unparseableDate_reportsF3Error() {
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "not-a-date", null,
-            "Ama Owusu", "REST API Basics", "0.9", new BigDecimal("0.9"), "INS-001");
+            "Ama Owusu", "REST API Basics", "90", new BigDecimal("90"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
@@ -184,7 +184,7 @@ class ScoreRowValidationServiceTest {
     @Test
     void validate_scoreOutOfRange_reportsF2RangeError() {
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
-            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "1.5", new BigDecimal("1.5"), "INS-001");
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "150", new BigDecimal("150"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
@@ -194,7 +194,7 @@ class ScoreRowValidationServiceTest {
     @Test
     void validate_unknownNsp_reportsR1Error() {
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
-            LocalDate.of(2026, 1, 15), "Not A Learner", "REST API Basics", "0.9", new BigDecimal("0.9"), "INS-001");
+            LocalDate.of(2026, 1, 15), "Not A Learner", "REST API Basics", "90", new BigDecimal("90"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
