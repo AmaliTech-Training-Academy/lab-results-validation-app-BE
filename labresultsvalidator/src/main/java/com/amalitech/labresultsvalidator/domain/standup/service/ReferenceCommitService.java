@@ -312,10 +312,17 @@ public class ReferenceCommitService {
             }
             Specialization spec = match.value();
 
-            // InstructorContact is global (not cohort-scoped) — upsert by email rather than
+            // InstructorContact is global (not cohort-scoped) — upsert by full name rather than
             // delete-then-recreate, so an instructor already known from another cohort's commit
-            // isn't duplicated or lost.
-            InstructorContact instructor = instructorContactRepository.findByEmailIgnoreCase(row.email())
+            // isn't duplicated or lost. full_name, not email, is the real identity here: instructors
+            // teach across cohorts and each cohort's Instructor Database is filled in independently,
+            // so the same person's email can vary (typo, personal vs. work address, re-entry) across
+            // cohorts while the grading sheets' Reviewer column only ever carries a name. Upserting
+            // by email (the old behavior) let a repeated name with a different email create a second
+            // InstructorContact row — and the weekly sync's reviewer resolution
+            // (InstructorContactRepository.findByFullNameIgnoreCase) expects exactly one row per
+            // name, so it throws instead of resolving as soon as that happens.
+            InstructorContact instructor = instructorContactRepository.findByFullNameIgnoreCase(row.fullName())
                 .orElseGet(() -> {
                     InstructorContact created = InstructorContact.builder()
                         .email(row.email())
@@ -327,8 +334,12 @@ public class ReferenceCommitService {
                     return instructorContactRepository.save(created);
                 });
 
-            if (!instructor.getFullName().equals(row.fullName())) {
-                instructor.setFullName(row.fullName());
+            // Keep the contact's email current, but never at the cost of colliding with a
+            // different instructor's email (unique) — better to keep the existing, still-valid
+            // email than to fail the whole cohort's reference commit over a mismatch.
+            if (!instructor.getEmail().equalsIgnoreCase(row.email())
+                    && !instructorContactRepository.existsByEmailIgnoreCase(row.email())) {
+                instructor.setEmail(row.email());
                 instructor.setUpdatedBy(actorUserId);
                 instructor = instructorContactRepository.save(instructor);
             }

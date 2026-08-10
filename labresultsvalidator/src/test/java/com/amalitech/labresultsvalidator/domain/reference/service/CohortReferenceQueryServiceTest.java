@@ -4,12 +4,14 @@ import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundExcep
 import com.amalitech.labresultsvalidator.domain.reference.dto.CohortReferenceResponse;
 import com.amalitech.labresultsvalidator.domain.reference.dto.SpecializationWithModulesResponse;
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorSpecializationAssignment;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.reference.entity.LabModule;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Learner;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorSpecializationAssignmentRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabModuleRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LearnerRepository;
@@ -51,6 +53,9 @@ class CohortReferenceQueryServiceTest {
 
     @Mock
     private InstructorContactRepository instructorContactRepository;
+
+    @Mock
+    private InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository;
 
     @InjectMocks
     private CohortReferenceQueryService cohortReferenceQueryService;
@@ -115,7 +120,15 @@ class CohortReferenceQueryServiceTest {
             .fullName("Kofi Mensah")
             .isActive(true)
             .build();
-        when(instructorContactRepository.findAll()).thenReturn(List.of(instructor));
+        InstructorSpecializationAssignment assignment = InstructorSpecializationAssignment.builder()
+            .id(UUID.randomUUID())
+            .instructorContactId(instructor.getId())
+            .specializationId(specializationId)
+            .build();
+        when(instructorSpecializationAssignmentRepository.findAllBySpecializationIdIn(List.of(specializationId)))
+            .thenReturn(List.of(assignment));
+        when(instructorContactRepository.findAllById(List.of(instructor.getId())))
+            .thenReturn(List.of(instructor));
 
         CohortReferenceResponse response = cohortReferenceQueryService.getCohortReference(cohortId);
 
@@ -141,12 +154,44 @@ class CohortReferenceQueryServiceTest {
         when(labModuleRepository.findAllBySpecializationIdIn(List.of())).thenReturn(List.of());
         when(labRepository.findAllByModuleIdIn(List.of())).thenReturn(List.of());
         when(learnerRepository.findAllByCohortId(cohortId)).thenReturn(List.of());
-        when(instructorContactRepository.findAll()).thenReturn(List.of());
+        when(instructorSpecializationAssignmentRepository.findAllBySpecializationIdIn(List.of()))
+            .thenReturn(List.of());
+        when(instructorContactRepository.findAllById(List.of())).thenReturn(List.of());
 
         CohortReferenceResponse response = cohortReferenceQueryService.getCohortReference(cohortId);
 
         assertThat(response.getSpecializations()).isEmpty();
         assertThat(response.getLearners()).isEmpty();
         assertThat(response.getInstructors()).isEmpty();
+    }
+
+    @Test
+    void getCohortReference_doesNotLeakInstructorsFromOtherCohorts() {
+        // Regression test: instructor_contacts is a global table (instructors teach across
+        // cohorts), so this cohort's response must be scoped through
+        // instructor_specialization_assignments rather than listing every instructor in the
+        // system — otherwise an instructor who only teaches a different cohort would show up here.
+        when(cohortRepository.existsById(cohortId)).thenReturn(true);
+
+        Specialization specialization = Specialization.builder()
+            .id(specializationId)
+            .cohortId(cohortId)
+            .name("Software Engineering")
+            .code("SWE")
+            .build();
+        when(specializationRepository.findAllByCohortId(cohortId)).thenReturn(List.of(specialization));
+        when(labModuleRepository.findAllBySpecializationIdIn(List.of(specializationId))).thenReturn(List.of());
+        when(labRepository.findAllByModuleIdIn(List.of())).thenReturn(List.of());
+        when(learnerRepository.findAllByCohortId(cohortId)).thenReturn(List.of());
+
+        // No assignment links this cohort's specialization to any instructor.
+        when(instructorSpecializationAssignmentRepository.findAllBySpecializationIdIn(List.of(specializationId)))
+            .thenReturn(List.of());
+        when(instructorContactRepository.findAllById(List.of())).thenReturn(List.of());
+
+        CohortReferenceResponse response = cohortReferenceQueryService.getCohortReference(cohortId);
+
+        assertThat(response.getInstructors()).isEmpty();
+        verify(instructorContactRepository, never()).findAll();
     }
 }
