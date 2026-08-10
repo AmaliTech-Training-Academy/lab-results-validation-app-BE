@@ -4,6 +4,8 @@ import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventServi
 
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.reference.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.standup.entity.CohortStandupPending;
 import com.amalitech.labresultsvalidator.domain.standup.gate.ValidatedReferenceBundle;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -32,7 +34,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -129,5 +133,71 @@ class ReferenceCommitServiceTest {
         service.acceptAndCommit(cohortId, actorId);
 
         assertThat(capturedPayload()).containsEntry("sharepointVersionId", "");
+    }
+
+    @Test
+    void acceptAndCommit_sameInstructorNameDifferentEmailAcrossCohorts_doesNotDuplicateTheContact() {
+        // Regression test for the instructor-duplication bug: Cohort A already knows "Eric
+        // Boateng" by one email; Cohort B's Instructor Database lists the same name under a
+        // different email. The commit must resolve to the SAME InstructorContact (matched by
+        // full name) instead of creating a second row — a second row with the same name is
+        // exactly what breaks the weekly sync's by-name reviewer resolution.
+        String specName = "Software Engineering";
+        UUID specId = UUID.randomUUID();
+
+        when(graphDriveService.getItem(DRIVE_ID, ITEM_ID))
+            .thenReturn(new DriveItemDetails("Reference Data", null, null, "cTag-1", null, "https://sp/folder"));
+
+        String bundleJson;
+        try {
+            bundleJson = new ObjectMapper().writeValueAsString(new ValidatedReferenceBundle(
+                List.of(new ValidatedReferenceBundle.SpecializationRow("SPEC1", specName)),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new ValidatedReferenceBundle.InstructorRow(
+                    "Eric Boateng", "eric.new@example.com", specName))));
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+        CohortStandupPending pending = CohortStandupPending.builder()
+            .cohortId(cohortId)
+            .bundleJson(bundleJson)
+            .passedAt(OffsetDateTime.now())
+            .expiresAt(OffsetDateTime.now().plusMinutes(10))
+            .build();
+        when(pendingRepository.findById(cohortId)).thenReturn(Optional.of(pending));
+
+        when(specializationRepository.save(any(Specialization.class)))
+            .thenAnswer(inv -> {
+                Specialization spec = inv.getArgument(0);
+                spec.setId(specId);
+                return spec;
+            });
+
+        // Cohort A already created this instructor under a different email — the lookup that
+        // now matters is by full name, not by email.
+        InstructorContact existing = InstructorContact.builder()
+            .id(UUID.randomUUID())
+            .email("eric.old@example.com")
+            .fullName("Eric Boateng")
+            .isActive(true)
+            .build();
+        when(instructorContactRepository.findByFullNameIgnoreCase("Eric Boateng"))
+            .thenReturn(Optional.of(existing));
+        when(instructorContactRepository.existsByEmailIgnoreCase("eric.new@example.com")).thenReturn(false);
+        when(instructorContactRepository.save(any(InstructorContact.class)))
+            .thenAnswer(inv -> inv.getArgument(0));
+
+        service.acceptAndCommit(cohortId, actorId);
+
+        // No new InstructorContact was created for Cohort B's row.
+        verify(instructorContactRepository, never()).findByEmailIgnoreCase(any());
+        ArgumentCaptor<InstructorContact> savedCaptor = ArgumentCaptor.forClass(InstructorContact.class);
+        verify(instructorContactRepository).save(savedCaptor.capture());
+        InstructorContact saved = savedCaptor.getValue();
+        assertThat(saved.getId()).isEqualTo(existing.getId());
+        assertThat(saved.getFullName()).isEqualTo("Eric Boateng");
+        assertThat(saved.getEmail()).isEqualTo("eric.new@example.com");
     }
 }
