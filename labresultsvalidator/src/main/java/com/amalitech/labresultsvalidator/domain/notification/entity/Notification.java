@@ -30,7 +30,9 @@ import java.util.UUID;
  * <p>{@code type}: {@code instructor_digest} / {@code admin_run_digest} / {@code standup_failure} /
  * {@code high_failure} / {@code conflict_alert} / {@code stood_up} (chk_notif_type; only the first
  * two are populated today). {@code recipientKind}: {@code instructor} / {@code admin}
- * (chk_notif_kind). {@code dispatchPolicy}: {@code AUTO} / {@code HELD} (chk_notif_policy).
+ * (chk_notif_kind) — {@code recipientKind = instructor} requires exactly {@code recipientInstructorId}
+ * set and {@code recipientUserId} null, and vice versa for {@code admin} (chk_notif_recipient).
+ * {@code dispatchPolicy}: {@code AUTO} / {@code HELD} (chk_notif_policy).
  * {@code status}: {@code PENDING} / {@code SENT} / {@code SKIPPED} / {@code FAILED}
  * (chk_notif_status) — {@code SKIPPED} is reached only via a manual dismiss of a
  * {@code PENDING} notification, see {@code NotificationDispatchService#dismiss}.

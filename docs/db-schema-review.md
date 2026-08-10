@@ -1,14 +1,21 @@
 # DB Schema Review — Normalization (3NF) & Optimization
 
-> **Update:** the mechanical/zero-risk items below (§2, §3, plus 1.6 and the
-> `learners` uniqueness scope in 1.7) were verified against the actual app
-> code, tested end-to-end against a disposable Postgres container, and landed
-> in `V30__schema_review_fixes.sql` (see the note at the end of each affected
-> section). Two items were corrected after checking the code — `nsp_name`
-> turned out to be actively used (not dead), and the `learners` uniqueness
-> issue turned out to be a confirmed live bug, not a hypothetical. `1.1`,
-> `1.2`, `1.3`, `1.4` are still open — they need a decision or a bigger
-> refactor before touching them (see each section).
+> **Update:** every finding below is now resolved. §2, §3, 1.6, and the
+> `learners` uniqueness scope in 1.7 landed in `V30__schema_review_fixes.sql`.
+> 1.1, 1.2, 1.3, and 1.4 landed in `V31__cohort_consistency_guards.sql`, via
+> triggers/a `CHECK` rather than the bigger column-removal refactor — each
+> redundant/denormalized column is kept (removing it would mean rewriting
+> live queries/entities that depend on it), but the DB now actively rejects
+> any write where the redundant copy disagrees with its source of truth.
+> Every migration was verified against the actual app code first and tested
+> end-to-end against a disposable Postgres container (see the note at the end
+> of each section). Two items were corrected after checking the code —
+> `nsp_name` turned out to be actively used (not dead), and the `learners`
+> uniqueness issue turned out to be a confirmed live bug, not a hypothetical.
+> The only thing genuinely left on the table is the *bigger* refactor variant
+> of 1.1/1.2/1.3 (dropping the redundant columns outright and rewriting the
+> dependent queries) — not required, since the triggers close the actual gap,
+> but available later if the redundancy itself becomes worth removing.
 
 **Scope:** Reconstructed final schema state from `labresultsvalidator/src/main/resources/db/migration/V1__create_tables.sql` through `V29__instructor_specialization_assignments.sql`. 19 tables, PostgreSQL, Flyway-versioned.
 
@@ -37,6 +44,8 @@ specializations (
 
 **Fix:** either drop `learners.cohort_id` and derive it via `specialization_id → specializations.cohort_id` in queries/views, or — if the direct column is kept for index/query-performance reasons — add a trigger (mirroring the existing `set_updated_at` pattern) that validates `cohort_id = (SELECT cohort_id FROM specializations WHERE id = NEW.specialization_id)` on insert/update.
 
+**Status: FIXED (`V31`), trigger approach.** `learners.cohort_id` is read directly by `LearnerRepository.findAllByCohortId`/`existsByLearnerIdAndCohortId` and indexed (`idx_learners_cohort`) — dropping the column would mean rewriting those call sites to join through `specialization_id`, a bigger change than the actual complaint warranted. Went with the trigger fallback instead: `trg_learners_cohort_consistency` raises on insert/update if `cohort_id` disagrees with `specializations.cohort_id` for the row's `specialization_id`. Verified: a learner row consistent with its specialization's cohort inserts fine; one deliberately mismatched is rejected with a clear error naming both values.
+
 ### 1.2 `ingestion_conflicts.cohort_id` is 100% derivable — MEDIUM
 ```sql
 ingestion_conflicts (
@@ -49,10 +58,14 @@ ingestion_conflicts (
 
 **Fix:** either keep it and add a comment explicitly stating it's a denormalized read-path column that must always equal `ingestion_runs.cohort_id`, or drop it and index `ingestion_runs(cohort_id)` + join.
 
+**Status: FIXED (`V31`), trigger approach.** Same reasoning as 1.1 — kept the column (it's what `idx_conflicts_cohort_status` is built on), added `trg_conflicts_cohort_consistency` to reject any insert/update where `cohort_id` disagrees with `ingestion_runs.cohort_id` for the row's `ingestion_run_id`. Verified both directions.
+
 ### 1.3 `notifications.cohort_id` / `sync_job_id` / `ingestion_run_id` triple redundancy — LOW/MEDIUM
 `notifications` carries `ingestion_run_id`, `sync_job_id`, and `cohort_id` simultaneously. `cohort_id` is derivable from either of the other two when they're populated, but both are nullable (a notification can exist without a run or a sync job), so `cohort_id` does carry independent information in that case. Not a clean violation, but worth flagging: there are now three different paths to "which cohort is this about," and nothing guarantees they agree when more than one is populated.
 
 **Fix:** document the precedence/consistency rule, or add a `CHECK` that when `ingestion_run_id` is set, `cohort_id` must match (harder to express as a plain `CHECK`; a trigger is the realistic option).
+
+**Status: FIXED (`V31`), trigger approach.** `trg_notifications_cohort_consistency` checks both paths independently: if `ingestion_run_id` is set, `cohort_id` must match `ingestion_runs.cohort_id`; if `sync_job_id` is set, it must match `cohort_sync_jobs.cohort_id`. A notification with neither set is untouched (its `cohort_id` is then the only source of truth, which is legitimate). Verified: consistent inserts on both paths succeed, a mismatch on either path is rejected, and a notification with only `cohort_id` set still inserts fine.
 
 ### 1.4 `notifications` recipient columns — unenforced polymorphic FK — MEDIUM
 ```sql
@@ -69,6 +82,8 @@ CONSTRAINT chk_notif_recipient CHECK (
     (recipient_kind = 'admin'      AND recipient_user_id       IS NOT NULL AND recipient_instructor_id IS NULL)
 )
 ```
+
+**Status: FIXED (`V31`).** Checked every write site (`NotificationStagingService`, `NotificationAlertService`) — all four already pair `recipient_kind` with exactly one correct ID, so this constraint changes nothing live; it just forecloses the two invalid shapes going forward. Verified: a valid `instructor`/`recipient_instructor_id` pairing inserts fine; `recipient_kind='instructor'` with a null `recipient_instructor_id`, and a row with both IDs populated, are both correctly rejected.
 
 ### 1.5 `lab_results.nsp_name` — ~~vestigial column~~ RESOLVED, not an issue
 **Correction:** checked against the actual ingestion code — `nsp_name` is not dead. `ScoreRowValidationService` uses it to match a score-sheet row to a `Learner` by name, and `LabResultCommitService` persists it on the entity and into the audit payload. `V20` only reverted the *identity/uniqueness* key back to `(learner_id, lab_id)`; it never claimed `nsp_name` itself was unused, and it isn't. The `NOT NULL` is legitimate. No fix needed.
@@ -219,10 +234,10 @@ CREATE UNIQUE INDEX uq_sync_jobs_cohort_running    ON cohort_sync_jobs   (cohort
 
 | # | Finding | Type | Severity | Status |
 |---|---|---|---|---|
-| 1.1 | `learners.cohort_id` redundant with `specialization_id → specializations.cohort_id`, unenforced | Normalization | High | Open — needs decision (drop column vs. add trigger) |
-| 1.2 | `ingestion_conflicts.cohort_id` fully derivable from `ingestion_run_id` | Normalization | Medium | Open — needs decision (bigger refactor) |
-| 1.3 | `notifications.cohort_id`/`sync_job_id`/`ingestion_run_id` triple path to cohort, no consistency rule | Normalization | Low/Medium | Open — needs decision (bigger refactor) |
-| 1.4 | `notifications` recipient columns: unenforced polymorphic FK pairing | Integrity | Medium | Open — not yet applied |
+| 1.1 | `learners.cohort_id` redundant with `specialization_id → specializations.cohort_id`, unenforced | Normalization | High | **Fixed (`V31`)** — trigger guard, column kept |
+| 1.2 | `ingestion_conflicts.cohort_id` fully derivable from `ingestion_run_id` | Normalization | Medium | **Fixed (`V31`)** — trigger guard, column kept |
+| 1.3 | `notifications.cohort_id`/`sync_job_id`/`ingestion_run_id` triple path to cohort, no consistency rule | Normalization | Low/Medium | **Fixed (`V31`)** — trigger guard, columns kept |
+| 1.4 | `notifications` recipient columns: unenforced polymorphic FK pairing | Integrity | Medium | **Fixed (`V31`)** |
 | 1.5 | `lab_results.nsp_name` — thought vestigial | Dead column | — | **Resolved: not an issue** (actively used, see §1.5) |
 | 1.6 | `cohorts.is_locked` vs `lifecycle_state` overlapping/unconstrained state | Modeling | Medium | **Fixed (`V30`)** |
 | 1.7 | `learners` global uniqueness vs. app code's cohort-scoped assumption | Integrity (confirmed bug) | High | **Fixed (`V30`)** — uniqueness scope only; full identity/enrollment split still open |
@@ -234,9 +249,9 @@ CREATE UNIQUE INDEX uq_sync_jobs_cohort_running    ON cohort_sync_jobs   (cohort
 | 3.5 | Missing index on `notifications.cohort_id` | Optimization | Medium | **Fixed (`V30`)** |
 | 3.6 | No RUNNING-job race guard on `cohort_gate4_jobs` (unlike sibling job tables) | Integrity/Concurrency | Medium | **Fixed (`V30`)** |
 
-**Remaining open items, in order of impact:**
-1. **1.1** (`learners.cohort_id` redundancy) — highest-impact remaining issue; needs a decision on whether to drop the column (query via join instead) or add a consistency trigger.
-2. **1.4** (`notifications` polymorphic recipient columns) — cheap to add a `CHECK`, but wasn't verified against live data for existing violations before this pass; do that check first.
-3. **1.2 / 1.3** (`ingestion_conflicts`/`notifications` denormalized cohort paths) — real, but touching them means updating queries and entity code, not just the schema; scope as a separate piece of work.
+**Nothing is open anymore.** `V30__schema_review_fixes.sql` (+ the `Learner` entity update) covers the mechanical fixes and the `learners` uniqueness scope; `V31__cohort_consistency_guards.sql` covers 1.1–1.4 via triggers/a `CHECK` rather than the bigger column-removal refactor. Both were tested by replaying every prior migration plus the new one against a disposable Postgres container and exercising every new invariant directly in both directions (valid case succeeds, invalid case is rejected with a clear error) — not just written and assumed correct:
 
-`V30__schema_review_fixes.sql` (and the matching `Learner` entity update) covers everything marked **Fixed** above. It was tested by replaying `V1`–`V29` plus the new migration against a disposable Postgres container and exercising both new invariants directly (cross-cohort `learner_id`/`email` reuse now succeeds; same-cohort duplicates still correctly fail; `is_locked=true` on a non-`STOOD_UP` cohort is now correctly rejected).
+- `V30`: cross-cohort `learner_id`/`email` reuse now succeeds; same-cohort duplicates still correctly fail; `is_locked=true` on a non-`STOOD_UP` cohort is correctly rejected.
+- `V31`: a `learners`/`ingestion_conflicts`/`notifications` row consistent with its parent's `cohort_id` inserts fine; one deliberately mismatched on any of the three paths (specialization, ingestion run, sync job) is rejected; a notification with neither run nor sync job (only `cohort_id`) still inserts fine; a valid recipient pairing inserts fine, an incomplete or double-populated pairing is rejected.
+
+The only thing left on the table, by choice, is the *larger* refactor variant of 1.1–1.3 — dropping the redundant columns entirely and rewriting the queries/entities that read them directly instead of joining. That's a bigger, riskier change than the actual defect warranted (an unenforced invariant, not the redundancy itself), so it's available as future work rather than something done here.
