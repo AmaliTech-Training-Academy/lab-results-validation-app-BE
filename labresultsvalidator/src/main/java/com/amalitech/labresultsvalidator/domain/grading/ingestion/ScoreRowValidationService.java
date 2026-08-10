@@ -143,12 +143,13 @@ public class ScoreRowValidationService {
                 "Review Date '" + row.reviewDateRaw() + "' is not a valid date.", instructorContactId);
         }
 
-        // F2 — total score numeric and within range after ×100.
+        // F2 — total score numeric and within range. Sheets record the score directly as a
+        // whole number 0-100 (e.g. 85), not a fraction — no ×100 conversion needed.
         if (row.totalScore() == null) {
             return fieldError(row, "F2-INVALID-SCORE",
                 "Total Score '" + row.totalScoreRaw() + "' is not numeric.", instructorContactId);
         }
-        BigDecimal score = row.totalScore().multiply(HUNDRED).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal score = row.totalScore().setScale(2, RoundingMode.HALF_UP);
         if (score.compareTo(BigDecimal.ZERO) < 0 || score.compareTo(HUNDRED) > 0) {
             return fieldError(row, "F2-SCORE-OUT-OF-RANGE",
                 "Total Score '" + row.totalScoreRaw() + "' resolves to " + score + ", outside 0-100.",

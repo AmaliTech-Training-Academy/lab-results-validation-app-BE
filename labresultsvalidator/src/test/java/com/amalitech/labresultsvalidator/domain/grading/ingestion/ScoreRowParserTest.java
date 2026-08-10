@@ -59,7 +59,7 @@ class ScoreRowParserTest {
     @Test
     void parse_validRow_extractsAllFields() throws IOException {
         byte[] bytes = buildWorkbook("BEM01", true,
-            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "0.9", "Kofi Mensah"});
+            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "90", "Kofi Mensah"});
 
         try (var wb = open(bytes)) {
             ScoreRowParser.SheetParseResult result = parser.parse(FILE_NAME, wb);
@@ -72,7 +72,7 @@ class ScoreRowParserTest {
             assertThat(row.reviewDate()).isEqualTo(LocalDate.of(2026, 1, 15));
             assertThat(row.nspName()).isEqualTo("Ama Owusu");
             assertThat(row.labTitle()).isEqualTo("REST API Basics");
-            assertThat(row.totalScore()).isEqualTo(new BigDecimal("0.9"));
+            assertThat(row.totalScore()).isEqualTo(new BigDecimal("90"));
             assertThat(row.reviewer()).isEqualTo("Kofi Mensah");
         }
     }
@@ -80,7 +80,7 @@ class ScoreRowParserTest {
     @Test
     void parse_skipSheetName_isIgnoredEntirely() throws IOException {
         byte[] bytes = buildWorkbook("Template", true,
-            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "0.9", "Kofi Mensah"});
+            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "90", "Kofi Mensah"});
 
         try (var wb = open(bytes)) {
             ScoreRowParser.SheetParseResult result = parser.parse(FILE_NAME, wb);
@@ -93,7 +93,7 @@ class ScoreRowParserTest {
     @Test
     void parse_missingRequiredColumn_reportsSheetErrorAndSkipsSheet() throws IOException {
         byte[] bytes = buildWorkbook("BEM01", false,
-            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "0.9"});
+            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "90"});
 
         try (var wb = open(bytes)) {
             ScoreRowParser.SheetParseResult result = parser.parse(FILE_NAME, wb);
@@ -125,7 +125,7 @@ class ScoreRowParserTest {
     void parse_blankRow_isSkipped() throws IOException {
         byte[] bytes = buildWorkbook("BEM01", true,
             new String[]{null, null, null, null, null},
-            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "0.9", "Kofi Mensah"});
+            new String[]{"2026-01-15", "Ama Owusu", "REST API Basics", "90", "Kofi Mensah"});
 
         try (var wb = open(bytes)) {
             ScoreRowParser.SheetParseResult result = parser.parse(FILE_NAME, wb);
