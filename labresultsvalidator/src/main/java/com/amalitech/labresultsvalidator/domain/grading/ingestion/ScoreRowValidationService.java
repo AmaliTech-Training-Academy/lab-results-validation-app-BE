@@ -1,11 +1,13 @@
 package com.amalitech.labresultsvalidator.domain.grading.ingestion;
 
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorSpecializationAssignment;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.reference.entity.LabModule;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Learner;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorSpecializationAssignmentRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabModuleRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LearnerRepository;
@@ -19,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -41,6 +44,7 @@ public class ScoreRowValidationService {
     private final LabModuleRepository labModuleRepository;
     private final LabRepository labRepository;
     private final InstructorContactRepository instructorContactRepository;
+    private final InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository;
     private final SpecializationRepository specializationRepository;
 
     public ScoreRowValidationService(
@@ -48,12 +52,14 @@ public class ScoreRowValidationService {
         LabModuleRepository labModuleRepository,
         LabRepository labRepository,
         InstructorContactRepository instructorContactRepository,
+        InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository,
         SpecializationRepository specializationRepository
     ) {
         this.learnerRepository = learnerRepository;
         this.labModuleRepository = labModuleRepository;
         this.labRepository = labRepository;
         this.instructorContactRepository = instructorContactRepository;
+        this.instructorSpecializationAssignmentRepository = instructorSpecializationAssignmentRepository;
         this.specializationRepository = specializationRepository;
     }
 
@@ -61,19 +67,33 @@ public class ScoreRowValidationService {
     }
 
     public ValidationResult validate(UUID cohortId, List<ParsedScoreRow> rows) {
+        List<UUID> specIds = specializationRepository.findAllByCohortId(cohortId).stream()
+            .map(Specialization::getId)
+            .toList();
+
         Map<String, Learner> learnersByName = learnerRepository.findAllByCohortId(cohortId).stream()
             .collect(Collectors.toMap(
                 l -> l.getFullName().trim().toLowerCase(Locale.ROOT),
                 l -> l,
                 (a, b) -> a
             ));
-        Map<String, Map<UUID, Lab>> labsByTitleAndSpecId = buildLabsByTitleAndSpecId(cohortId);
+        Map<String, Map<UUID, Lab>> labsByTitleAndSpecId = buildLabsByTitleAndSpecId(specIds);
+
+        // instructor_contacts is a global, cross-cohort table (the same person can teach several
+        // cohorts), so a Reviewer name can't be resolved against it wholesale — that would let a
+        // name belonging to an instructor who has never taught in this cohort (or, worse, a
+        // different person elsewhere who happens to share a name) resolve here anyway. Restrict
+        // resolution to instructors actually assigned to one of this cohort's specializations.
+        Set<UUID> instructorIdsForCohort = instructorSpecializationAssignmentRepository
+            .findAllBySpecializationIdIn(specIds).stream()
+            .map(InstructorSpecializationAssignment::getInstructorContactId)
+            .collect(Collectors.toSet());
 
         List<ValidatedScoreRow> validRows = new ArrayList<>();
         List<RowError> errors = new ArrayList<>();
 
         for (ParsedScoreRow row : rows) {
-            RowError error = validateOne(row, learnersByName, labsByTitleAndSpecId, validRows);
+            RowError error = validateOne(row, learnersByName, labsByTitleAndSpecId, instructorIdsForCohort, validRows);
             if (error != null) {
                 errors.add(error);
             }
@@ -86,11 +106,7 @@ public class ScoreRowValidationService {
     // title maps to the specific Lab configured per specialization — mirrors
     // Gate4ScoreSheetValidator.buildLabTitleToSpecIds, but keeps the actual Lab (not just a
     // membership check) since a real labId is needed to commit.
-    private Map<String, Map<UUID, Lab>> buildLabsByTitleAndSpecId(UUID cohortId) {
-        List<UUID> specIds = specializationRepository.findAllByCohortId(cohortId).stream()
-            .map(Specialization::getId)
-            .toList();
-
+    private Map<String, Map<UUID, Lab>> buildLabsByTitleAndSpecId(List<UUID> specIds) {
         List<LabModule> modules = labModuleRepository.findAllBySpecializationIdIn(specIds);
         Map<UUID, UUID> specIdByModuleId = modules.stream()
             .collect(Collectors.toMap(LabModule::getId, LabModule::getSpecializationId));
@@ -113,13 +129,14 @@ public class ScoreRowValidationService {
 
     private RowError validateOne(ParsedScoreRow row, Map<String, Learner> learnersByName,
                                  Map<String, Map<UUID, Lab>> labsByTitleAndSpecId,
+                                 Set<UUID> instructorIdsForCohort,
                                  List<ValidatedScoreRow> validRows) {
         // Reviewer → InstructorContact resolved up front (matched by full name, not instructorId —
         // instructorId is now system-generated, not sheet-sourced) so that whatever error a row
         // ends up failing with below, it still carries the correctly-resolved instructor. An
         // unresolved reviewer is no longer silently allowed through (B6 AC4/B12 AC3 superseded):
         // it becomes its own hard failure, R5-UNKNOWN-REVIEWER, further down.
-        UUID instructorContactId = resolveInstructor(row.reviewer());
+        UUID instructorContactId = resolveInstructor(row.reviewer(), instructorIdsForCohort);
 
         // F1 — required fields non-blank.
         if (isBlank(row.nspName())) {
@@ -208,7 +225,7 @@ public class ScoreRowValidationService {
         // so it routes to the admin notification instead of an instructor's.
         if (instructorContactId == null) {
             return fieldError(row, "R5-UNKNOWN-REVIEWER",
-                "Reviewer '" + row.reviewer() + "' does not match any active instructor.", null);
+                "Reviewer '" + row.reviewer() + "' does not match any instructor assigned to this cohort.", null);
         }
 
         validRows.add(new ValidatedScoreRow(
@@ -225,12 +242,16 @@ public class ScoreRowValidationService {
         return null;
     }
 
-    private UUID resolveInstructor(String reviewer) {
+    private UUID resolveInstructor(String reviewer, Set<UUID> instructorIdsForCohort) {
         if (isBlank(reviewer)) {
             return null;
         }
+        // A name match alone isn't enough: instructor_contacts is global, so it can hold an
+        // instructor who has never taught in this cohort. Only accept the match if that
+        // instructor is actually assigned to one of this cohort's specializations.
         return instructorContactRepository.findByFullNameIgnoreCase(reviewer.trim())
             .map(InstructorContact::getId)
+            .filter(instructorIdsForCohort::contains)
             .orElse(null);
     }
 

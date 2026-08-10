@@ -1,11 +1,13 @@
 package com.amalitech.labresultsvalidator.domain.grading.ingestion;
 
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorSpecializationAssignment;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.reference.entity.LabModule;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Learner;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorSpecializationAssignmentRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabModuleRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LearnerRepository;
@@ -43,6 +45,8 @@ class ScoreRowValidationServiceTest {
     @Mock
     private InstructorContactRepository instructorContactRepository;
     @Mock
+    private InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository;
+    @Mock
     private SpecializationRepository specializationRepository;
 
     private ScoreRowValidationService service;
@@ -56,7 +60,7 @@ class ScoreRowValidationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ScoreRowValidationService(learnerRepository, labModuleRepository, labRepository,
-            instructorContactRepository, specializationRepository);
+            instructorContactRepository, instructorSpecializationAssignmentRepository, specializationRepository);
 
         cohortId = UUID.randomUUID();
         specId = UUID.randomUUID();
@@ -85,12 +89,24 @@ class ScoreRowValidationServiceTest {
         when(labRepository.findAllByModuleIdIn(List.of(moduleId))).thenReturn(List.of(lab));
     }
 
+    // Reviewer resolution is scoped to instructors assigned to this cohort's own specializations
+    // (via instructor_specialization_assignments) — a name match alone isn't enough.
+    private void stubInstructorAssignedToCohort(UUID theSpecId, UUID instructorId) {
+        when(instructorSpecializationAssignmentRepository.findAllBySpecializationIdIn(List.of(theSpecId)))
+            .thenReturn(List.of(InstructorSpecializationAssignment.builder()
+                .id(UUID.randomUUID())
+                .instructorContactId(instructorId)
+                .specializationId(theSpecId)
+                .build()));
+    }
+
     @Test
     void validate_validRowWithKnownReviewer_resolvesEverything() {
         stubLabUnderSpecialization(specId, "REST API Basics", labId);
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
             .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        stubInstructorAssignedToCohort(specId, instructor.getId());
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(validParsedRow()));
 
@@ -111,6 +127,7 @@ class ScoreRowValidationServiceTest {
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
             .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        stubInstructorAssignedToCohort(specId, instructor.getId());
 
         for (String sheetName : List.of("Module-5", "Sheet1", "Whatever", "Module Setup")) {
             ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, sheetName, 2, "2026-01-15",
@@ -130,6 +147,26 @@ class ScoreRowValidationServiceTest {
         // hard failure — a row with no identifiable instructor has nowhere to route a digest to.
         stubLabUnderSpecialization(specId, "REST API Basics", labId);
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.empty());
+
+        ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(validParsedRow()));
+
+        assertThat(result.validRows()).isEmpty();
+        assertThat(result.errors()).hasSize(1);
+        assertThat(result.errors().get(0).rule()).isEqualTo("R5-UNKNOWN-REVIEWER");
+        assertThat(result.errors().get(0).instructorContactId()).isNull();
+    }
+
+    @Test
+    void validate_reviewerNameMatchesAnInstructorFromAnotherCohort_reportsR5ErrorInstead() {
+        // instructor_contacts is global — a name can match a real InstructorContact who has never
+        // taught in this cohort (e.g. only assigned in a different cohort, or a same-named instructor
+        // there). Resolution must not trust the name match alone: it has to be scoped to instructors
+        // actually assigned to this cohort's own specializations.
+        stubLabUnderSpecialization(specId, "REST API Basics", labId);
+        InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
+            .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+        when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        // No stubInstructorAssignedToCohort call — this instructor is not assigned to `specId`.
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(validParsedRow()));
 

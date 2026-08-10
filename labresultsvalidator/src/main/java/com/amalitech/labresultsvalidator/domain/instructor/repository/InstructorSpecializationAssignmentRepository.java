@@ -10,4 +10,6 @@ public interface InstructorSpecializationAssignmentRepository
     extends JpaRepository<InstructorSpecializationAssignment, UUID> {
 
     void deleteAllBySpecializationIdIn(List<UUID> specializationIds);
+
+    List<InstructorSpecializationAssignment> findAllBySpecializationIdIn(List<UUID> specializationIds);
 }
