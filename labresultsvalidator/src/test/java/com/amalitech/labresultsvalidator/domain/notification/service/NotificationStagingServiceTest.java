@@ -77,7 +77,7 @@ class NotificationStagingServiceTest {
         when(labRepository.findLabModuleNamesByCohortId(cohortId))
             .thenReturn(List.of(new LabModuleName("REST API Basics", "Backend Module 1")));
         when(instructorContactRepository.findAllById(anyCollection())).thenReturn(List.of(
-            InstructorContact.builder().id(instructorId).instructorId("INS-001")
+            InstructorContact.builder().id(instructorId)
                 .fullName("Kofi Mensah").email("kofi@amalitech.com").isActive(true).build()));
         when(userRepository.findAllByRoleAndIsActiveTrue(UserRole.ADMIN)).thenReturn(List.of(
             User.builder().id(adminOneId).email("admin1@amalitech.com").passwordHash("h").build(),

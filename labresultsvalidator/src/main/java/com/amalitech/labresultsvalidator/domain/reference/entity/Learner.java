@@ -18,7 +18,6 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "learners", uniqueConstraints = {
-    @UniqueConstraint(name = "uq_learners_cohort_learner_id", columnNames = {"cohort_id", "learner_id"}),
     @UniqueConstraint(name = "uq_learners_cohort_email", columnNames = {"cohort_id", "email"})
 })
 @Getter
@@ -33,14 +32,12 @@ public class Learner extends BaseEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
-    // Unique per cohort, not globally — see uq_learners_cohort_learner_id (V30).
-    @Column(name = "learner_id", nullable = false, length = 50)
-    private String learnerId;
-
     @Column(name = "full_name", nullable = false, length = 200)
     private String fullName;
 
-    // Unique per cohort, not globally — see uq_learners_cohort_email (V30).
+    // Unique per cohort, not globally — see uq_learners_cohort_email (V30). No separate learner_id
+    // column exists (dropped in V33) — it was always set to this same value, never a distinct
+    // external identifier (see V33's comment).
     @Column(nullable = false, length = 254)
     private String email;
 

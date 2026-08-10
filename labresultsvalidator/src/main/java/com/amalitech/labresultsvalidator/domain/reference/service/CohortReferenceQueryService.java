@@ -119,7 +119,6 @@ public class CohortReferenceQueryService {
     private LearnerResponse toLearnerResponse(Learner learner) {
         return LearnerResponse.builder()
             .id(learner.getId())
-            .learnerId(learner.getLearnerId())
             .fullName(learner.getFullName())
             .email(learner.getEmail())
             .cohortId(learner.getCohortId())
@@ -131,7 +130,6 @@ public class CohortReferenceQueryService {
     private InstructorContactResponse toInstructorResponse(InstructorContact instructor) {
         return InstructorContactResponse.builder()
             .id(instructor.getId())
-            .instructorId(instructor.getInstructorId())
             .email(instructor.getEmail())
             .fullName(instructor.getFullName())
             .isActive(instructor.isActive())

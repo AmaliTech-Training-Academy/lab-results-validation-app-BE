@@ -101,7 +101,6 @@ class CohortReferenceQueryServiceTest {
 
         Learner learner = Learner.builder()
             .id(UUID.randomUUID())
-            .learnerId("DEG-2026-001")
             .fullName("Ama Owusu")
             .email("ama.owusu@example.com")
             .cohortId(cohortId)
@@ -112,7 +111,6 @@ class CohortReferenceQueryServiceTest {
 
         InstructorContact instructor = InstructorContact.builder()
             .id(UUID.randomUUID())
-            .instructorId("INS-001")
             .email("kofi.instructor@example.com")
             .fullName("Kofi Mensah")
             .isActive(true)
@@ -130,10 +128,10 @@ class CohortReferenceQueryServiceTest {
         assertThat(specResponse.getModules().get(0).getLabs().get(0).getTitle()).isEqualTo("REST API Basics");
 
         assertThat(response.getLearners()).hasSize(1);
-        assertThat(response.getLearners().get(0).getLearnerId()).isEqualTo("DEG-2026-001");
+        assertThat(response.getLearners().get(0).getEmail()).isEqualTo("ama.owusu@example.com");
 
         assertThat(response.getInstructors()).hasSize(1);
-        assertThat(response.getInstructors().get(0).getInstructorId()).isEqualTo("INS-001");
+        assertThat(response.getInstructors().get(0).getEmail()).isEqualTo("kofi.instructor@example.com");
     }
 
     @Test

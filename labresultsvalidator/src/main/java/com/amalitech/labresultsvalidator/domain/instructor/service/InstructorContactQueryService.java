@@ -32,7 +32,6 @@ public class InstructorContactQueryService {
     private InstructorContactResponse toResponse(InstructorContact instructor) {
         return InstructorContactResponse.builder()
             .id(instructor.getId())
-            .instructorId(instructor.getInstructorId())
             .email(instructor.getEmail())
             .fullName(instructor.getFullName())
             .isActive(instructor.isActive())

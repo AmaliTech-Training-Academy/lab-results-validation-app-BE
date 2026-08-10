@@ -30,8 +30,8 @@ class ScoreRowValidationServiceTest {
 
     private static final String FILE_NAME = "Instructor1.xlsx";
     private static final String SHEET = "Module Setup";
-    // Reviewer is now matched by full name, not instructorId (instructorId is system-generated,
-    // no longer sheet-sourced).
+    // Reviewer is matched by full name — InstructorContact has no separate instructor-id column
+    // to match on (dropped in V33; it was never sheet-sourced to begin with).
     private static final String REVIEWER_NAME = "Kofi Mensah";
 
     @Mock
@@ -63,7 +63,7 @@ class ScoreRowValidationServiceTest {
         moduleId = UUID.randomUUID();
         labId = UUID.randomUUID();
 
-        learner = Learner.builder().id(UUID.randomUUID()).learnerId("ama.owusu@example.com")
+        learner = Learner.builder().id(UUID.randomUUID())
             .fullName("Ama Owusu").cohortId(cohortId).specializationId(specId).build();
         when(learnerRepository.findAllByCohortId(cohortId)).thenReturn(List.of(learner));
     }
@@ -89,7 +89,7 @@ class ScoreRowValidationServiceTest {
     void validate_validRowWithKnownReviewer_resolvesEverything() {
         stubLabUnderSpecialization(specId, "REST API Basics", labId);
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
-            .instructorId("INS-001").email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+            .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(validParsedRow()));
@@ -109,7 +109,7 @@ class ScoreRowValidationServiceTest {
     void validate_arbitrarySheetName_stillResolves_sheetNameIsPurelyCosmetic() {
         stubLabUnderSpecialization(specId, "REST API Basics", labId);
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
-            .instructorId("INS-001").email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+            .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
 
         for (String sheetName : List.of("Module-5", "Sheet1", "Whatever", "Module Setup")) {

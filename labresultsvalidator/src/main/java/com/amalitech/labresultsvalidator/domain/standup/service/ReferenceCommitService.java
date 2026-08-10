@@ -280,7 +280,6 @@ public class ReferenceCommitService {
             Specialization spec = match.value();
 
             Learner learner = Learner.builder()
-                .learnerId(row.email())
                 .fullName(row.fullName())
                 .email(row.email())
                 .cohortId(cohortId)
@@ -319,7 +318,6 @@ public class ReferenceCommitService {
             InstructorContact instructor = instructorContactRepository.findByEmailIgnoreCase(row.email())
                 .orElseGet(() -> {
                     InstructorContact created = InstructorContact.builder()
-                        .instructorId(UUID.randomUUID().toString())
                         .email(row.email())
                         .fullName(row.fullName())
                         .isActive(true)

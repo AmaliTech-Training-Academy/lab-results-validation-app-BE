@@ -13,7 +13,6 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InstructorContactResponse {
     private UUID id;
-    private String instructorId;
     private String email;
     private String fullName;
     private boolean isActive;

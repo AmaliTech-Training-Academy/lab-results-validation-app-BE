@@ -222,7 +222,6 @@ class CohortControllerTest {
             .specializations(List.of())
             .learners(List.of(LearnerResponse.builder()
                 .id(UUID.randomUUID())
-                .learnerId("DEG-2026-001")
                 .fullName("Ama Owusu")
                 .email("ama.owusu@example.com")
                 .cohortId(id)
@@ -230,7 +229,6 @@ class CohortControllerTest {
                 .build()))
             .instructors(List.of(InstructorContactResponse.builder()
                 .id(UUID.randomUUID())
-                .instructorId("INS-001")
                 .email("kofi.instructor@example.com")
                 .fullName("Kofi Mensah")
                 .isActive(true)
@@ -240,8 +238,8 @@ class CohortControllerTest {
 
         mockMvc.perform(get(BASE_URL + "/" + id + "/reference"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.learners[0].learnerId").value("DEG-2026-001"))
-            .andExpect(jsonPath("$.data.instructors[0].instructorId").value("INS-001"));
+            .andExpect(jsonPath("$.data.learners[0].email").value("ama.owusu@example.com"))
+            .andExpect(jsonPath("$.data.instructors[0].email").value("kofi.instructor@example.com"));
     }
 
     @Test
