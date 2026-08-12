@@ -143,16 +143,41 @@ public class ScoreRowValidationService {
                 "Review Date '" + row.reviewDateRaw() + "' is not a valid date.", instructorContactId);
         }
 
-        // F2 — total score numeric and within range. Sheets record the score directly as a
-        // whole number 0-100 (e.g. 85), not a fraction — no ×100 conversion needed.
+        // F2 — total score numeric and within range 1-100. Sheets record the score directly as a
+        // whole number (e.g. 85) — no ×100 conversion needed. A decimal that already falls within
+        // 1-100 (e.g. 30.6) is ordinary imprecise grading math, not bad data — round it to the
+        // nearest whole number rather than rejecting an otherwise-valid score. A decimal outside
+        // that range (e.g. 0.92, 150.5) doesn't look like a real score at all — reject outright
+        // rather than guess (see the double x100-scaling incident this rule guards against). The
+        // decimal-ness itself is only the *reported* reason when it plausibly explains the bad
+        // value (the percent-format mistake, e.g. 0.92); otherwise the value is simply out of
+        // range regardless of the decimal point (e.g. 150.5 would still fail even as 150 or 151),
+        // so it's reported as F2-SCORE-OUT-OF-RANGE rather than a misleading "not whole number".
         if (row.totalScore() == null) {
             return fieldError(row, "F2-INVALID-SCORE",
                 "Total Score '" + row.totalScoreRaw() + "' is not numeric.", instructorContactId);
         }
-        BigDecimal score = row.totalScore().setScale(2, RoundingMode.HALF_UP);
-        if (score.compareTo(BigDecimal.ZERO) < 0 || score.compareTo(HUNDRED) > 0) {
+        BigDecimal rawScore = row.totalScore();
+        BigDecimal score;
+        if (rawScore.stripTrailingZeros().scale() > 0) {
+            if (rawScore.compareTo(BigDecimal.ONE) < 0 || rawScore.compareTo(HUNDRED) > 0) {
+                String percentHint = percentHint(rawScore);
+                if (!percentHint.isEmpty()) {
+                    return fieldError(row, "F2-SCORE-NOT-WHOLE-NUMBER",
+                        "Total Score '" + row.totalScoreRaw() + "' has a decimal point; scores must be a"
+                            + " whole number 1-100." + percentHint,
+                        instructorContactId);
+                }
+                return fieldError(row, "F2-SCORE-OUT-OF-RANGE",
+                    "Total Score '" + row.totalScoreRaw() + "' is outside 1-100.", instructorContactId);
+            }
+            score = rawScore.setScale(0, RoundingMode.HALF_UP).setScale(2);
+        } else {
+            score = rawScore.setScale(2, RoundingMode.HALF_UP);
+        }
+        if (score.compareTo(BigDecimal.ONE) < 0 || score.compareTo(HUNDRED) > 0) {
             return fieldError(row, "F2-SCORE-OUT-OF-RANGE",
-                "Total Score '" + row.totalScoreRaw() + "' resolves to " + score + ", outside 0-100.",
+                "Total Score '" + row.totalScoreRaw() + "' resolves to " + score + ", outside 1-100.",
                 instructorContactId);
         }
 
@@ -207,6 +232,22 @@ public class ScoreRowValidationService {
         return instructorContactRepository.findByFullNameIgnoreCase(reviewer.trim())
             .map(InstructorContact::getId)
             .orElse(null);
+    }
+
+    // Detects the common Excel percent-format mistake: entering e.g. "92%" makes Excel store the
+    // raw fraction 0.92, invisible to POI's getNumericCellValue() (see ScoreSheetRowReader). When
+    // the rejected decimal times 100 lands cleanly on a whole number 1-100, surface that as an
+    // actionable hint rather than leaving the instructor to guess what "not a whole number" means.
+    private String percentHint(BigDecimal decimalScore) {
+        BigDecimal asWhole = decimalScore.multiply(HUNDRED);
+        if (asWhole.stripTrailingZeros().scale() > 0
+            || asWhole.compareTo(BigDecimal.ONE) < 0
+            || asWhole.compareTo(HUNDRED) > 0) {
+            return "";
+        }
+        String whole = asWhole.stripTrailingZeros().toPlainString();
+        return " This looks like a percentage-formatted cell showing '" + whole
+            + "%' — re-enter the score as a whole number (e.g. " + whole + ").";
     }
 
     private RowError fieldError(ParsedScoreRow row, String rule, String message, UUID instructorContactId) {
