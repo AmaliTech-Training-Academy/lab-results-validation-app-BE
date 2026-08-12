@@ -192,6 +192,36 @@ class ScoreRowValidationServiceTest {
     }
 
     @Test
+    void validate_scoreLooksLikeFraction_reportsF2NotWholeNumberError() {
+        ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "0.92", new BigDecimal("0.92"), "INS-001");
+
+        ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
+
+        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule()));
+    }
+
+    @Test
+    void validate_scoreHasDecimalPoint_reportsF2NotWholeNumberError() {
+        ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "92.5", new BigDecimal("92.5"), "INS-001");
+
+        ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
+
+        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule()));
+    }
+
+    @Test
+    void validate_scoreZero_reportsF2RangeError() {
+        ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "0", new BigDecimal("0"), "INS-001");
+
+        ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
+
+        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-OUT-OF-RANGE".equals(e.rule()));
+    }
+
+    @Test
     void validate_unknownNsp_reportsR1Error() {
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Not A Learner", "REST API Basics", "90", new BigDecimal("90"), "INS-001");

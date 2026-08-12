@@ -143,16 +143,24 @@ public class ScoreRowValidationService {
                 "Review Date '" + row.reviewDateRaw() + "' is not a valid date.", instructorContactId);
         }
 
-        // F2 — total score numeric and within range. Sheets record the score directly as a
-        // whole number 0-100 (e.g. 85), not a fraction — no ×100 conversion needed.
+        // F2 — total score numeric, a whole number, and within range 1-100. Sheets record the
+        // score directly as a whole number (e.g. 85) — no ×100 conversion, and no decimals.
         if (row.totalScore() == null) {
             return fieldError(row, "F2-INVALID-SCORE",
                 "Total Score '" + row.totalScoreRaw() + "' is not numeric.", instructorContactId);
         }
+        // Reject decimals outright (e.g. 0.92 or 92.5) rather than silently persisting a value
+        // that doesn't match the whole-number-out-of-100 convention (see the double x100-scaling
+        // incident this rule guards against).
+        if (row.totalScore().stripTrailingZeros().scale() > 0) {
+            return fieldError(row, "F2-SCORE-NOT-WHOLE-NUMBER",
+                "Total Score '" + row.totalScoreRaw() + "' has a decimal point; scores must be a whole number 1-100.",
+                instructorContactId);
+        }
         BigDecimal score = row.totalScore().setScale(2, RoundingMode.HALF_UP);
-        if (score.compareTo(BigDecimal.ZERO) < 0 || score.compareTo(HUNDRED) > 0) {
+        if (score.compareTo(BigDecimal.ONE) < 0 || score.compareTo(HUNDRED) > 0) {
             return fieldError(row, "F2-SCORE-OUT-OF-RANGE",
-                "Total Score '" + row.totalScoreRaw() + "' resolves to " + score + ", outside 0-100.",
+                "Total Score '" + row.totalScoreRaw() + "' resolves to " + score + ", outside 1-100.",
                 instructorContactId);
         }
 
