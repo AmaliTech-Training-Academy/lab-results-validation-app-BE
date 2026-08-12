@@ -158,8 +158,8 @@ public class ScoreRowValidationService {
         if (rawScore.stripTrailingZeros().scale() > 0) {
             if (rawScore.compareTo(BigDecimal.ONE) < 0 || rawScore.compareTo(HUNDRED) > 0) {
                 return fieldError(row, "F2-SCORE-NOT-WHOLE-NUMBER",
-                    "Total Score '" + row.totalScoreRaw() + "' has a decimal point; scores must be a whole number 1-100."
-                        + percentHint(rawScore),
+                    "Total Score '" + row.totalScoreRaw() + "' has a decimal point; scores must be a whole"
+                        + " number 1-100." + percentHint(rawScore),
                     instructorContactId);
             }
             score = rawScore.setScale(0, RoundingMode.HALF_UP).setScale(2);
