@@ -207,16 +207,64 @@ class ScoreRowValidationServiceTest {
     }
 
     @Test
-    void validate_scoreHasDecimalPointNotResemblingAPercent_reportsF2ErrorWithoutPercentHint() {
-        // 92.5 x 100 = 9250, outside 1-100, so this isn't a plausible percent-cell mistake — the
-        // hint should not fire for it.
+    void validate_scoreHasDecimalPointOutsideRoundableRange_reportsF2ErrorWithoutPercentHint() {
+        // 150.5 is a decimal outside 1-100, so it's neither roundable nor a plausible percent-cell
+        // mistake (150.5 x 100 = 15050, also outside 1-100) — the hint should not fire for it.
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
-            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "92.5", new BigDecimal("92.5"), "INS-001");
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "150.5", new BigDecimal("150.5"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
         assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule())
             && !e.message().contains("percentage-formatted cell"));
+    }
+
+    @Test
+    void validate_scoreWithRoundableDecimal_reportsNoErrorAndRoundsDown() {
+        stubLabUnderSpecialization(specId, "REST API Basics", labId);
+        InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
+            .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+        when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "30.2", new BigDecimal("30.2"), REVIEWER_NAME);
+
+        ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.validRows()).hasSize(1);
+        assertThat(result.validRows().get(0).score()).isEqualTo(new BigDecimal("30.00"));
+    }
+
+    @Test
+    void validate_scoreWithRoundableDecimal_reportsNoErrorAndRoundsUp() {
+        stubLabUnderSpecialization(specId, "REST API Basics", labId);
+        InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
+            .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+        when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "30.6", new BigDecimal("30.6"), REVIEWER_NAME);
+
+        ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.validRows()).hasSize(1);
+        assertThat(result.validRows().get(0).score()).isEqualTo(new BigDecimal("31.00"));
+    }
+
+    @Test
+    void validate_scoreWithExactHalfDecimal_roundsHalfUp() {
+        stubLabUnderSpecialization(specId, "REST API Basics", labId);
+        InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
+            .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
+        when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
+            LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "30.5", new BigDecimal("30.5"), REVIEWER_NAME);
+
+        ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.validRows()).hasSize(1);
+        assertThat(result.validRows().get(0).score()).isEqualTo(new BigDecimal("31.00"));
     }
 
     @Test
