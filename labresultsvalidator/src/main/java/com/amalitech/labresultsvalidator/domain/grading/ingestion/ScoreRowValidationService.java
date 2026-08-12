@@ -148,7 +148,11 @@ public class ScoreRowValidationService {
         // 1-100 (e.g. 30.6) is ordinary imprecise grading math, not bad data — round it to the
         // nearest whole number rather than rejecting an otherwise-valid score. A decimal outside
         // that range (e.g. 0.92, 150.5) doesn't look like a real score at all — reject outright
-        // rather than guess (see the double x100-scaling incident this rule guards against).
+        // rather than guess (see the double x100-scaling incident this rule guards against). The
+        // decimal-ness itself is only the *reported* reason when it plausibly explains the bad
+        // value (the percent-format mistake, e.g. 0.92); otherwise the value is simply out of
+        // range regardless of the decimal point (e.g. 150.5 would still fail even as 150 or 151),
+        // so it's reported as F2-SCORE-OUT-OF-RANGE rather than a misleading "not whole number".
         if (row.totalScore() == null) {
             return fieldError(row, "F2-INVALID-SCORE",
                 "Total Score '" + row.totalScoreRaw() + "' is not numeric.", instructorContactId);
@@ -157,10 +161,15 @@ public class ScoreRowValidationService {
         BigDecimal score;
         if (rawScore.stripTrailingZeros().scale() > 0) {
             if (rawScore.compareTo(BigDecimal.ONE) < 0 || rawScore.compareTo(HUNDRED) > 0) {
-                return fieldError(row, "F2-SCORE-NOT-WHOLE-NUMBER",
-                    "Total Score '" + row.totalScoreRaw() + "' has a decimal point; scores must be a whole"
-                        + " number 1-100." + percentHint(rawScore),
-                    instructorContactId);
+                String percentHint = percentHint(rawScore);
+                if (!percentHint.isEmpty()) {
+                    return fieldError(row, "F2-SCORE-NOT-WHOLE-NUMBER",
+                        "Total Score '" + row.totalScoreRaw() + "' has a decimal point; scores must be a"
+                            + " whole number 1-100." + percentHint,
+                        instructorContactId);
+                }
+                return fieldError(row, "F2-SCORE-OUT-OF-RANGE",
+                    "Total Score '" + row.totalScoreRaw() + "' is outside 1-100.", instructorContactId);
             }
             score = rawScore.setScale(0, RoundingMode.HALF_UP).setScale(2);
         } else {

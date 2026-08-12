@@ -207,15 +207,17 @@ class ScoreRowValidationServiceTest {
     }
 
     @Test
-    void validate_scoreHasDecimalPointOutsideRoundableRange_reportsF2ErrorWithoutPercentHint() {
-        // 150.5 is a decimal outside 1-100, so it's neither roundable nor a plausible percent-cell
-        // mistake (150.5 x 100 = 15050, also outside 1-100) — the hint should not fire for it.
+    void validate_scoreHasDecimalPointOutsideRoundableRange_reportsF2RangeErrorWithoutPercentHint() {
+        // 150.5 is a decimal outside 1-100, and it's neither roundable nor a plausible percent-cell
+        // mistake (150.5 x 100 = 15050, also outside 1-100). Being out of range is the actual
+        // defect here — not the decimal point (150 or 151 would fail too) — so this reports as
+        // F2-SCORE-OUT-OF-RANGE rather than F2-SCORE-NOT-WHOLE-NUMBER, and the hint should not fire.
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "150.5", new BigDecimal("150.5"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
-        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule())
+        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-OUT-OF-RANGE".equals(e.rule())
             && !e.message().contains("percentage-formatted cell"));
     }
 
