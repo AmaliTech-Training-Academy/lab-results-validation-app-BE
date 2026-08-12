@@ -192,23 +192,31 @@ class ScoreRowValidationServiceTest {
     }
 
     @Test
-    void validate_scoreLooksLikeFraction_reportsF2NotWholeNumberError() {
+    void validate_scoreLooksLikePercentFormattedCell_reportsF2ErrorWithPercentHint() {
+        // Mirrors Excel's percent-format trap: an instructor typing "92%" ends up with the sheet
+        // cell storing the raw fraction 0.92, which POI reads back as this exact decimal string.
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "0.92", new BigDecimal("0.92"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
-        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule()));
+        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule())
+            && e.message().contains("percentage-formatted cell")
+            && e.message().contains("92%")
+            && e.message().contains("e.g. 92"));
     }
 
     @Test
-    void validate_scoreHasDecimalPoint_reportsF2NotWholeNumberError() {
+    void validate_scoreHasDecimalPointNotResemblingAPercent_reportsF2ErrorWithoutPercentHint() {
+        // 92.5 x 100 = 9250, outside 1-100, so this isn't a plausible percent-cell mistake — the
+        // hint should not fire for it.
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "92.5", new BigDecimal("92.5"), "INS-001");
 
         ScoreRowValidationService.ValidationResult result = service.validate(cohortId, List.of(row));
 
-        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule()));
+        assertThat(result.errors()).anyMatch(e -> "F2-SCORE-NOT-WHOLE-NUMBER".equals(e.rule())
+            && !e.message().contains("percentage-formatted cell"));
     }
 
     @Test
