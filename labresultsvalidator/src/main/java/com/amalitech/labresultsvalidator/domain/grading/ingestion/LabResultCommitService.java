@@ -6,17 +6,14 @@ import com.amalitech.labresultsvalidator.domain.grading.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.grading.repository.IngestionConflictRepository;
 import com.amalitech.labresultsvalidator.domain.auditlog.repository.LabReferenceAuditLogRepository;
 import com.amalitech.labresultsvalidator.domain.grading.repository.LabResultRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -25,27 +22,29 @@ import java.util.UUID;
  * convention, so each row's write commits independently and a later row's failure can never roll
  * back an earlier row's commit (B9 AC2). Each row is individually try/caught; a failure is folded
  * into the outcome's row errors rather than propagated.
+ *
+ * <p>{@code conflictsCount} counts <strong>duplicates</strong>, not duplicated rows — a row appearing
+ * twice is one conflict needing one decision (see {@link #holdDuplicate}), so it counts 1.
  */
 @Component
 public class LabResultCommitService {
 
     private static final Logger LOG = LoggerFactory.getLogger(LabResultCommitService.class);
 
+    private static final String PENDING = "PENDING";
+
     private final LabResultRepository labResultRepository;
     private final IngestionConflictRepository ingestionConflictRepository;
     private final LabReferenceAuditLogRepository labReferenceAuditLogRepository;
-    private final ObjectMapper objectMapper;
 
     public LabResultCommitService(
         LabResultRepository labResultRepository,
         IngestionConflictRepository ingestionConflictRepository,
-        LabReferenceAuditLogRepository labReferenceAuditLogRepository,
-        ObjectMapper objectMapper
+        LabReferenceAuditLogRepository labReferenceAuditLogRepository
     ) {
         this.labResultRepository = labResultRepository;
         this.ingestionConflictRepository = ingestionConflictRepository;
         this.labReferenceAuditLogRepository = labReferenceAuditLogRepository;
-        this.objectMapper = objectMapper;
     }
 
     public record CommitOutcome(
@@ -58,7 +57,7 @@ public class LabResultCommitService {
     ) {
     }
 
-    public CommitOutcome commit(List<RowClassification> classifications, UUID ingestionRunId,
+    public CommitOutcome commit(List<RowClassification> classifications, UUID cohortId, UUID ingestionRunId,
                                 UUID triggeredBy) {
         int committedNew = 0;
         int updatedCount = 0;
@@ -80,8 +79,9 @@ public class LabResultCommitService {
                         updatedCount++;
                     }
                     case DUPLICATE -> {
-                        commitDuplicate(classification, ingestionRunId);
-                        conflictsCount++;
+                        if (holdDuplicate(classification, cohortId, ingestionRunId)) {
+                            conflictsCount++;
+                        }
                     }
                     default -> throw new IllegalStateException(
                         "Unexpected classification kind: " + classification.kind());
@@ -145,33 +145,79 @@ public class LabResultCommitService {
         labResultRepository.save(existing);
     }
 
-    private void commitDuplicate(RowClassification classification, UUID ingestionRunId) {
+    /**
+     * Holds one duplicated row as a single conflict carrying every conflicting copy (B10 AC1), and
+     * keeps it from multiplying across runs (B10 AC3).
+     *
+     * <p>Resolving a duplicate cannot remove it from the workbook — there is no write-back to
+     * SharePoint — so the same duplicate is read again on every run. The invariant enforced here is
+     * <strong>at most one PENDING conflict per (cohort, learner, lab)</strong>:
+     *
+     * <ul>
+     *   <li>a still-{@code PENDING} conflict is refreshed in place, never duplicated, so a second
+     *       pending conflict for one duplicate cannot exist and there is only ever one decision to
+     *       take;</li>
+     *   <li>an already-decided conflict whose candidate set is byte-for-byte the same decision the
+     *       admin already took is left alone — it does not reopen and raises no new alert;</li>
+     *   <li>an already-decided conflict whose marks or rows have since changed is a genuinely new
+     *       decision, so a fresh {@code PENDING} conflict opens.</li>
+     * </ul>
+     *
+     * <p>{@code ingestion_run_id} tracks the run whose data produced the stored candidates, so it is
+     * repointed whenever the payload is rewritten. The earlier run's own {@code conflicts_count}
+     * stays as the audit of what that run raised (B11 AC1).
+     *
+     * @return true if this duplicate needs an admin decision (opened or carried over), false if it
+     *     was already decided and nothing has changed
+     */
+    private boolean holdDuplicate(RowClassification classification, UUID cohortId, UUID ingestionRunId) {
+        List<ValidatedScoreRow> copies = classification.allRows();
         ValidatedScoreRow row = classification.row();
         LabResult existing = classification.existing();
+        UUID existingResultId = existing != null ? existing.getId() : null;
+        String fingerprint = DuplicateCandidateFingerprint.ofRows(copies);
+
+        IngestionConflict prior = findLatestConflict(cohortId, row.learnerId(), row.labId());
+        if (prior != null) {
+            boolean unchanged = fingerprint.equals(
+                DuplicateCandidateFingerprint.ofCandidates(ConflictPayloadCodec.read(prior.getIncomingPayloadJson())));
+
+            if (!PENDING.equals(prior.getStatus())) {
+                if (unchanged) {
+                    LOG.info("[ingestion] duplicate for learner={} lab={} was already {} with the same rows — "
+                            + "not reopening; the durable fix is to remove the duplicate row in '{}'",
+                        row.learnerId(), row.labId(), prior.getStatus().toLowerCase(), row.fileName());
+                    return false;
+                }
+            } else {
+                if (!unchanged) {
+                    prior.setIngestionRunId(ingestionRunId);
+                    prior.setIncomingPayloadJson(ConflictPayloadCodec.write(copies));
+                    prior.setExistingResultId(existingResultId);
+                    ingestionConflictRepository.save(prior);
+                }
+                LOG.info("[ingestion] duplicate for learner={} lab={} still awaiting a decision (conflict {})",
+                    row.learnerId(), row.labId(), prior.getId());
+                return true;
+            }
+        }
 
         ingestionConflictRepository.save(IngestionConflict.builder()
             .ingestionRunId(ingestionRunId)
             .learnerId(row.learnerId())
             .labId(row.labId())
-            .existingResultId(existing != null ? existing.getId() : null)
-            .incomingPayloadJson(buildPayloadJson(row))
+            .existingResultId(existingResultId)
+            .incomingPayloadJson(ConflictPayloadCodec.write(copies))
             .build());
+        return true;
     }
 
-    private String buildPayloadJson(ValidatedScoreRow row) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("fileName", row.fileName());
-        payload.put("sheetName", row.sheetName());
-        payload.put("rowNum", row.rowNum());
-        payload.put("nspName", row.nspName());
-        payload.put("submittedOn", row.submittedOn().toString());
-        payload.put("score", row.score().toPlainString());
-        UUID instructorContactId = row.instructorContactId();
-        payload.put("instructorContactId", instructorContactId != null ? instructorContactId.toString() : null);
-        try {
-            return objectMapper.writeValueAsString(payload);
-        } catch (JsonProcessingException ex) {
-            return "{\"error\":\"serialization failed\"}";
+    private IngestionConflict findLatestConflict(UUID cohortId, UUID learnerId, UUID labId) {
+        if (cohortId == null || learnerId == null || labId == null) {
+            return null;
         }
+        return ingestionConflictRepository
+            .findLatestForLearnerAndLab(cohortId, learnerId, labId, PageRequest.of(0, 1))
+            .stream().findFirst().orElse(null);
     }
 }

@@ -16,6 +16,9 @@ import java.util.stream.Collectors;
  * {@code (learnerId, labId)} — both are resolved during validation and don't change between
  * ingestion runs, unlike {@code submittedOn} (a re-grade can land on a new date). Change detection
  * (unchanged vs changed) compares {@code submittedOn}/{@code score} via {@link RowFingerprint}.
+ *
+ * <p>Two or more rows sharing an identity in one file are held as a single {@code DUPLICATE}
+ * classification carrying every copy — see {@link RowClassification#duplicateRows()}.
  */
 @Component
 public class ScoreRowClassifier {
@@ -36,9 +39,10 @@ public class ScoreRowClassifier {
             ValidatedScoreRow first = group.get(0);
             LabResult existing = existingByKey.get(identityKey(first));
             if (group.size() > 1) {
-                for (ValidatedScoreRow row : group) {
-                    results.add(new RowClassification(ClassificationKind.DUPLICATE, row, existing));
-                }
+                // One conflict per duplicated row, carrying every copy — not one per copy (B10 AC1).
+                // Copies of the same row are one problem and take one decision; emitting one
+                // classification each is what let two contradictory resolutions through.
+                results.add(new RowClassification(ClassificationKind.DUPLICATE, first, existing, List.copyOf(group)));
             } else {
                 classifySingleRow(first, existing, results);
             }
