@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -32,6 +33,22 @@ public interface IngestionConflictRepository extends JpaRepository<IngestionConf
     @Query("SELECT c FROM IngestionConflict c WHERE c.id = :id AND c.ingestionRunId IN "
         + "(SELECT r.id FROM IngestionRun r WHERE r.cohortId = :cohortId)")
     Optional<IngestionConflict> findByIdAndCohortIdForUpdate(@Param("id") UUID id, @Param("cohortId") UUID cohortId);
+
+    /**
+     * The most recent conflict raised for one learner+lab in a cohort, across every run (B10 AC3).
+     *
+     * <p>Ingestion uses this to avoid re-raising a duplicate it has already raised: a still-{@code
+     * PENDING} conflict is refreshed in place rather than duplicated, and an already-decided one whose
+     * candidate set is unchanged is left alone instead of reopening with a fresh alert email. Without
+     * it, one duplicate pair in a workbook produced two new conflict rows and one new email per run,
+     * forever, since the sheet is never written back to.
+     */
+    @Query("SELECT c FROM IngestionConflict c WHERE c.learnerId = :learnerId AND c.labId = :labId "
+        + "AND c.ingestionRunId IN (SELECT r.id FROM IngestionRun r WHERE r.cohortId = :cohortId) "
+        + "ORDER BY c.createdAt DESC, c.id DESC")
+    List<IngestionConflict> findLatestForLearnerAndLab(
+        @Param("cohortId") UUID cohortId, @Param("learnerId") UUID learnerId, @Param("labId") UUID labId,
+        Pageable pageable);
 
     @Query("SELECT c FROM IngestionConflict c WHERE c.ingestionRunId IN "
         + "(SELECT r.id FROM IngestionRun r WHERE r.cohortId = :cohortId)")

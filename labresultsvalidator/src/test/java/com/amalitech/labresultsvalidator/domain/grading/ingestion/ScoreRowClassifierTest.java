@@ -120,7 +120,7 @@ class ScoreRowClassifierTest {
     }
 
     @Test
-    void classify_sameIdentityTwiceInOneFile_bothAreDuplicates() {
+    void classify_sameIdentityTwiceInOneFile_isOneDuplicateHoldingBothRows() {
         stubExisting();
 
         ValidatedScoreRow first = row(new BigDecimal("90.00"));
@@ -128,12 +128,31 @@ class ScoreRowClassifierTest {
 
         List<RowClassification> result = classifier.classify(List.of(first, second));
 
-        assertThat(result).hasSize(2);
-        assertThat(result).allSatisfy(c -> assertThat(c.kind()).isEqualTo(ClassificationKind.DUPLICATE));
+        // One duplicated row is one problem taking one decision (B10 AC1). Emitting a classification
+        // per copy is what produced two independent conflicts for one duplicate, so resolution could
+        // accept contradictory answers and the stored grade followed whichever was clicked first.
+        assertThat(result).hasSize(1);
+        RowClassification duplicate = result.get(0);
+        assertThat(duplicate.kind()).isEqualTo(ClassificationKind.DUPLICATE);
+        assertThat(duplicate.duplicateRows()).containsExactly(first, second);
+        assertThat(duplicate.row()).isEqualTo(first);
     }
 
     @Test
-    void classify_duplicateGroupWithAnAlreadyCommittedRecord_attachesItToEachDuplicate() {
+    void classify_threeCopiesOfOneRow_areHeldUnderASingleDuplicate() {
+        stubExisting();
+
+        List<ValidatedScoreRow> copies = List.of(
+            row(new BigDecimal("90.00")), row(new BigDecimal("95.00")), row(new BigDecimal("70.00")));
+
+        List<RowClassification> result = classifier.classify(copies);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).duplicateRows()).containsExactlyElementsOf(copies);
+    }
+
+    @Test
+    void classify_duplicateGroupWithAnAlreadyCommittedRecord_attachesItToTheDuplicate() {
         LabResult existing = LabResult.builder().id(UUID.randomUUID()).learnerId(LEARNER_ID).labId(LAB_ID)
             .rowValueHash("irrelevant").score(new BigDecimal("80.00")).submittedOn(SUBMITTED_ON)
             .nspName(NSP_NAME).build();
@@ -142,9 +161,21 @@ class ScoreRowClassifierTest {
         List<RowClassification> result = classifier.classify(
             List.of(row(new BigDecimal("90.00")), row(new BigDecimal("95.00"))));
 
-        assertThat(result).allSatisfy(c -> {
-            assertThat(c.kind()).isEqualTo(ClassificationKind.DUPLICATE);
-            assertThat(c.existing()).isEqualTo(existing);
-        });
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).kind()).isEqualTo(ClassificationKind.DUPLICATE);
+        assertThat(result.get(0).existing()).isEqualTo(existing);
+        assertThat(result.get(0).duplicateRows()).hasSize(2);
+    }
+
+    @Test
+    void classify_nonDuplicateKinds_carryNoDuplicateRows() {
+        stubExisting();
+
+        List<RowClassification> result = classifier.classify(List.of(row(new BigDecimal("90.00"))));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).kind()).isEqualTo(ClassificationKind.NEW);
+        assertThat(result.get(0).duplicateRows()).isEmpty();
+        assertThat(result.get(0).allRows()).containsExactly(result.get(0).row());
     }
 }
