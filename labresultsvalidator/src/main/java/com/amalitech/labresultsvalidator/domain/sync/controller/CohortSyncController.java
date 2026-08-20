@@ -159,16 +159,23 @@ public class CohortSyncController {
     }
 
     @Operation(summary = "Resolve an ingestion conflict",
-        description = "Resolves a held in-file duplicate conflict (B10): keep the existing committed row, "
-            + "keep the incoming row (updating or creating the committed row), or reject both. Only a "
-            + "PENDING conflict can be resolved.")
+        description = "Decides a held in-file duplicate (B10): keep the existing committed row, keep one "
+            + "of the conflicting incoming rows (updating or creating the committed row), or reject them "
+            + "all. A duplicate is one conflict holding every conflicting copy, so KEEP_INCOMING needs "
+            + "chosenRowIndex — the 0-based index of the candidate to keep, as listed in the conflict's "
+            + "`candidates`. It may be omitted only when the conflict holds a single candidate. Whatever "
+            + "the action, the decision and every discarded mark are written to the grade's audit "
+            + "history. Only a PENDING conflict can be decided, and only once.")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
             description = "Conflict resolved"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
             description = "No conflict with that ID for this cohort"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409",
+            description = "Conflict has already been resolved or dismissed — a second decision is "
+                + "refused rather than overwriting the first"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422",
-            description = "Conflict has already been resolved or dismissed")
+            description = "chosenRowIndex is missing or out of range, or the stored payload is corrupt")
     })
     @PatchMapping("/{id}/conflicts/{conflictId}/resolve")
     public ResponseEntity<ApiResponse<IngestionConflictResponse>> resolveConflict(

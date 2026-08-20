@@ -68,6 +68,12 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ex.getMessage()));
     }
 
+    @ExceptionHandler(ConflictStateException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConflictState(ConflictStateException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
     @ExceptionHandler(UnprocessableEntityException.class)
     public ResponseEntity<ApiResponse<Void>> handleUnprocessableEntity(UnprocessableEntityException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
