@@ -28,9 +28,8 @@ locals {
   }
 }
 
-# The box can't use an IAM role (this account denies iam:PassRole), so deploys happen over
-# SSH instead. Terraform generates the key pair; the private key is a (sensitive) output you
-# copy into the repo secret SSH_PRIVATE_KEY. CI uses it to reach the box.
+# Break-glass key pair for console SSH (SG has no port 22 ingress by default). CI deploys
+# happen over SSM using the box's instance role, not this key.
 resource "tls_private_key" "box" {
   algorithm = "ED25519"
 }
@@ -56,33 +55,46 @@ module "sharepoint_files" {
   tags        = local.common_tags
 }
 
+# CI writes the .env file here and the box pulls it down over SSM — keeps secrets out of
+# SSM command parameters, which are stored in plaintext in command history/CloudTrail.
+module "deploy_staging" {
+  source          = "../modules/s3"
+  bucket_name     = "${var.name_prefix}-deploy-staging"
+  create_app_user = false
+  force_destroy   = true
+  tags            = local.common_tags
+}
+
 module "app" {
   source = "../modules/ec2-app"
 
-  name_prefix       = var.name_prefix
-  vpc_id            = data.aws_vpc.default.id
-  subnet_id         = element(data.aws_subnets.default.ids, 0)
-  ami_id            = data.aws_ssm_parameter.ubuntu.value
-  instance_type     = var.instance_type
-  root_volume_gb    = var.root_volume_gb
-  admin_cidr        = var.admin_cidr
-  key_name          = aws_key_pair.box.key_name
-  use_spot          = var.use_spot
-  spot_max_price    = var.spot_max_price
-  tags              = local.common_tags
-  backend_repo_url  = module.ecr.repository_urls["backend"]
-  frontend_repo_url = module.ecr.repository_urls["frontend"]
-  image_tag         = var.image_tag
+  name_prefix               = var.name_prefix
+  vpc_id                    = data.aws_vpc.default.id
+  subnet_id                 = element(data.aws_subnets.default.ids, 0)
+  ami_id                    = data.aws_ssm_parameter.ubuntu.value
+  instance_type             = var.instance_type
+  root_volume_gb            = var.root_volume_gb
+  key_name                  = aws_key_pair.box.key_name
+  use_spot                  = var.use_spot
+  spot_max_price            = var.spot_max_price
+  tags                      = local.common_tags
+  backend_repo_url          = module.ecr.repository_urls["backend"]
+  frontend_repo_url         = module.ecr.repository_urls["frontend"]
+  image_tag                 = var.image_tag
+  deploy_staging_bucket_arn = module.deploy_staging.bucket_arn
 }
 
 module "cicd" {
-  source               = "../modules/cicd"
-  name_prefix          = var.name_prefix
-  account_id           = data.aws_caller_identity.current.account_id
-  github_org           = var.github_org
-  github_repos         = var.github_repos
-  branch               = "dev"
-  ecr_arns             = module.ecr.repository_arns
-  create_oidc_provider = var.create_github_oidc_provider
-  tags                 = local.common_tags
+  source                    = "../modules/cicd"
+  name_prefix               = var.name_prefix
+  account_id                = data.aws_caller_identity.current.account_id
+  github_org                = var.github_org
+  github_repos              = var.github_repos
+  branch                    = "dev"
+  ecr_arns                  = module.ecr.repository_arns
+  create_oidc_provider      = var.create_github_oidc_provider
+  aws_region                = var.aws_region
+  deploy_instance_id        = module.app.instance_id
+  deploy_staging_bucket_arn = module.deploy_staging.bucket_arn
+  tags                      = local.common_tags
 }

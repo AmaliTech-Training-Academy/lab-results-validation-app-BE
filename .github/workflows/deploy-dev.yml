@@ -1,8 +1,10 @@
 name: Deploy Dev (backend)
 
-# On merge to develop: build the image, push to ECR, then deploy over SSH. The EC2 box has no IAM
-# role (PassRole denied) and no AWS identity — so this job writes /opt/app/.env on the box,
-# passes a short-lived ECR login token over SSH, and runs `docker compose pull && up -d`.
+# On merge to develop: build the image, push to ECR, then deploy over SSM (no SSH / no
+# inbound port 22). The EC2 box has an SSM-only instance role. Long-lived secrets (.env) are
+# staged in a private S3 bucket and pulled down by the box, since SSM command parameters land
+# in plaintext in command history/CloudTrail; the ECR login token is short-lived (12h) so it's
+# passed directly in the SSM command. Then `docker compose pull && up -d` runs on the box.
 
 on:
   push:
@@ -48,11 +50,11 @@ jobs:
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:dev"
 
-      - name: Deploy over SSH
+      - name: Deploy over SSM
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          INSTANCE_ID: ${{ secrets.DEPLOY_INSTANCE_ID }}
+          DEPLOY_STAGING_BUCKET: ${{ secrets.DEPLOY_STAGING_BUCKET }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
@@ -72,28 +74,9 @@ jobs:
           SHAREPOINT_SITE_ID: ${{ secrets.SHAREPOINT_SITE_ID }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/key
-          chmod 600 ~/.ssh/key
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i $HOME/.ssh/key"
 
-          # The dev box is a small burstable instance; SSH connects occasionally time out
-          # (CPU-credit throttling / transient runner->AWS network blips). Retry so one
-          # flaky connect doesn't fail the whole deploy.
-          retry() {
-            local n=0 max=5
-            until "$@"; do
-              n=$((n + 1))
-              if [ "$n" -ge "$max" ]; then
-                echo "command failed after $max attempts: $*" >&2
-                return 1
-              fi
-              echo "attempt $n/$max failed; retrying in 10s..." >&2
-              sleep 10
-            done
-          }
-
-          # Build .env locally and copy it to the box (avoids quoting hell in remote heredocs).
+          # Build .env locally and stage it in S3 (never as an SSM command parameter — those are
+          # stored in plaintext in SSM command history / CloudTrail). The box pulls and deletes it.
           {
             echo "DB_HOST=$DB_HOST"
             echo "DB_PORT=5432"
@@ -118,11 +101,58 @@ jobs:
             echo "AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET"
             echo "SHAREPOINT_SITE_ID=$SHAREPOINT_SITE_ID"
           } > env.deploy
-          retry scp $SSH_OPTS env.deploy ubuntu@"$SSH_HOST":/opt/app/.env
+
+          STAGING_KEY="deploy/${{ github.run_id }}/env.deploy"
+          aws s3 cp env.deploy "s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY" --sse AES256
           rm -f env.deploy
 
-          # Mint an ECR token (CI has AWS creds via OIDC) and use it to log in ON the box.
+          # Mint an ECR token (CI has AWS creds via OIDC); the box uses it to log in itself.
           ECR_TOKEN=$(aws ecr get-login-password --region "$AWS_REGION")
           echo "::add-mask::$ECR_TOKEN"
-          retry ssh $SSH_OPTS ubuntu@"$SSH_HOST" \
-            "echo '$ECR_TOKEN' | docker login --username AWS --password-stdin '$REGISTRY' && cd /opt/app && docker compose pull app && docker compose up -d redis app && docker image prune -f"
+
+          REMOTE_SCRIPT=$(printf '%s\n' \
+            "set -euo pipefail" \
+            "aws s3 cp s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY /opt/app/.env" \
+            "aws s3 rm s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY" \
+            "chown ubuntu:ubuntu /opt/app/.env" \
+            "echo '$ECR_TOKEN' | docker login --username AWS --password-stdin '$REGISTRY'" \
+            "cd /opt/app" \
+            "docker compose pull app" \
+            "docker compose up -d redis app" \
+            "docker image prune -f")
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "{\"commands\":[$(jq -Rs . <<< "$REMOTE_SCRIPT")]}" \
+            --comment "deploy-dev ${{ github.sha }}" \
+            --query "Command.CommandId" --output text)
+
+          echo "SSM command: $COMMAND_ID"
+
+          # Poll until the command reaches a terminal status.
+          for _ in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query "Status" --output text 2>/dev/null || echo "Pending")
+            case "$STATUS" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+                  --query "StandardErrorContent" --output text
+                echo "SSM command ended with status $STATUS" >&2
+                exit 1
+                ;;
+              *) sleep 10 ;;
+            esac
+          done
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "SSM command did not complete in time (last status: $STATUS)" >&2
+            exit 1
+          fi
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query "StandardOutputContent" --output text

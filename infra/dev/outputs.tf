@@ -1,11 +1,16 @@
 output "instance_id" {
   value       = module.app.instance_id
-  description = "EC2 instance id."
+  description = "EC2 instance id. Set as the DEPLOY_INSTANCE_ID repo secret (CI deploys via SSM SendCommand)."
+}
+
+output "deploy_staging_bucket_id" {
+  value       = module.deploy_staging.bucket_id
+  description = "S3 bucket CI stages the .env file in for the box to pull via SSM. Set as the DEPLOY_STAGING_BUCKET repo secret."
 }
 
 output "public_ip" {
   value       = module.app.public_ip
-  description = "Box Elastic IP. Set this as the SSH_HOST repo secret, and give it to whoever owns the RDS to whitelist on 5432."
+  description = "Box Elastic IP. Give it to whoever owns the RDS to whitelist on 5432."
 }
 
 output "app_url" {
@@ -55,10 +60,10 @@ output "github_deploy_role_arn" {
 output "ssh_private_key" {
   value       = tls_private_key.box.private_key_openssh
   sensitive   = true
-  description = "Set as SSH_PRIVATE_KEY repo secret. Get it with: terraform output -raw ssh_private_key"
+  description = "Break-glass key only (SG has no port 22 ingress by default). Get it with: terraform output -raw ssh_private_key"
 }
 
-output "ssh_command" {
-  value       = "ssh ubuntu@${module.app.public_ip}"
-  description = "Manual SSH (save the private key locally first)."
+output "ssm_session_command" {
+  value       = "aws ssm start-session --target ${module.app.instance_id}"
+  description = "Interactive shell on the box via SSM (no SSH/port 22 needed)."
 }
