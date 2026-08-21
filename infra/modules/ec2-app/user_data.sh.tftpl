@@ -1,14 +1,20 @@
 #!/bin/bash
-# Bootstraps the dev box (Ubuntu): installs Docker + Compose and writes the compose file.
-# The box has NO IAM role and NO AWS CLI. CI deploys over SSH — it writes /opt/app/.env,
-# logs in to ECR with a token it passes over the connection, then pulls and starts the stack.
-# So nothing here touches AWS. The stack stays down until CI's first deploy provides .env.
+# Bootstraps the dev box (Ubuntu): installs Docker + Compose, the AWS CLI, and writes the
+# compose file. The box has an SSM-only instance role — CI stages /opt/app/.env in a private
+# S3 bucket and sends an SSM command that pulls it down (aws s3 cp) and deploys the stack.
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -y
-apt-get install -y docker.io
+apt-get install -y docker.io unzip curl
 systemctl enable --now docker
+
+# AWS CLI v2 (apt's awscli is v1 and stale on Ubuntu). The SSM-run deploy script uses this
+# to pull the staged .env from S3.
+curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/awscliv2.zip /tmp/aws
 
 # Let the 'ubuntu' SSH user run docker without sudo (CI connects as ubuntu).
 usermod -aG docker ubuntu
