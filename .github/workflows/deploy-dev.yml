@@ -111,7 +111,7 @@ jobs:
           echo "::add-mask::$ECR_TOKEN"
 
           REMOTE_SCRIPT=$(printf '%s\n' \
-            "set -euo pipefail" \
+            "set -eu" \
             "aws s3 cp s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY /opt/app/.env" \
             "aws s3 rm s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY" \
             "chown ubuntu:ubuntu /opt/app/.env" \
