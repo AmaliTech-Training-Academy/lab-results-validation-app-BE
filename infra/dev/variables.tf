@@ -19,12 +19,6 @@ variable "root_volume_gb" {
   default = 20
 }
 
-variable "admin_cidr" {
-  type        = string
-  default     = "0.0.0.0/0"
-  description = "CIDR allowed to SSH (port 22). Must include the GitHub runner for CI deploys; key-only auth."
-}
-
 variable "image_tag" {
   type    = string
   default = "dev"

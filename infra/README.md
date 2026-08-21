@@ -39,7 +39,6 @@ Two app repos produce images; this folder owns where they run.
 ```bash
 cd infra/dev
 terraform init
-# Edit terraform.tfvars — at minimum set admin_cidr to YOUR_IP/32
 terraform apply
 ```
 
@@ -79,8 +78,14 @@ at startup. Two things to verify on the RDS side, which this stack can't set for
 
 ## Wire up CI (both repos)
 
-In each repo → Settings → Secrets and variables → Actions, add secret
-`AWS_DEPLOY_ROLE_ARN` = the `github_deploy_role_arn` output.
+In each repo → Settings → Secrets and variables → Actions, add secrets:
+- `AWS_DEPLOY_ROLE_ARN` = the `github_deploy_role_arn` output
+- `DEPLOY_INSTANCE_ID` = the `instance_id` output
+- `DEPLOY_STAGING_BUCKET` = the `deploy_staging_bucket_id` output
+
+Deploys go over SSM (`aws ssm send-command`), not SSH — the box has no inbound port 22 and
+no SSH-based secrets to manage. For an interactive shell, use
+`terraform output ssm_session_command`.
 
 The backend workflow is at [`../.github/workflows/deploy-dev.yml`](../.github/workflows/deploy-dev.yml).
 Copy it into the frontend repo, changing `ECR_REPO` to `labresults-dev-frontend` and the build

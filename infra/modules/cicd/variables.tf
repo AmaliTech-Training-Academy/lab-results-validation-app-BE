@@ -38,3 +38,18 @@ variable "create_oidc_provider" {
   default     = true
   description = "Create the account-level GitHub OIDC provider. Set false if one already exists."
 }
+
+variable "aws_region" {
+  type        = string
+  description = "Region of the deploy target, for scoping the SSM SendCommand resource ARN."
+}
+
+variable "deploy_instance_id" {
+  type        = string
+  description = "EC2 instance ID the deploy role is allowed to SendCommand to."
+}
+
+variable "deploy_staging_bucket_arn" {
+  type        = string
+  description = "ARN of the S3 bucket CI stages the .env file in before the box pulls it via SSM."
+}

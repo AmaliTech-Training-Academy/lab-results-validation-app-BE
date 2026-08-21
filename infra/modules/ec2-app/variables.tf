@@ -31,15 +31,14 @@ variable "root_volume_gb" {
   default = 20
 }
 
-variable "admin_cidr" {
-  type        = string
-  default     = "0.0.0.0/0"
-  description = "CIDR allowed to SSH (port 22). Must include the CI runner; key-only auth."
-}
-
 variable "key_name" {
   type        = string
-  description = "EC2 key pair name for SSH access (used by CI to deploy)."
+  description = "EC2 key pair name (break-glass console SSH only; CI deploys via SSM)."
+}
+
+variable "deploy_staging_bucket_arn" {
+  type        = string
+  description = "ARN of the S3 bucket the box pulls the CI-staged .env file from."
 }
 
 variable "backend_repo_url" {

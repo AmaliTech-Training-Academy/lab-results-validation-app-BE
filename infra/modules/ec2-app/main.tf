@@ -9,7 +9,7 @@ terraform {
 
 resource "aws_security_group" "web" {
   name_prefix = "${var.name_prefix}-sg-"
-  description = "Dev box: web in from anywhere, SSH from admin only."
+  description = "Dev box: web in from anywhere. No SSH ingress - deploys go through SSM."
   vpc_id      = var.vpc_id
 
   ingress {
@@ -28,14 +28,6 @@ resource "aws_security_group" "web" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    description = "SSH (admin only)"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr]
-  }
-
   egress {
     description = "All outbound"
     from_port   = 0
@@ -51,15 +43,53 @@ resource "aws_security_group" "web" {
   }
 }
 
-# No instance role/profile: this account can't iam:PassRole, so a role can't be attached to
-# EC2. The box has NO AWS identity at all — CI deploys over SSH (writes .env, passes an ECR
-# login token, pulls, and starts the stack). So nothing here needs AWS credentials.
+# SSM-only instance role: lets CI reach the box via aws ssm send-command instead of SSH, so
+# no inbound port 22 rule (and no static admin IP allowlist) is needed at all.
+resource "aws_iam_role" "ssm" {
+  name = "${var.name_prefix}-ssm-role"
+  tags = var.tags
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ssm.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy" "deploy_staging" {
+  name = "${var.name_prefix}-deploy-staging"
+  role = aws_iam_role.ssm.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "DeployStagingGet"
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:DeleteObject"]
+      Resource = "${var.deploy_staging_bucket_arn}/*"
+    }]
+  })
+}
+
+resource "aws_iam_instance_profile" "ssm" {
+  name = "${var.name_prefix}-ssm-profile"
+  role = aws_iam_role.ssm.name
+}
 
 resource "aws_instance" "this" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.web.id]
+  iam_instance_profile   = aws_iam_instance_profile.ssm.name
   key_name               = var.key_name != "" ? var.key_name : null
 
   # Spot — one-time request, default terminate-on-interruption (the only mode the RunInstances

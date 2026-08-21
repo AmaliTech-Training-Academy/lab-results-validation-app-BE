@@ -71,6 +71,32 @@ resource "aws_iam_role_policy" "deploy" {
           "ecr:GetDownloadUrlForLayer"
         ]
         Resource = var.ecr_arns
+      },
+      {
+        Sid    = "SsmDeploy"
+        Effect = "Allow"
+        Action = [
+          "ssm:SendCommand"
+        ]
+        Resource = [
+          "arn:aws:ec2:${var.aws_region}:${var.account_id}:instance/${var.deploy_instance_id}",
+          "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript"
+        ]
+      },
+      {
+        Sid    = "SsmDeployStatus"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetCommandInvocation",
+          "ssm:ListCommandInvocations"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "DeployStagingPut"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "${var.deploy_staging_bucket_arn}/*"
       }
     ]
   })
