@@ -36,9 +36,9 @@ variable "key_name" {
   description = "EC2 key pair name (break-glass console SSH only; CI deploys via SSM)."
 }
 
-variable "deploy_staging_bucket_arn" {
+variable "ssm_prefix" {
   type        = string
-  description = "ARN of the S3 bucket the box pulls the CI-staged .env file from."
+  description = "SSM Parameter Store path prefix (e.g. /labresults/dev) the box reads its .env from."
 }
 
 variable "backend_repo_url" {

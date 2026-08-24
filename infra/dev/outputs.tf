@@ -3,11 +3,6 @@ output "instance_id" {
   description = "EC2 instance id. Set as the DEPLOY_INSTANCE_ID repo secret (CI deploys via SSM SendCommand)."
 }
 
-output "deploy_staging_bucket_id" {
-  value       = module.deploy_staging.bucket_id
-  description = "S3 bucket CI stages the .env file in for the box to pull via SSM. Set as the DEPLOY_STAGING_BUCKET repo secret."
-}
-
 output "public_ip" {
   value       = module.app.public_ip
   description = "Box Elastic IP. Give it to whoever owns the RDS to whitelist on 5432."
@@ -43,13 +38,18 @@ output "sharepoint_bucket_arn" {
 
 output "sharepoint_app_access_key_id" {
   value       = module.sharepoint_files.app_access_key_id
-  description = "Set as the AWS_ACCESS_KEY_ID repo secret (both repos as needed)."
+  description = "Set via: aws ssm put-parameter --name /labresults/dev/AWS_ACCESS_KEY_ID --type SecureString --overwrite --value <this>"
 }
 
 output "sharepoint_app_secret_access_key" {
   value       = module.sharepoint_files.app_secret_access_key
   sensitive   = true
-  description = "Set as the AWS_SECRET_ACCESS_KEY repo secret. Read with: terraform output -raw sharepoint_app_secret_access_key"
+  description = "Set via: aws ssm put-parameter --name /labresults/dev/AWS_SECRET_ACCESS_KEY --type SecureString --overwrite --value $(terraform output -raw sharepoint_app_secret_access_key)"
+}
+
+output "pending_external_secrets" {
+  value       = module.secrets.external_secret_names_pending
+  description = "Parameters still holding the placeholder value — set each with: aws ssm put-parameter --name /labresults/dev/<NAME> --type SecureString --overwrite --value '<value>'"
 }
 
 output "github_deploy_role_arn" {

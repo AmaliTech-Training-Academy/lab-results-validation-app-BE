@@ -26,6 +26,8 @@ locals {
     Environment = "dev"
     owner       = "LabResults"
   }
+
+  ssm_prefix = "/labresults/dev"
 }
 
 # Break-glass key pair for console SSH (SG has no port 22 ingress by default). CI deploys
@@ -47,6 +49,42 @@ module "ecr" {
   tags        = local.common_tags
 }
 
+# Single source of truth for the box's .env — the remote deploy script pulls everything under
+# this path and writes .env directly, so changing a value is one `put-parameter`, no CI edit,
+# no redeploy of code. See infra/README.md for the update workflow.
+module "secrets" {
+  source     = "../modules/secrets"
+  ssm_prefix = local.ssm_prefix
+  tags       = local.common_tags
+
+  config_values = {
+    DB_HOST                       = var.db_host
+    DB_PORT                       = "5432"
+    DB_NAME                       = var.db_name
+    REDIS_HOST                    = "redis"
+    REDIS_PORT                    = "6379"
+    SPRING_JPA_HIBERNATE_DDL_AUTO = "none"
+    CORS_ALLOWED_ORIGINS          = "*"
+    FRONTEND_URL                  = "http://${module.app.public_ip}"
+    BASE_URL                      = "http://${module.app.public_ip}"
+    AWS_REGION                    = var.aws_region
+    S3_BUCKET                     = var.sharepoint_bucket_name
+  }
+
+  external_secret_names = [
+    "DB_USER",
+    "DB_PASSWORD",
+    "MAIL_USERNAME",
+    "MAIL_PASSWORD",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AZURE_TENANT_ID",
+    "AZURE_CLIENT_ID",
+    "AZURE_CLIENT_SECRET",
+    "SHAREPOINT_SITE_ID",
+  ]
+}
+
 # Stores SharePoint files per cohort; versioned so instructor edits can be diffed
 # against the prior version to re-trigger validation.
 module "sharepoint_files" {
@@ -55,46 +93,35 @@ module "sharepoint_files" {
   tags        = local.common_tags
 }
 
-# CI writes the .env file here and the box pulls it down over SSM — keeps secrets out of
-# SSM command parameters, which are stored in plaintext in command history/CloudTrail.
-module "deploy_staging" {
-  source          = "../modules/s3"
-  bucket_name     = "${var.name_prefix}-deploy-staging"
-  create_app_user = false
-  force_destroy   = true
-  tags            = local.common_tags
-}
-
 module "app" {
   source = "../modules/ec2-app"
 
-  name_prefix               = var.name_prefix
-  vpc_id                    = data.aws_vpc.default.id
-  subnet_id                 = element(data.aws_subnets.default.ids, 0)
-  ami_id                    = data.aws_ssm_parameter.ubuntu.value
-  instance_type             = var.instance_type
-  root_volume_gb            = var.root_volume_gb
-  key_name                  = aws_key_pair.box.key_name
-  use_spot                  = var.use_spot
-  spot_max_price            = var.spot_max_price
-  tags                      = local.common_tags
-  backend_repo_url          = module.ecr.repository_urls["backend"]
-  frontend_repo_url         = module.ecr.repository_urls["frontend"]
-  image_tag                 = var.image_tag
-  deploy_staging_bucket_arn = module.deploy_staging.bucket_arn
+  name_prefix       = var.name_prefix
+  vpc_id            = data.aws_vpc.default.id
+  subnet_id         = element(data.aws_subnets.default.ids, 0)
+  ami_id            = data.aws_ssm_parameter.ubuntu.value
+  instance_type     = var.instance_type
+  root_volume_gb    = var.root_volume_gb
+  key_name          = aws_key_pair.box.key_name
+  use_spot          = var.use_spot
+  spot_max_price    = var.spot_max_price
+  tags              = local.common_tags
+  backend_repo_url  = module.ecr.repository_urls["backend"]
+  frontend_repo_url = module.ecr.repository_urls["frontend"]
+  image_tag         = var.image_tag
+  ssm_prefix        = local.ssm_prefix
 }
 
 module "cicd" {
-  source                    = "../modules/cicd"
-  name_prefix               = var.name_prefix
-  account_id                = data.aws_caller_identity.current.account_id
-  github_org                = var.github_org
-  github_repos              = var.github_repos
-  branch                    = "dev"
-  ecr_arns                  = module.ecr.repository_arns
-  create_oidc_provider      = var.create_github_oidc_provider
-  aws_region                = var.aws_region
-  deploy_instance_id        = module.app.instance_id
-  deploy_staging_bucket_arn = module.deploy_staging.bucket_arn
-  tags                      = local.common_tags
+  source               = "../modules/cicd"
+  name_prefix          = var.name_prefix
+  account_id           = data.aws_caller_identity.current.account_id
+  github_org           = var.github_org
+  github_repos         = var.github_repos
+  branch               = "dev"
+  ecr_arns             = module.ecr.repository_arns
+  create_oidc_provider = var.create_github_oidc_provider
+  aws_region           = var.aws_region
+  deploy_instance_id   = module.app.instance_id
+  tags                 = local.common_tags
 }

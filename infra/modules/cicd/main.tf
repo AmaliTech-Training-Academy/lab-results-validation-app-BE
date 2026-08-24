@@ -91,12 +91,6 @@ resource "aws_iam_role_policy" "deploy" {
           "ssm:ListCommandInvocations"
         ]
         Resource = "*"
-      },
-      {
-        Sid      = "DeployStagingPut"
-        Effect   = "Allow"
-        Action   = ["s3:PutObject"]
-        Resource = "${var.deploy_staging_bucket_arn}/*"
       }
     ]
   })
