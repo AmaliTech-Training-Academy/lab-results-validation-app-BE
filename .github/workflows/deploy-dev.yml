@@ -1,10 +1,11 @@
 name: Deploy Dev (backend)
 
 # On merge to develop: build the image, push to ECR, then deploy over SSM (no SSH / no
-# inbound port 22). The EC2 box has an SSM-only instance role. Long-lived secrets (.env) are
-# staged in a private S3 bucket and pulled down by the box, since SSM command parameters land
-# in plaintext in command history/CloudTrail; the ECR login token is short-lived (12h) so it's
-# passed directly in the SSM command. Then `docker compose pull && up -d` runs on the box.
+# inbound port 22). The EC2 box has an SSM-only instance role and reads its .env directly from
+# SSM Parameter Store (/labresults/dev/*) via /opt/app/refresh-env.sh — CI never handles the
+# app's secret values at all, it just triggers refresh-env.sh + `docker compose pull && up -d`
+# over SSM. To change a config value: `aws ssm put-parameter --name /labresults/dev/<KEY>
+# --value <new> --overwrite`, then re-run this workflow (or just re-trigger a deploy).
 
 on:
   push:
@@ -21,9 +22,6 @@ permissions:
 env:
   AWS_REGION: eu-west-1
   ECR_REPO: labresults-dev-backend
-  DB_HOST: development-db.cv0268q40734.eu-west-1.rds.amazonaws.com
-  DB_NAME: lab_results_validator
-  S3_BUCKET: lab-results-validator-bucket
 
 jobs:
   build-and-deploy:
@@ -54,67 +52,17 @@ jobs:
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           INSTANCE_ID: ${{ secrets.DEPLOY_INSTANCE_ID }}
-          DEPLOY_STAGING_BUCKET: ${{ secrets.DEPLOY_STAGING_BUCKET }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
-          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
-          # NOT named AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY on purpose: those reserved names
-          # would override the OIDC deploy-role creds and make the `aws ecr get-login-password`
-          # call below run as the S3-only app user (no ECR access). Kept app-scoped here and
-          # written into the box .env under the real names further down.
-          APP_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          APP_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # Microsoft Graph / SharePoint. The app builds the Graph client eagerly at startup and
-          # crashes with "Invalid tenant id" without these, so they MUST be in the box .env.
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          SHAREPOINT_SITE_ID: ${{ secrets.SHAREPOINT_SITE_ID }}
         run: |
           set -euo pipefail
 
-          # Build .env locally and stage it in S3 (never as an SSM command parameter — those are
-          # stored in plaintext in SSM command history / CloudTrail). The box pulls and deletes it.
-          {
-            echo "DB_HOST=$DB_HOST"
-            echo "DB_PORT=5432"
-            echo "DB_NAME=$DB_NAME"
-            echo "DB_USER=$DB_USER"
-            echo "DB_PASSWORD=$DB_PASSWORD"
-            echo "JWT_SECRET=$JWT_SECRET"
-            echo "REDIS_HOST=redis"
-            echo "REDIS_PORT=6379"
-            echo "SPRING_JPA_HIBERNATE_DDL_AUTO=none"
-            echo "CORS_ALLOWED_ORIGINS=*"
-            echo "MAIL_USERNAME=$MAIL_USERNAME"
-            echo "MAIL_PASSWORD=$MAIL_PASSWORD"
-            echo "FRONTEND_URL=http://52.50.143.70"
-            echo "BASE_URL=http://52.50.143.70"
-            echo "AWS_REGION=$AWS_REGION"
-            echo "S3_BUCKET=$S3_BUCKET"
-            echo "AWS_ACCESS_KEY_ID=$APP_AWS_ACCESS_KEY_ID"
-            echo "AWS_SECRET_ACCESS_KEY=$APP_AWS_SECRET_ACCESS_KEY"
-            echo "AZURE_TENANT_ID=$AZURE_TENANT_ID"
-            echo "AZURE_CLIENT_ID=$AZURE_CLIENT_ID"
-            echo "AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET"
-            echo "SHAREPOINT_SITE_ID=$SHAREPOINT_SITE_ID"
-          } > env.deploy
-
-          STAGING_KEY="deploy/${{ github.run_id }}/env.deploy"
-          aws s3 cp env.deploy "s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY" --sse AES256
-          rm -f env.deploy
-
           # Mint an ECR token (CI has AWS creds via OIDC); the box uses it to log in itself.
+          # Short-lived (12h), so it's fine to pass directly in the SSM command.
           ECR_TOKEN=$(aws ecr get-login-password --region "$AWS_REGION")
           echo "::add-mask::$ECR_TOKEN"
 
           REMOTE_SCRIPT=$(printf '%s\n' \
             "set -eu" \
-            "aws s3 cp s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY /opt/app/.env" \
-            "aws s3 rm s3://$DEPLOY_STAGING_BUCKET/$STAGING_KEY" \
-            "chown ubuntu:ubuntu /opt/app/.env" \
+            "/opt/app/refresh-env.sh" \
             "echo '$ECR_TOKEN' | docker login --username AWS --password-stdin '$REGISTRY'" \
             "cd /opt/app" \
             "docker compose pull app" \

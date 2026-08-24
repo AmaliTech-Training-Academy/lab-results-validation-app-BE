@@ -1,16 +1,17 @@
 #!/bin/bash
 # Bootstraps the dev box (Ubuntu): installs Docker + Compose, the AWS CLI, and writes the
-# compose file. The box has an SSM-only instance role — CI stages /opt/app/.env in a private
-# S3 bucket and sends an SSM command that pulls it down (aws s3 cp) and deploys the stack.
+# compose file + a refresh-env.sh helper. The box has an SSM-only instance role and reads its
+# .env directly from SSM Parameter Store (${ssm_prefix}/*) — CI just triggers refresh-env.sh
+# over SSM; changing a config value is one `aws ssm put-parameter --overwrite` away, no CI edit.
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -y
-apt-get install -y docker.io unzip curl
+apt-get install -y docker.io unzip curl jq
 systemctl enable --now docker
 
-# AWS CLI v2 (apt's awscli is v1 and stale on Ubuntu). The SSM-run deploy script uses this
-# to pull the staged .env from S3.
+# AWS CLI v2 (apt's awscli is v1 and stale on Ubuntu). refresh-env.sh uses this to read
+# Parameter Store.
 curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
 unzip -q /tmp/awscliv2.zip -d /tmp
 /tmp/aws/install
@@ -28,7 +29,28 @@ chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 APP_DIR=/opt/app
 mkdir -p "$${APP_DIR}"
 
-# The deployment stack. CI supplies .env and runs `docker compose pull && up -d` over SSH.
+# Rebuilds .env from every parameter under ${ssm_prefix} (decrypted). CI's SSM deploy command
+# runs this before `docker compose up`, so a value changed with `aws ssm put-parameter
+# --overwrite` takes effect on the next deploy with no CI/workflow edit needed.
+cat > "$${APP_DIR}/refresh-env.sh" <<'SCRIPT'
+#!/bin/bash
+set -eu
+PREFIX="${ssm_prefix}"
+REGION="${aws_region}"
+
+aws ssm get-parameters-by-path \
+  --path "$PREFIX" --with-decryption --recursive --region "$REGION" \
+  --query "Parameters[].{Name:Name,Value:Value}" --output json \
+| jq -r --arg prefix "$PREFIX/" '.[] | "\(.Name | sub("^" + $prefix; ""))=\(.Value)"' \
+  > /opt/app/.env
+
+chown ubuntu:ubuntu /opt/app/.env
+chmod 600 /opt/app/.env
+SCRIPT
+chmod +x "$${APP_DIR}/refresh-env.sh"
+
+# The deployment stack. refresh-env.sh supplies .env; CI's SSM command then runs
+# `docker compose pull && up -d`.
 cat > "$${APP_DIR}/docker-compose.yml" <<EOF
 services:
   redis:

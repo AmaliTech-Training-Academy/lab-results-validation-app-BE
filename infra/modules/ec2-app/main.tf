@@ -7,6 +7,8 @@ terraform {
   }
 }
 
+data "aws_region" "current" {}
+
 resource "aws_security_group" "web" {
   name_prefix = "${var.name_prefix}-sg-"
   description = "Dev box: web in from anywhere. No SSH ingress - deploys go through SSM."
@@ -64,18 +66,36 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-resource "aws_iam_role_policy" "deploy_staging" {
-  name = "${var.name_prefix}-deploy-staging"
+resource "aws_iam_role_policy" "read_config" {
+  name = "${var.name_prefix}-read-config"
   role = aws_iam_role.ssm.name
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Sid      = "DeployStagingGet"
-      Effect   = "Allow"
-      Action   = ["s3:GetObject", "s3:DeleteObject"]
-      Resource = "${var.deploy_staging_bucket_arn}/*"
-    }]
+    Statement = [
+      {
+        Sid    = "ReadAppConfig"
+        Effect = "Allow"
+        Action = ["ssm:GetParametersByPath", "ssm:GetParameter", "ssm:GetParameters"]
+        Resource = [
+          "arn:aws:ssm:*:*:parameter${var.ssm_prefix}",
+          "arn:aws:ssm:*:*:parameter${var.ssm_prefix}/*"
+        ]
+      },
+      {
+        # SecureString parameters here use the AWS-managed key (no custom KMS key
+        # configured), which needs an explicit decrypt grant to the caller.
+        Sid      = "DecryptConfigSecrets"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${data.aws_region.current.name}.amazonaws.com"
+          }
+        }
+      }
+    ]
   })
 }
 
@@ -115,6 +135,8 @@ resource "aws_instance" "this" {
     backend_repo  = var.backend_repo_url
     frontend_repo = var.frontend_repo_url
     image_tag     = var.image_tag
+    ssm_prefix    = var.ssm_prefix
+    aws_region    = data.aws_region.current.name
   })
 
   root_block_device {

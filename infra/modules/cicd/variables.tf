@@ -48,8 +48,3 @@ variable "deploy_instance_id" {
   type        = string
   description = "EC2 instance ID the deploy role is allowed to SendCommand to."
 }
-
-variable "deploy_staging_bucket_arn" {
-  type        = string
-  description = "ARN of the S3 bucket CI stages the .env file in before the box pulls it via SSM."
-}

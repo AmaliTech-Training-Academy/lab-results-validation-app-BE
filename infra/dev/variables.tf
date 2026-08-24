@@ -57,3 +57,14 @@ variable "sharepoint_bucket_name" {
   default     = "lab-results-validator-bucket"
   description = "S3 bucket holding SharePoint files for comparison/validation triggers."
 }
+
+variable "db_host" {
+  type        = string
+  default     = "development-db.cv0268q40734.eu-west-1.rds.amazonaws.com"
+  description = "Shared company RDS endpoint. Not secret — credentials are separate (external_secret_names)."
+}
+
+variable "db_name" {
+  type    = string
+  default = "lab_results_validator"
+}
