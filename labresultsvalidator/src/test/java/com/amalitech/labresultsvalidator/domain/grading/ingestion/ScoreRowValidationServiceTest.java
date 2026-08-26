@@ -264,6 +264,7 @@ class ScoreRowValidationServiceTest {
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
             .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        stubInstructorAssignedToCohort(specId, instructor.getId());
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "30.2", new BigDecimal("30.2"), REVIEWER_NAME);
 
@@ -280,6 +281,7 @@ class ScoreRowValidationServiceTest {
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
             .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        stubInstructorAssignedToCohort(specId, instructor.getId());
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "30.6", new BigDecimal("30.6"), REVIEWER_NAME);
 
@@ -296,6 +298,7 @@ class ScoreRowValidationServiceTest {
         InstructorContact instructor = InstructorContact.builder().id(UUID.randomUUID())
             .email("kofi.mensah@example.com").fullName(REVIEWER_NAME).build();
         when(instructorContactRepository.findByFullNameIgnoreCase(REVIEWER_NAME)).thenReturn(Optional.of(instructor));
+        stubInstructorAssignedToCohort(specId, instructor.getId());
         ParsedScoreRow row = new ParsedScoreRow(FILE_NAME, SHEET, 2, "2026-01-15",
             LocalDate.of(2026, 1, 15), "Ama Owusu", "REST API Basics", "30.5", new BigDecimal("30.5"), REVIEWER_NAME);
 
