@@ -13,4 +13,6 @@ public interface InstructorContactRepository extends JpaRepository<InstructorCon
     Optional<InstructorContact> findByFullNameIgnoreCase(String fullName);
 
     boolean existsByEmail(String email);
+
+    boolean existsByEmailIgnoreCase(String email);
 }

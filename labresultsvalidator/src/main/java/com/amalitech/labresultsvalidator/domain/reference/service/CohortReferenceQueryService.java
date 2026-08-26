@@ -8,12 +8,14 @@ import com.amalitech.labresultsvalidator.domain.reference.dto.LearnerResponse;
 import com.amalitech.labresultsvalidator.domain.reference.dto.ModuleWithLabsResponse;
 import com.amalitech.labresultsvalidator.domain.reference.dto.SpecializationWithModulesResponse;
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorSpecializationAssignment;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Lab;
 import com.amalitech.labresultsvalidator.domain.reference.entity.LabModule;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Learner;
 import com.amalitech.labresultsvalidator.domain.reference.entity.Specialization;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorSpecializationAssignmentRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabModuleRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LearnerRepository;
@@ -39,6 +41,7 @@ public class CohortReferenceQueryService {
     private final LabRepository labRepository;
     private final LearnerRepository learnerRepository;
     private final InstructorContactRepository instructorContactRepository;
+    private final InstructorSpecializationAssignmentRepository instructorSpecializationAssignmentRepository;
 
     public CohortReferenceResponse getCohortReference(UUID cohortId) {
         if (!cohortRepository.existsById(cohortId)) {
@@ -65,7 +68,18 @@ public class CohortReferenceQueryService {
             .map(this::toLearnerResponse)
             .toList();
 
-        List<InstructorContactResponse> instructorResponses = instructorContactRepository.findAll().stream()
+        // InstructorContact is a global, cross-cohort table (see ReferenceCommitService), so it
+        // can't be listed wholesale here — that would leak every cohort's instructors into this
+        // cohort's detail view. Scope through instructor_specialization_assignments, which is
+        // rebuilt per cohort commit against this cohort's own specializationIds.
+        List<UUID> instructorContactIds = instructorSpecializationAssignmentRepository
+            .findAllBySpecializationIdIn(specializationIds).stream()
+            .map(InstructorSpecializationAssignment::getInstructorContactId)
+            .distinct()
+            .toList();
+
+        List<InstructorContactResponse> instructorResponses = instructorContactRepository
+            .findAllById(instructorContactIds).stream()
             .map(this::toInstructorResponse)
             .toList();
 
