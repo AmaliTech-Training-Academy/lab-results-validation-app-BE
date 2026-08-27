@@ -1,5 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.standup.gate;
 
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -111,6 +113,38 @@ class ScoreSheetRowReaderTest {
             assertThat(ScoreSheetRowReader.getCellString(row, 5)).isNull();
             assertThat(ScoreSheetRowReader.getCellString(null, 0)).isNull();
             assertThat(ScoreSheetRowReader.getCellString(row, null)).isNull();
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
+    void getScoreCellString_percentFormattedCell_convertsRawFractionToWholeNumber() {
+        // A cell formatted as a percentage stores the raw fraction (typing "62" into a percent-
+        // formatted cell leaves it holding 0.62) — the ×100 is a display-time-only multiplier.
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("BEM01");
+            Row row = sheet.createRow(0);
+            CellStyle percentStyle = wb.createCellStyle();
+            percentStyle.setDataFormat(wb.createDataFormat().getFormat("0%"));
+            Cell cell = row.createCell(0);
+            cell.setCellValue(0.62);
+            cell.setCellStyle(percentStyle);
+
+            assertThat(ScoreSheetRowReader.getScoreCellString(row, 0)).isEqualTo("62");
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
+    void getScoreCellString_plainNumericCell_behavesLikeGetCellString() {
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("BEM01");
+            Row row = sheet.createRow(0);
+            row.createCell(0).setCellValue(90);
+
+            assertThat(ScoreSheetRowReader.getScoreCellString(row, 0)).isEqualTo("90");
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }

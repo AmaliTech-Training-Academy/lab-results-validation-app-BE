@@ -28,7 +28,13 @@ COPY --from=layers-prebuilt --chown=spring:spring /app/extracted/dependencies/ .
 COPY --from=layers-prebuilt --chown=spring:spring /app/extracted/application/ ./
 USER spring:spring
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# -XX:MaxRAMPercentage bounds heap to the container's actual memory limit (set via mem_limit /
+# deploy.resources in compose) rather than the host's — without a container memory limit the JVM
+# falls back to sizing off host RAM, which is unpredictable and, combined with concurrently
+# fetched/parsed workbooks during a sync, risks an unbounded-looking OOM. -XX:+ExitOnOutOfMemoryError
+# makes that failure mode fail fast and restart cleanly (see restart policy in docker-compose.yml)
+# instead of limping along in a corrupted state after one thread's allocation fails.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-jar", "app.jar"]
 
 # Stage 4: extract layers from the freshly-built jar (default/local build path).
 FROM eclipse-temurin:21-jre-alpine AS layers
@@ -43,4 +49,10 @@ COPY --from=layers --chown=spring:spring /app/extracted/dependencies/ ./
 COPY --from=layers --chown=spring:spring /app/extracted/application/ ./
 USER spring:spring
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# -XX:MaxRAMPercentage bounds heap to the container's actual memory limit (set via mem_limit /
+# deploy.resources in compose) rather than the host's — without a container memory limit the JVM
+# falls back to sizing off host RAM, which is unpredictable and, combined with concurrently
+# fetched/parsed workbooks during a sync, risks an unbounded-looking OOM. -XX:+ExitOnOutOfMemoryError
+# makes that failure mode fail fast and restart cleanly (see restart policy in docker-compose.yml)
+# instead of limping along in a corrupted state after one thread's allocation fails.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-jar", "app.jar"]

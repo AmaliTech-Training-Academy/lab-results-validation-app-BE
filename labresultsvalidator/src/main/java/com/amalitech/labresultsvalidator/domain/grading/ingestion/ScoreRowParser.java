@@ -79,7 +79,7 @@ public class ScoreRowParser {
                 LocalDate reviewDate = parseReviewDate(row.getCell(reviewDateCol));
                 String nspName = ScoreSheetRowReader.getCellString(row, nspCol);
                 String labTitle = ScoreSheetRowReader.getCellString(row, labTitleCol);
-                String totalScoreRaw = ScoreSheetRowReader.getCellString(row, totalScoreCol);
+                String totalScoreRaw = ScoreSheetRowReader.getScoreCellString(row, totalScoreCol);
                 BigDecimal totalScore = parseTotalScore(totalScoreRaw);
                 String reviewer = ScoreSheetRowReader.getCellString(row, reviewerCol);
 
