@@ -1,7 +1,5 @@
 package com.amalitech.labresultsvalidator.domain.sync.entity;
 
-import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
-
 import com.amalitech.labresultsvalidator.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -35,10 +33,6 @@ public class CohortSyncFile extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(nullable = false, updatable = false)
     private UUID id;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "cohort_id", nullable = false)
-    private Cohort cohort;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sync_job_id", nullable = false)

@@ -4,7 +4,9 @@ import com.microsoft.graph.drives.DrivesRequestBuilder;
 import com.microsoft.graph.drives.item.DriveItemRequestBuilder;
 import com.microsoft.graph.drives.item.items.ItemsRequestBuilder;
 import com.microsoft.graph.drives.item.items.item.DriveItemItemRequestBuilder;
+import com.microsoft.graph.drives.item.items.item.children.ChildrenRequestBuilder;
 import com.microsoft.graph.models.DriveItem;
+import com.microsoft.graph.models.DriveItemCollectionResponse;
 import com.microsoft.graph.models.File;
 import com.microsoft.graph.models.Hashes;
 import com.microsoft.graph.models.ItemReference;
@@ -15,8 +17,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,6 +45,8 @@ class GraphDriveServiceTest {
     private ItemsRequestBuilder itemsRequestBuilder;
     @Mock
     private DriveItemItemRequestBuilder driveItemItemRequestBuilder;
+    @Mock
+    private ChildrenRequestBuilder childrenRequestBuilder;
 
     private GraphDriveService graphDriveService;
 
@@ -68,6 +75,12 @@ class GraphDriveServiceTest {
             item.setParentReference(parentReference);
         }
         return item;
+    }
+
+    private DriveItemCollectionResponse collectionOf(DriveItem... items) {
+        DriveItemCollectionResponse response = new DriveItemCollectionResponse();
+        response.setValue(List.of(items));
+        return response;
     }
 
     @Test
@@ -135,5 +148,34 @@ class GraphDriveServiceTest {
         // Detection must not assume the hash exists — it falls back to comparing bytes.
         assertThat(details.quickXorHash()).isNull();
         assertThat(details.hasQuickXorHash()).isFalse();
+    }
+
+    @Test
+    void listsChildrenFromASinglePageWhenThereIsNoNextLink() {
+        when(driveItemItemRequestBuilder.children()).thenReturn(childrenRequestBuilder);
+        when(childrenRequestBuilder.get()).thenReturn(collectionOf(itemWithParentPath("A.xlsx", null)));
+
+        List<DriveItemInfo> children = graphDriveService.listChildren(DRIVE_ID, ITEM_ID);
+
+        assertThat(children).extracting(DriveItemInfo::name).containsExactly("A.xlsx");
+    }
+
+    @Test
+    void followsOdataNextLinkUntilEveryPageIsCollected() {
+        // A folder with more children than Graph's page size (~200) must not silently lose the
+        // overflow — listChildren has to keep following @odata.nextLink until it's exhausted.
+        String nextLink = "https://graph.microsoft.com/v1.0/next-page-token";
+        when(driveItemItemRequestBuilder.children()).thenReturn(childrenRequestBuilder);
+        DriveItemCollectionResponse page1 = collectionOf(itemWithParentPath("A.xlsx", null));
+        page1.setOdataNextLink(nextLink);
+        when(childrenRequestBuilder.get()).thenReturn(page1);
+
+        ChildrenRequestBuilder page2Builder = mock(ChildrenRequestBuilder.class);
+        when(childrenRequestBuilder.withUrl(nextLink)).thenReturn(page2Builder);
+        when(page2Builder.get()).thenReturn(collectionOf(itemWithParentPath("B.xlsx", null)));
+
+        List<DriveItemInfo> children = graphDriveService.listChildren(DRIVE_ID, ITEM_ID);
+
+        assertThat(children).extracting(DriveItemInfo::name).containsExactly("A.xlsx", "B.xlsx");
     }
 }

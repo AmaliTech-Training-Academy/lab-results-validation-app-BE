@@ -5,6 +5,7 @@ import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -91,6 +92,33 @@ public final class ScoreSheetRowReader {
             }
         }
         return true;
+    }
+
+    // Excel stores a percent-formatted cell's raw fraction, not its displayed value: typing "62"
+    // into a cell formatted as a percentage leaves the cell holding 0.62, which
+    // getNumericCellValue() returns as-is — the ×100 is purely a display-time multiplier applied by
+    // the percent format, invisible to any code that reads the underlying number. Score columns are
+    // the only place this bites (dates/names/lab titles are never percent-formatted), so this is a
+    // dedicated read for the Total Score column rather than folded into getCellString, which every
+    // other column also shares.
+    public static String getScoreCellString(Row row, Integer colIndex) {
+        if (row == null || colIndex == null) {
+            return null;
+        }
+        Cell cell = row.getCell(colIndex);
+        if (cell == null) {
+            return null;
+        }
+        if (cell.getCellType() == CellType.NUMERIC && isPercentFormatted(cell)) {
+            BigDecimal asWhole = BigDecimal.valueOf(cell.getNumericCellValue()).multiply(BigDecimal.valueOf(100));
+            return asWhole.stripTrailingZeros().toPlainString();
+        }
+        return getCellString(row, colIndex);
+    }
+
+    private static boolean isPercentFormatted(Cell cell) {
+        String format = cell.getCellStyle().getDataFormatString();
+        return format != null && format.contains("%");
     }
 
     public static String getCellString(Row row, Integer colIndex) {

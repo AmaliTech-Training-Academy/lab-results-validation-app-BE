@@ -43,6 +43,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 
 /**
  * Runs one cohort's score-sheet sync: enumerates the "Lab Scores" folder, detects which
@@ -256,11 +257,26 @@ public class CohortSyncJobRunner {
      * Fetches every file's Graph metadata + content concurrently (the dominant latency cost),
      * preserving {@code itemIds} order in the returned list so the caller can process results
      * sequentially exactly as if the loop had been fully serial.
+     *
+     * <p>Concurrency is capped at {@code maxConcurrentPrefetch} rather than left unbounded: each
+     * in-flight fetch holds a changed workbook's raw bytes plus its parsed POI DOM in memory
+     * until {@link #processFile} consumes it below, so fanning out every file in the run at once
+     * would mean every changed workbook sits in the heap simultaneously. The semaphore bounds how
+     * many fetches actually run at a time without giving up virtual threads' cheap concurrency
+     * for the I/O wait itself.
      */
     private List<PrefetchResult> prefetchAll(Cohort cohort, String driveId, List<String> itemIds) {
+        Semaphore concurrencyLimit = new Semaphore(Math.max(1, sharePointProperties.maxConcurrentPrefetch()));
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<PrefetchResult>> futures = itemIds.stream()
-                .map(itemId -> executor.submit(() -> prefetch(cohort, driveId, itemId)))
+                .map(itemId -> executor.submit(() -> {
+                    concurrencyLimit.acquire();
+                    try {
+                        return prefetch(cohort, driveId, itemId);
+                    } finally {
+                        concurrencyLimit.release();
+                    }
+                }))
                 .toList();
             List<PrefetchResult> results = new ArrayList<>(futures.size());
             for (Future<PrefetchResult> future : futures) {
@@ -324,7 +340,7 @@ public class CohortSyncJobRunner {
             // Download, parse or archive-read failure — fail this workbook only (§4.5, B4 AC2).
             // The S3 baseline is left untouched, so the next run retries this file.
             LOG.warn("[sync] job={} file '{}' failed: {}", jobId, fileName, prefetched.fetchError().getMessage());
-            saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder, s3Key,
+            saveFileRecord(jobId, itemId, fileName, scenarioFolder, s3Key,
                 details, null, null, SyncFileChangeState.FAILED);
             syncEventService.emit(jobId, "file.failed", payload(
                 "file", fileName,
@@ -337,7 +353,7 @@ public class CohortSyncJobRunner {
         if (!outcome.hasWorkbook()) {
             // B3 AC2 — unchanged: no parse, no upload, but still recorded so the run summary can
             // say "we saw it and nothing changed" rather than leaving silence.
-            saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder, s3Key,
+            saveFileRecord(jobId, itemId, fileName, scenarioFolder, s3Key,
                 details, outcome.sha256Hex(), null, SyncFileChangeState.UNCHANGED);
             // D1 AC2 / D4 AC2 — the hash short-circuit also gets its own ingestion_runs row
             // (status=skipped), so the audit-log API surfaces the dedup, not just cohort_sync_files.
@@ -383,7 +399,7 @@ public class CohortSyncJobRunner {
             } catch (RuntimeException ex) {
                 LOG.warn("[sync] job={} grading ingestion failed for '{}': {}",
                     jobId, fileName, ex.getMessage());
-                saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder,
+                saveFileRecord(jobId, itemId, fileName, scenarioFolder,
                     buildS3Key(cohort.getId(), scenarioFolder, fileName),
                     details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED);
                 syncEventService.emit(jobId, "file.ingestion_failed", payload(
@@ -396,7 +412,7 @@ public class CohortSyncJobRunner {
             String s3VersionId = s3StorageService.putObject(
                 workbook.s3Key(), workbook.content(), XLSX_CONTENT_TYPE);
 
-            saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder, workbook.s3Key(),
+            saveFileRecord(jobId, itemId, fileName, scenarioFolder, workbook.s3Key(),
                 details, outcome.sha256Hex(), s3VersionId, outcome.state());
 
             syncEventService.emit(jobId, "file.archived", payload(
@@ -409,7 +425,7 @@ public class CohortSyncJobRunner {
         } catch (S3StorageException ex) {
             // Archive failed: the baseline has not moved, so the next run retries this file.
             LOG.warn("[sync] job={} could not archive '{}': {}", jobId, fileName, ex.getMessage());
-            saveFileRecord(cohort, jobId, itemId, fileName, scenarioFolder,
+            saveFileRecord(jobId, itemId, fileName, scenarioFolder,
                 buildS3Key(cohort.getId(), scenarioFolder, fileName),
                 details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED);
             syncEventService.emit(jobId, "file.archive_failed", payload(
@@ -464,12 +480,11 @@ public class CohortSyncJobRunner {
      * that a missing row means "the run never reached this file", never "nothing changed"
      * (PRD D1 AC2).
      */
-    private void saveFileRecord(Cohort cohort, UUID jobId, String itemId, String fileName,
+    private void saveFileRecord(UUID jobId, String itemId, String fileName,
                                 String scenarioFolder, String s3Key, DriveItemDetails details,
                                 String sha256Hex, String s3VersionId, SyncFileChangeState state) {
         try {
             syncFileRepository.save(CohortSyncFile.builder()
-                .cohort(cohort)
                 .syncJob(syncJobRepository.getReferenceById(jobId))
                 .s3Key(s3Key)
                 .s3VersionId(s3VersionId)

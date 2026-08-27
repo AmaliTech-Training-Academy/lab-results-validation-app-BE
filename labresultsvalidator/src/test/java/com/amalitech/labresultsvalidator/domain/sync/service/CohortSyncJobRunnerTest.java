@@ -42,6 +42,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -300,6 +303,55 @@ class CohortSyncJobRunnerTest {
         verify(s3StorageService).putObject(eq(goodKey), any(byte[].class), anyString());
         verify(syncFileRepository, times(2)).save(any());
         verifyAuditCounts(1, 0, 1);
+    }
+
+    @Test
+    void boundsConcurrentPrefetchToTheConfiguredLimit() throws Exception {
+        // 3 changed files, but only 2 concurrent fetches allowed — the third must not start
+        // until one of the first two finishes, proving prefetchAll doesn't hold every file's
+        // bytes + parsed workbook in memory at once.
+        when(sharePointProperties.scoresFolder()).thenReturn(SCORES_FOLDER_NAME);
+        when(sharePointProperties.maxConcurrentPrefetch()).thenReturn(2);
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
+
+        when(graphDriveService.listChildren(DRIVE_ID, ROOT_ITEM_ID))
+            .thenReturn(List.of(item("scores-1", SCORES_FOLDER_NAME, true)));
+        when(graphDriveService.listChildren(DRIVE_ID, "scores-1")).thenReturn(List.of(
+            item("f1", "F1.xlsx", false), item("f2", "F2.xlsx", false), item("f3", "F3.xlsx", false)));
+        when(graphDriveService.getItem(eq(DRIVE_ID), anyString()))
+            .thenAnswer(inv -> details(inv.getArgument(1) + ".xlsx", SCORES_FOLDER_NAME));
+
+        AtomicInteger inFlight = new AtomicInteger();
+        AtomicInteger maxInFlight = new AtomicInteger();
+        CountDownLatch twoStarted = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+
+        when(workbookFetchService.fetchIfChanged(eq(DRIVE_ID), anyString(), any(), anyString()))
+            .thenAnswer(invocation -> {
+                int current = inFlight.incrementAndGet();
+                maxInFlight.updateAndGet(m -> Math.max(m, current));
+                twoStarted.countDown();
+                assertThat(release.await(2, TimeUnit.SECONDS)).as("release latch reached").isTrue();
+                inFlight.decrementAndGet();
+                String itemId = invocation.getArgument(1);
+                return changed(itemId + ".xlsx", "key-" + itemId, "ok".getBytes(StandardCharsets.UTF_8));
+            });
+        when(s3StorageService.putObject(anyString(), any(byte[].class), anyString())).thenReturn("v1");
+
+        Thread runnerThread = new Thread(() -> runner.run(cohortId, jobId, actorId));
+        runnerThread.start();
+
+        assertThat(twoStarted.await(2, TimeUnit.SECONDS)).as("first two fetches started").isTrue();
+        // Give the permit-blocked third file a moment to prove it does not sneak in as a third
+        // concurrent fetch while only 2 permits are held.
+        Thread.sleep(100);
+        assertThat(inFlight.get()).isEqualTo(2);
+
+        release.countDown();
+        runnerThread.join(5000);
+
+        assertThat(maxInFlight.get()).isEqualTo(2);
+        verify(syncFileRepository, times(3)).save(any());
     }
 
     @Test

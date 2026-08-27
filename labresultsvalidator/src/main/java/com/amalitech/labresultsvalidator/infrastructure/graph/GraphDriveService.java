@@ -117,42 +117,60 @@ public class GraphDriveService {
         return configured.equals(resolved) || configured.contains(resolved);
     }
 
+    /**
+     * Graph pages folder listings (~200 items per page by default) — a scores or scenario
+     * folder with more children than that would silently lose the overflow if only the first
+     * page were read. Each page is fetched (and retried) separately via {@code withUrl} on
+     * {@code @odata.nextLink}, so a fault partway through pagination only re-fetches the page
+     * it failed on, not the whole listing.
+     */
     public List<DriveItemInfo> listChildren(String driveId, String itemId) throws GraphAccessException {
-        DriveItemCollectionResponse response;
-        try {
-            response = retry.execute("list children of " + itemId, () -> graphServiceClient.drives()
-                .byDriveId(driveId)
-                .items()
-                .byDriveItemId(itemId)
-                .children()
-                .get());
-        } catch (GraphAccessException ex) {
-            LOG.warn("Graph API call failed listing children for item {}: {}", itemId, ex.getMessage());
-            throw new GraphAccessException(
-                "Cannot list contents of the SharePoint folder (driveId=" + driveId
-                    + ", itemId=" + itemId + ").",
-                ex
-            );
-        }
-
         List<DriveItemInfo> result = new ArrayList<>();
-        if (response == null || response.getValue() == null) {
-            return result;
-        }
+        String nextLink = null;
 
-        for (DriveItem child : response.getValue()) {
-            boolean isFolder = child.getFolder() != null;
-            String childSiteId = null;
-            String childDriveId = driveId;
-            if (child.getParentReference() != null) {
-                childSiteId = child.getParentReference().getSiteId();
-                if (child.getParentReference().getDriveId() != null) {
-                    childDriveId = child.getParentReference().getDriveId();
+        do {
+            String urlForThisPage = nextLink;
+            DriveItemCollectionResponse response;
+            try {
+                response = retry.execute("list children of " + itemId, () -> {
+                    var request = graphServiceClient.drives()
+                        .byDriveId(driveId)
+                        .items()
+                        .byDriveItemId(itemId)
+                        .children();
+                    return urlForThisPage == null ? request.get() : request.withUrl(urlForThisPage).get();
+                });
+            } catch (GraphAccessException ex) {
+                LOG.warn("Graph API call failed listing children for item {}: {}", itemId, ex.getMessage());
+                throw new GraphAccessException(
+                    "Cannot list contents of the SharePoint folder (driveId=" + driveId
+                        + ", itemId=" + itemId + ").",
+                    ex
+                );
+            }
+
+            if (response != null && response.getValue() != null) {
+                for (DriveItem child : response.getValue()) {
+                    result.add(toDriveItemInfo(child, driveId));
                 }
             }
-            result.add(new DriveItemInfo(childDriveId, child.getId(), child.getName(), isFolder, childSiteId));
-        }
+            nextLink = response == null ? null : response.getOdataNextLink();
+        } while (nextLink != null);
+
         return result;
+    }
+
+    private DriveItemInfo toDriveItemInfo(DriveItem child, String driveId) {
+        boolean isFolder = child.getFolder() != null;
+        String childSiteId = null;
+        String childDriveId = driveId;
+        if (child.getParentReference() != null) {
+            childSiteId = child.getParentReference().getSiteId();
+            if (child.getParentReference().getDriveId() != null) {
+                childDriveId = child.getParentReference().getDriveId();
+            }
+        }
+        return new DriveItemInfo(childDriveId, child.getId(), child.getName(), isFolder, childSiteId);
     }
 
     /**

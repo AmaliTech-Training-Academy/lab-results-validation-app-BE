@@ -42,7 +42,8 @@ class Gate3ReferenceValidatorTest {
             "reference-data",
             "scores",
             new SharePointProperties.RefFiles(SPECS_FILE, MODULES_FILE, LABS_FILE, LEARNERS_FILE, INSTRUCTORS_FILE),
-            20L * 1024 * 1024
+            20L * 1024 * 1024,
+            4
         );
         validator = new Gate3ReferenceValidator(graphDriveService, properties);
     }
