@@ -64,6 +64,8 @@ public class Gate3ReferenceValidator {
         try {
             refChildren = graphDriveService.listChildren(driveId, referenceFolderItemId);
         } catch (GraphAccessException ex) {
+            LOG.error("[gate3] could not list children of driveId={} itemId={}: {}",
+                driveId, referenceFolderItemId, ex.getMessage(), ex);
             return new Gate3Result(
                 GateResult.fail(null, null, "G3-ACCESS",
                     "Cannot list reference folder contents."),
@@ -109,6 +111,8 @@ public class Gate3ReferenceValidator {
             try {
                 fileBytes.put(fname, graphDriveService.downloadFile(driveId, info.itemId()));
             } catch (GraphAccessException ex) {
+                LOG.error("[gate3] could not download reference file '{}' (itemId={}): {}",
+                    fname, info.itemId(), ex.getMessage(), ex);
                 downloadErrors.add(new GateError(fname, null, "G3-DOWNLOAD-FAIL",
                     "Could not download reference file '" + fname + "': " + ex.getMessage()));
             }
@@ -119,6 +123,8 @@ public class Gate3ReferenceValidator {
             try {
                 fileBytes.put(instructorsFile, graphDriveService.downloadFile(driveId, info.itemId()));
             } catch (GraphAccessException ex) {
+                LOG.error("[gate3] could not download instructors file '{}' (itemId={}): {}",
+                    instructorsFile, info.itemId(), ex.getMessage(), ex);
                 downloadErrors.add(new GateError(instructorsFile, null, "G3-DOWNLOAD-FAIL",
                     "Could not download reference file '" + instructorsFile + "': " + ex.getMessage()));
             }

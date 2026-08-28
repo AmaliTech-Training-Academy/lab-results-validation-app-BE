@@ -213,7 +213,7 @@ public class CohortSyncJobRunner {
                 .map(DriveItemInfo::itemId)
                 .toList();
         } catch (GraphAccessException ex) {
-            LOG.warn("[sync] job={} cannot list scenario folder '{}': {}", jobId, folder.name(), ex.getMessage());
+            LOG.warn("[sync] job={} cannot list scenario folder '{}': {}", jobId, folder.name(), ex.getMessage(), ex);
             syncEventService.emit(jobId, "folder.failed", payload(
                 "folder", text(folder.name()),
                 "error", text(ex.getMessage())));
@@ -317,7 +317,7 @@ public class CohortSyncJobRunner {
         if (prefetched.metadataFailed()) {
             // No filename or key is known yet, so there is nothing to key an audit row on.
             LOG.warn("[sync] job={} cannot read metadata for item {}: {}",
-                jobId, itemId, prefetched.metadataError().getMessage());
+                jobId, itemId, prefetched.metadataError().getMessage(), prefetched.metadataError());
             syncEventService.emit(jobId, "file.failed", payload(
                 "itemId", itemId,
                 "error", text(prefetched.metadataError().getMessage())));
@@ -339,7 +339,8 @@ public class CohortSyncJobRunner {
         if (prefetched.fetchFailed()) {
             // Download, parse or archive-read failure — fail this workbook only (§4.5, B4 AC2).
             // The S3 baseline is left untouched, so the next run retries this file.
-            LOG.warn("[sync] job={} file '{}' failed: {}", jobId, fileName, prefetched.fetchError().getMessage());
+            LOG.warn("[sync] job={} file '{}' failed: {}",
+                jobId, fileName, prefetched.fetchError().getMessage(), prefetched.fetchError());
             saveFileRecord(jobId, itemId, fileName, scenarioFolder, s3Key,
                 details, null, null, SyncFileChangeState.FAILED);
             syncEventService.emit(jobId, "file.failed", payload(

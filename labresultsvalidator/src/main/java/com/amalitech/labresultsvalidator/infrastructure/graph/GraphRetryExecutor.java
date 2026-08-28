@@ -100,6 +100,12 @@ public class GraphRetryExecutor {
             }
         }
 
+        // Retry attempts themselves are logged above as they happen; this is the one point where
+        // the call is given up on for good, so it's the last chance to capture the full cause chain
+        // (HTTP status/response body for an ApiException, the actual I/O fault otherwise) before it
+        // gets flattened into GraphAccessException's message for the end user.
+        LOG.error("[graph-retry] {} — giving up after exhausting retries: {}",
+            operation, describe(lastFailure), lastFailure);
         throw new GraphAccessException(
             "Graph call failed (" + operation + "): " + describe(lastFailure), lastFailure);
     }

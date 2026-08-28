@@ -70,6 +70,8 @@ public class Gate4ScoreSheetValidator {
         try {
             scoreFolderChildren = graphDriveService.listChildren(driveId, scoresFolderItemId);
         } catch (GraphAccessException ex) {
+            LOG.error("[gate4] could not list children of driveId={} itemId={}: {}",
+                driveId, scoresFolderItemId, ex.getMessage(), ex);
             return new Gate4Result(GateResult.fail(null, null, "G4-ACCESS",
                 "Cannot list scores folder contents."));
         }
@@ -95,6 +97,8 @@ public class Gate4ScoreSheetValidator {
                         }
                     }
                 } catch (GraphAccessException ex) {
+                    LOG.error("[gate4] could not list scenario subfolder '{}' (itemId={}): {}",
+                        item.name(), item.itemId(), ex.getMessage(), ex);
                     accessErrors.add(new GateError(item.name(), null, "G4-ACCESS",
                         "Cannot list scenario subfolder '" + item.name() + "': " + ex.getMessage()));
                 }
@@ -191,6 +195,8 @@ public class Gate4ScoreSheetValidator {
         try {
             return new DownloadResult(file, graphDriveService.downloadFile(driveId, file.itemId()), null);
         } catch (GraphAccessException ex) {
+            LOG.error("[gate4] could not download score file '{}' (itemId={}): {}",
+                file.name(), file.itemId(), ex.getMessage(), ex);
             return new DownloadResult(file, null, ex);
         }
     }

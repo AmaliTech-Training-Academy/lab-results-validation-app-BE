@@ -74,7 +74,7 @@ public class GraphDriveService {
                 .driveItem()
                 .get());
         } catch (GraphAccessException ex) {
-            LOG.warn("Graph API call failed resolving SharePoint URL: {}", ex.getMessage());
+            LOG.warn("Graph API call failed resolving SharePoint URL: {}", ex.getMessage(), ex);
             throw new GraphAccessException(notAccessible, ex);
         }
 
@@ -141,7 +141,7 @@ public class GraphDriveService {
                     return urlForThisPage == null ? request.get() : request.withUrl(urlForThisPage).get();
                 });
             } catch (GraphAccessException ex) {
-                LOG.warn("Graph API call failed listing children for item {}: {}", itemId, ex.getMessage());
+                LOG.warn("Graph API call failed listing children for item {}: {}", itemId, ex.getMessage(), ex);
                 throw new GraphAccessException(
                     "Cannot list contents of the SharePoint folder (driveId=" + driveId
                         + ", itemId=" + itemId + ").",
@@ -189,7 +189,7 @@ public class GraphDriveService {
                 .byDriveItemId(itemId)
                 .get(config -> config.queryParameters.select = ITEM_SELECT));
         } catch (GraphAccessException ex) {
-            LOG.warn("Graph API call failed fetching item {}: {}", itemId, ex.getMessage());
+            LOG.warn("Graph API call failed fetching item {}: {}", itemId, ex.getMessage(), ex);
             throw new GraphAccessException(
                 "Cannot fetch SharePoint item metadata (driveId=" + driveId + ", itemId=" + itemId + ").",
                 ex
