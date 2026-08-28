@@ -106,13 +106,18 @@ public class CohortController {
         @Valid @RequestBody AttachSharePointLinkRequest req
     ) {
         CohortResponse cohort = cohortService.attachSharePointLink(id, req);
+        String message;
         try {
             LOG.info("Starting stand-up pipeline for cohort {}", id);
             cohortStandUpService.startStandUp(id);
+            message = "SharePoint link attached. Stand-up pipeline initiated.";
         } catch (DuplicateResourceException ex) {
             LOG.warn("Stand-up already running for cohort {}; skipping auto-trigger after URL update.", id);
+            message = "SharePoint link updated, but a stand-up job was already running for this cohort "
+                + "so it was not restarted automatically. Re-trigger the pipeline manually once it finishes "
+                + "if you need it to pick up the new link.";
         }
-        return ResponseEntity.ok(ApiResponse.success("SharePoint link attached. Stand-up pipeline initiated.", cohort));
+        return ResponseEntity.ok(ApiResponse.success(message, cohort));
     }
 
     @Operation(summary = "Re-trigger stand-up pipeline",

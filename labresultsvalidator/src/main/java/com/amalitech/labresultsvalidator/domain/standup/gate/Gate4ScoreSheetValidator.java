@@ -262,6 +262,11 @@ public class Gate4ScoreSheetValidator {
             }
 
             int headerRowIdx = ScoreSheetRowReader.findHeaderRowIndex(sheet);
+            if (headerRowIdx < 0) {
+                errors.add(new GateError(fileName, "sheet " + sheetName, "G4-HEADER-NOT-FOUND",
+                    "Could not locate a header row with the required columns in sheet '" + sheetName + "'."));
+                continue;
+            }
             Map<String, Integer> headers = ScoreSheetRowReader.readHeadersFromRow(sheet.getRow(headerRowIdx));
             List<GateError> colErrors = checkRequiredColumns(fileName, sheetName, headers);
             if (!colErrors.isEmpty()) {

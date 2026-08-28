@@ -242,6 +242,11 @@ public class ScoreRowValidationService {
     }
 
     private String specializationName(UUID specializationId) {
+        // A learner with no specialization assigned (incomplete reference data) must not crash row
+        // validation — repository.findById(null) throws before ever reaching the fallback below.
+        if (specializationId == null) {
+            return "(none assigned)";
+        }
         return specializationRepository.findById(specializationId)
             .map(Specialization::getName)
             .orElse(specializationId.toString());

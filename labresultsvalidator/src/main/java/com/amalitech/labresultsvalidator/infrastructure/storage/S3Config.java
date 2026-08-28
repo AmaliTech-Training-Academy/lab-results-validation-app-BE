@@ -7,8 +7,11 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+
+import java.time.Duration;
 
 @Configuration
 @EnableConfigurationProperties(AwsS3Properties.class)
@@ -25,9 +28,18 @@ public class S3Config {
                     AwsBasicCredentials.create(props.accessKeyId(), props.secretAccessKey()))
                 : DefaultCredentialsProvider.create();
 
+        // Without an explicit call timeout, a network partition to S3 blocks the calling thread
+        // indefinitely — putObject/getObject are called synchronously from sync job processing,
+        // so a single hung call can stall an entire cohort sync run with no upper bound.
+        ClientOverrideConfiguration overrideConfig = ClientOverrideConfiguration.builder()
+            .apiCallTimeout(Duration.ofSeconds(60))
+            .apiCallAttemptTimeout(Duration.ofSeconds(30))
+            .build();
+
         return S3Client.builder()
             .region(Region.of(props.region()))
             .credentialsProvider(credentials)
+            .overrideConfiguration(overrideConfig)
             .build();
     }
 }

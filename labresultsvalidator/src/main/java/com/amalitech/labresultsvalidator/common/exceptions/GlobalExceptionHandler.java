@@ -10,6 +10,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import io.jsonwebtoken.JwtException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.transaction.TransactionException;
@@ -36,10 +37,35 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("Invalid email or password"));
     }
 
+    /**
+     * Spring's {@code DaoAuthenticationProvider} checks {@code isEnabled()} before the password, so
+     * a deactivated account's login attempt reaches here instead of {@link BadCredentialsException} —
+     * distinguishing the two messages would let an attacker enumerate which emails belong to real
+     * (if deactivated) accounts. Same generic message as bad credentials on purpose.
+     */
     @ExceptionHandler(DisabledException.class)
     public ResponseEntity<ApiResponse<Void>> handleDisabledAccount(DisabledException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponse.error("Account is disabled"));
+                .body(ApiResponse.error("Invalid email or password"));
+    }
+
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthenticationFailed(AuthenticationFailedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    /**
+     * Covers ExpiredJwtException/MalformedJwtException/SignatureException/etc. — every one of them
+     * means "this token is no longer usable," which is a routine 401, not a server fault. Without
+     * this, an expired refresh-token cookie hitting /refresh or /logout previously fell through to
+     * the generic 500 handler with an ERROR-level log line for what is normal, client-triggerable
+     * behavior (a stale cookie on any page load).
+     */
+    @ExceptionHandler(JwtException.class)
+    public ResponseEntity<ApiResponse<Void>> handleJwtException(JwtException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error("Session expired or invalid. Please log in again."));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
