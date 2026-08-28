@@ -92,6 +92,25 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("Uploaded file exceeds the maximum allowed size of 5MB"));
     }
 
+    /**
+     * {@code NumberFormatException} extends {@code IllegalArgumentException}, so without this
+     * handler it would fall into {@link #handleIllegalArgument} below and come back as a
+     * client-facing 400 echoing the raw exception message. A stray {@code NumberFormatException}
+     * almost always means a bug in our own parsing code (e.g. an unguarded
+     * {@code Integer.parseInt}), not a deliberate business-validation rejection — route it
+     * through the same generic, sanitized path as any other unexpected exception instead of
+     * misreporting a server bug as bad client input.
+     */
+    @ExceptionHandler(NumberFormatException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNumberFormat(NumberFormatException ex) {
+        return handleGenericException(ex);
+    }
+
+    /**
+     * Deliberate {@code IllegalArgumentException} throws from our own validation code — the raw
+     * message is safe to echo here because it's business-authored (see {@code AuthService},
+     * query-param range checks, etc.), unlike the generic path above which never echoes anything.
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.badRequest()

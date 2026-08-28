@@ -5,6 +5,9 @@ import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointProperties;
 import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphAccessException;
+import org.apache.poi.EncryptedDocumentException;
+import org.apache.poi.UnsupportedFileFormatException;
+import org.apache.poi.ooxml.POIXMLException;
 import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -12,6 +15,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.util.RecordFormatException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -477,28 +481,37 @@ public class Gate3ReferenceValidator {
         return rows;
     }
 
+    /**
+     * Opens the workbook and returns its first sheet. The catch here is scoped to
+     * {@code WorkbookFactory.create} alone (not the {@code getSheetAt} call below it) and to
+     * the specific exception family POI uses to signal "this isn't a valid/openable workbook" —
+     * {@link IOException} plus the unchecked {@link EncryptedDocumentException} /
+     * {@link UnsupportedFileFormatException} (covers {@code NotOfficeXmlFileException},
+     * {@code OldFileFormatException}, {@code EmptyFileException}) / {@link RecordFormatException}
+     * / {@link POIXMLException} family. A bug elsewhere (a bad cast, an NPE in
+     * {@code getSheetAt}) must not be relabelled as "corrupt reference file" — it should
+     * propagate so the pipeline reports it as the unexpected failure it actually is.
+     */
     private Sheet openFirstSheet(String fileName, byte[] bytes, List<GateError> errors) {
         ZipSecureFile.setMinInflateRatio(0);
         ZipSecureFile.setMaxEntrySize(MAX_ENTRY_SIZE);
+        Workbook wb;
         try {
-            Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(bytes));
-            Sheet sheet = wb.getSheetAt(0);
-            if (sheet == null) {
-                errors.add(new GateError(fileName, null, "G3-EMPTY-WORKBOOK",
-                    "Workbook '" + fileName + "' has no sheets."));
-            }
-            return sheet;
-        } catch (IOException ex) {
+            wb = WorkbookFactory.create(new ByteArrayInputStream(bytes));
+        } catch (IOException | EncryptedDocumentException | UnsupportedFileFormatException
+                 | RecordFormatException | POIXMLException ex) {
             LOG.warn("Failed to parse workbook {}: {}", fileName, ex.getMessage());
             errors.add(new GateError(fileName, null, "G3-PARSE-FAIL",
                 "Could not parse workbook '" + fileName + "': " + ex.getMessage()));
             return null;
-        } catch (Exception ex) {
-            LOG.warn("Unexpected error parsing workbook {}: {}", fileName, ex.getMessage());
-            errors.add(new GateError(fileName, null, "G3-PARSE-FAIL",
-                "Unexpected error reading '" + fileName + "': " + ex.getMessage()));
-            return null;
         }
+
+        Sheet sheet = wb.getSheetAt(0);
+        if (sheet == null) {
+            errors.add(new GateError(fileName, null, "G3-EMPTY-WORKBOOK",
+                "Workbook '" + fileName + "' has no sheets."));
+        }
+        return sheet;
     }
 
     // Scans the first few rows and returns the index of the one with the most required-column matches,

@@ -397,14 +397,21 @@ public class CohortSyncJobRunner {
                     counts.conflicts += ingestionRun.getConflictsCount();
                 }
             } catch (RuntimeException ex) {
-                LOG.warn("[sync] job={} grading ingestion failed for '{}': {}",
-                    jobId, fileName, ex.getMessage());
+                // This deliberately stays a broad catch — grading ingestion can legitimately fail
+                // for many RuntimeException shapes (DB unavailable, a transaction rollback, a
+                // constraint violation) and the file must retry next run regardless of which. But
+                // unlike before, log the full exception (class + stack trace) at ERROR rather than
+                // just the message at WARN: a persistent bug here would otherwise retry silently
+                // forever with no server-side trail distinguishing it from a real transient outage.
+                LOG.error("[sync] job={} grading ingestion failed for '{}': {}",
+                    jobId, fileName, ex.getMessage(), ex);
+                String errorMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
                 saveFileRecord(jobId, itemId, fileName, scenarioFolder,
                     buildS3Key(cohort.getId(), scenarioFolder, fileName),
                     details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED);
                 syncEventService.emit(jobId, "file.ingestion_failed", payload(
                     "file", fileName,
-                    "error", text(ex.getMessage())));
+                    "error", text(errorMessage)));
                 counts.failed++;
                 return;
             }

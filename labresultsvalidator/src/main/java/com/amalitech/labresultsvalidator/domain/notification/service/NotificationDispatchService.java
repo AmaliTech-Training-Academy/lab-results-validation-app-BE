@@ -149,8 +149,12 @@ public class NotificationDispatchService {
             notification.setSentAt(OffsetDateTime.now());
             notification.setErrorDetail(null);
         } catch (RuntimeException ex) {
+            // EmailService.dispatch already logs the real exception (class + stack trace) at ERROR
+            // before rethrowing, so the diagnostic trail isn't lost here — this just records it on
+            // the notification row for the admin UI. Fall back to the class name when the message
+            // is null (common for some RuntimeException subtypes) so errorDetail is never blank.
             notification.setStatus("FAILED");
-            notification.setErrorDetail(ex.getMessage());
+            notification.setErrorDetail(ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName());
         }
         return saveAndBroadcast(notification);
     }
