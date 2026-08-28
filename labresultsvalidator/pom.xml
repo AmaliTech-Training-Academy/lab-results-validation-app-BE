@@ -163,6 +163,15 @@
             <artifactId>microsoft-graph</artifactId>
             <version>6.3.0</version>
         </dependency>
+        <!-- microsoft-graph pulls this in as a runtime-scope transitive dependency, which is fine
+             until our own code needs to construct an AzureIdentityAuthenticationProvider directly
+             (GraphConfig, to attach custom OkHttpClient timeouts) — declared explicitly here so it's
+             on the compile classpath too. Version comes from the CVE-2026-44503 pin above. -->
+        <dependency>
+            <groupId>com.microsoft.kiota</groupId>
+            <artifactId>microsoft-kiota-authentication-azure</artifactId>
+            <version>${kiota.version}</version>
+        </dependency>
         <!-- Azure Identity (client-credentials token acquisition).
              Exclude azure-core-http-netty to avoid binary incompatibility with
              Netty 4.2.x (pulled by Spring Boot 4); use OkHttp instead. -->

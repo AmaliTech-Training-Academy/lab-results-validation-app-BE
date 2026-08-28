@@ -21,9 +21,13 @@ public class StandupSseRegistry {
     public SseEmitter register(UUID jobId) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
         emitters.put(jobId, emitter);
-        emitter.onCompletion(() -> emitters.remove(jobId));
-        emitter.onTimeout(() -> emitters.remove(jobId));
-        emitter.onError(ex -> emitters.remove(jobId));
+        // Compare-and-remove: if the client reconnected (tab refresh, two tabs) before this
+        // emitter's completion/timeout/error callback fires, a newer emitter has already replaced
+        // this one in the map — an unconditional remove(jobId) would delete that active emitter
+        // instead of this stale one, silently killing the live stream.
+        emitter.onCompletion(() -> emitters.remove(jobId, emitter));
+        emitter.onTimeout(() -> emitters.remove(jobId, emitter));
+        emitter.onError(ex -> emitters.remove(jobId, emitter));
         return emitter;
     }
 
@@ -39,7 +43,7 @@ public class StandupSseRegistry {
                 .data(event.payload()));
         } catch (IOException ex) {
             LOG.debug("[sse] client disconnected for job {}", jobId);
-            emitters.remove(jobId);
+            emitters.remove(jobId, emitter);
         }
     }
 

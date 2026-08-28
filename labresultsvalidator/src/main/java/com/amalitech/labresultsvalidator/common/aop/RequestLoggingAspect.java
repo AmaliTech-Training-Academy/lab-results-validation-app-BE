@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.common.aop;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -26,17 +27,33 @@ public class RequestLoggingAspect {
     private static final long SLOW_REQUEST_THRESHOLD_MS = 1_000;
     private static final String MDC_REQUEST_ID = "requestId";
     private static final String MDC_USER = "user";
+    private static final String REQUEST_ID_HEADER = "X-Request-Id";
 
     @Pointcut("within(@org.springframework.web.bind.annotation.RestController *)")
     public void restController() {}
 
     @Around("restController()")
     public Object logRequest(ProceedingJoinPoint joinPoint) throws Throwable {
-        String requestId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         String user = currentUser();
         HttpServletRequest httpReq = currentHttpRequest();
         String httpMethod = httpReq != null ? httpReq.getMethod() : "-";
         String uri = httpReq != null ? httpReq.getRequestURI() : "-";
+
+        // Honor an inbound correlation id (set by the frontend or a load balancer) instead of
+        // always minting our own, so a request can be traced end-to-end across hops. Echoed back
+        // on the response header below regardless of success/failure — including from
+        // GlobalExceptionHandler's error responses, which this aspect's MDC scope doesn't reach
+        // since @RestControllerAdvice runs outside this pointcut — so a support request citing "I
+        // got a 500" has something to grep in the logs even on the error path.
+        String inboundId = httpReq != null ? httpReq.getHeader(REQUEST_ID_HEADER) : null;
+        String requestId = (inboundId != null && !inboundId.isBlank())
+            ? inboundId
+            : UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+
+        HttpServletResponse httpResp = currentHttpResponse();
+        if (httpResp != null) {
+            httpResp.setHeader(REQUEST_ID_HEADER, requestId);
+        }
 
         MDC.put(MDC_REQUEST_ID, requestId);
         MDC.put(MDC_USER, user);
@@ -81,6 +98,12 @@ public class RequestLoggingAspect {
         ServletRequestAttributes attrs =
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         return attrs != null ? attrs.getRequest() : null;
+    }
+
+    private HttpServletResponse currentHttpResponse() {
+        ServletRequestAttributes attrs =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        return attrs != null ? attrs.getResponse() : null;
     }
 
     private int resolveHttpStatus(Object result) {

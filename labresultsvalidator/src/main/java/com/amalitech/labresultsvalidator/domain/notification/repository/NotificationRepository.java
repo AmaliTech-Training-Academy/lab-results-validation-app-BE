@@ -1,18 +1,33 @@
 package com.amalitech.labresultsvalidator.domain.notification.repository;
 
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
 
     List<Notification> findBySyncJobId(UUID syncJobId);
+
+    /**
+     * Row-locking read used by {@code NotificationDispatchService.sendNow} so two concurrent send
+     * attempts for the same notification (a double-click, or a manual send racing the auto-dispatch
+     * listener) serialize instead of both passing the "not already SENT" check and emailing twice.
+     * The second caller blocks here until the first commits, then observes the now-SENT status and
+     * returns without sending again. Same pattern as {@code IngestionConflictRepository}'s
+     * {@code findByIdAndCohortIdForUpdate}.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT n FROM Notification n WHERE n.id = :id")
+    Optional<Notification> findByIdForUpdate(@Param("id") UUID id);
 
     List<Notification> findBySyncJobIdAndStatusAndDispatchPolicy(
         UUID syncJobId, String status, String dispatchPolicy);
