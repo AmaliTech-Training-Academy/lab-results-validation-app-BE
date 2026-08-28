@@ -150,7 +150,7 @@ public class ReferenceCommitService {
             String versionId = graphDriveService.getItem(driveId, itemId).versionId();
             return versionId != null ? versionId : "";
         } catch (GraphAccessException ex) {
-            LOG.warn("Could not resolve SharePoint version for cohort {}: {}", cohort.getId(), ex.getMessage());
+            LOG.warn("Could not resolve SharePoint version for cohort {}: {}", cohort.getId(), ex.getMessage(), ex);
             return "";
         }
     }

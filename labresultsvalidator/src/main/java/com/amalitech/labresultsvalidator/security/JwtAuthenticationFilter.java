@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.security;
 
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -53,7 +54,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             userEmail = jwtService.extractEmail(jwt);
+        } catch (JwtException | IllegalArgumentException e) {
+            // Expired/malformed/unsigned token, or JJWT rejecting a null/empty token string —
+            // all genuinely "not a valid token." Quiet by design; this fires on every anonymous
+            // request with a stale token and would otherwise flood the logs.
+            LOG.debug("[auth] rejected token on {} {}: {}", request.getMethod(), request.getRequestURI(), e.toString());
+            filterChain.doFilter(request, response);
+            return;
         } catch (Exception e) {
+            // NOT a bad-token condition — a bug in claims extraction itself. Still fail open
+            // (a filter must never 500 the whole app over this — Spring Security's downstream
+            // authorization correctly rejects the still-unauthenticated request on a protected
+            // endpoint), but log loudly so a systemic issue here doesn't go completely unnoticed,
+            // unlike before when this branch was fully silent.
+            LOG.error("[auth] unexpected error extracting claims on {} {}: {}",
+                request.getMethod(), request.getRequestURI(), e.getMessage(), e);
             filterChain.doFilter(request, response);
             return;
         }

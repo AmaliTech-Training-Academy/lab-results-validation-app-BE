@@ -5,6 +5,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,19 @@ public class JwtService {
 
     @Value("${jwt.refresh-expiration}")
     private long refreshExpiration;
+
+    /**
+     * A blank/non-base64 {@code jwt.secret} would otherwise only surface as an
+     * {@code IllegalArgumentException} thrown from {@link #getSignInKey()} the first time a
+     * request carries a token — and {@link JwtAuthenticationFilter} deliberately fails open
+     * (unauthenticated) on any extraction error, so that would silently look like "every client
+     * is sending a bad token" instead of the config bug it actually is. Validating eagerly here
+     * fails the application at startup instead, loudly and unambiguously.
+     */
+    @PostConstruct
+    void validateSecretConfiguredCorrectly() {
+        getSignInKey();
+    }
 
     public String generateToken(User user) {
         Map<String, Object> claims = new HashMap<>();

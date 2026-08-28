@@ -33,6 +33,8 @@ public class Gate2FolderValidator {
         try {
             children = graphDriveService.listChildren(driveId, parentItemId);
         } catch (GraphAccessException ex) {
+            LOG.error("[gate2] could not list children of driveId={} itemId={}: {}",
+                driveId, parentItemId, ex.getMessage(), ex);
             return new Gate2Result(
                 GateResult.fail(null, null, "G2-ACCESS",
                     "Cannot list contents of the cohort folder. Check Validata permissions."),

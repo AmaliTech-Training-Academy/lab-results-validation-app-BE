@@ -203,6 +203,24 @@ class GraphRetryExecutorTest {
     }
 
     @Test
+    void propagatesANonGraphBugInsteadOfMisreportingItAsAnAccessFailure() {
+        AtomicInteger calls = new AtomicInteger();
+
+        // A bug in our own code (or the caller's supplier) — not a Graph/HTTP/network failure —
+        // must surface as itself, not get retried or relabelled as "can't access SharePoint".
+        assertThatThrownBy(() -> executor.execute("buggy call", () -> {
+            calls.incrementAndGet();
+            throw new NullPointerException("boom");
+        }))
+            .isInstanceOf(NullPointerException.class)
+            .isNotInstanceOf(GraphAccessException.class)
+            .hasMessage("boom");
+
+        assertThat(calls).hasValue(1);
+        assertThat(sleeps).isEmpty();
+    }
+
+    @Test
     void abandonsRetriesWhenInterruptedAndRestoresTheInterruptFlag() {
         GraphRetryExecutor interrupting = new GraphRetryExecutor(
             new GraphRetryProperties(4, 1000L, 30_000L, 120_000L, 180_000L),

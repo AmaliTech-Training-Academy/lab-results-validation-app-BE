@@ -151,8 +151,9 @@ public class NotificationDispatchService {
         } catch (RuntimeException ex) {
             // The raw transport exception (SMTP host/auth details) is logged server-side only —
             // errorDetail is returned verbatim by GET /api/v1/notifications/{id} to any authenticated
-            // caller, so it must never carry mail-infra internals.
-            LOG.warn("[notification] email delivery failed for {}: {}", notification.getId(), ex.getMessage());
+            // caller, so it must never carry mail-infra internals. Full exception (not just the
+            // message) so the actual SMTP/transport fault is diagnosable from the logs alone.
+            LOG.warn("[notification] email delivery failed for {}: {}", notification.getId(), ex.getMessage(), ex);
             notification.setStatus("FAILED");
             notification.setErrorDetail("Email delivery failed. See server logs for details.");
         }

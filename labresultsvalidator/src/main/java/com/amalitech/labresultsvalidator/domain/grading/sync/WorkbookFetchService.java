@@ -6,13 +6,18 @@ import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemDetails;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointProperties;
 import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphAccessException;
+import org.apache.poi.EncryptedDocumentException;
+import org.apache.poi.UnsupportedFileFormatException;
+import org.apache.poi.ooxml.POIXMLException;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.util.RecordFormatException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 
 /**
  * Fetches a score sheet and parses it locally when it has changed (B4).
@@ -101,15 +106,19 @@ public class WorkbookFetchService {
     }
 
     /**
-     * Opens the bytes with POI. Catches {@link Exception} rather than {@code IOException} alone
-     * because POI signals malformed OOXML through a family of unchecked exceptions
-     * ({@code NotOfficeXmlFileException}, {@code POIXMLException}, {@code RecordFormatException}),
-     * and any of them must fail only this workbook (B4 AC2).
+     * Opens the bytes with POI. Catches {@code IOException} plus the specific unchecked family
+     * POI uses to signal a malformed/unsupported workbook — {@link EncryptedDocumentException},
+     * {@link UnsupportedFileFormatException} (covers {@code NotOfficeXmlFileException},
+     * {@code OldFileFormatException}, {@code EmptyFileException}), {@link RecordFormatException}
+     * and {@link POIXMLException} — rather than bare {@code Exception}: any of these genuinely
+     * means "this file is bad" and must fail only this workbook (B4 AC2), but a bug elsewhere
+     * (an NPE, a bad cast) is not a corrupt-workbook condition and must propagate as itself.
      */
     private Workbook open(String fileName, byte[] bytes) throws WorkbookParseException {
         try {
             return WorkbookFactory.create(new ByteArrayInputStream(bytes));
-        } catch (Exception ex) {
+        } catch (IOException | EncryptedDocumentException | UnsupportedFileFormatException
+                 | RecordFormatException | POIXMLException ex) {
             LOG.warn("[fetch] POI could not open '{}': {}", fileName, ex.getMessage());
             throw new WorkbookParseException(
                 "Could not open workbook '" + fileName + "' — it may be corrupt or not a valid "
