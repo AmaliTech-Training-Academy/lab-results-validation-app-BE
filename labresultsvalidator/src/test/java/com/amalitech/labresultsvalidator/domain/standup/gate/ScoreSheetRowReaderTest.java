@@ -2,6 +2,7 @@ package com.amalitech.labresultsvalidator.domain.standup.gate;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.FormulaError;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -26,6 +27,22 @@ class ScoreSheetRowReaderTest {
             }
 
             assertThat(ScoreSheetRowReader.findHeaderRowIndex(sheet)).isEqualTo(1);
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
+    void findHeaderRowIndex_returnsNegativeOneWhenNoRowMatchesAnyRequiredColumn() {
+        // Previously defaulted to row 0, silently mis-locating every column instead of signaling
+        // "no header row found" — a sheet with an unexpected layout must not be treated as if row 0
+        // were a real (if empty) header.
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("BEM01");
+            sheet.createRow(0).createCell(0).setCellValue("Unrelated title block");
+            sheet.createRow(1).createCell(0).setCellValue("Some other unrelated text");
+
+            assertThat(ScoreSheetRowReader.findHeaderRowIndex(sheet)).isEqualTo(-1);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
@@ -145,6 +162,60 @@ class ScoreSheetRowReaderTest {
             row.createCell(0).setCellValue(90);
 
             assertThat(ScoreSheetRowReader.getScoreCellString(row, 0)).isEqualTo("90");
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
+    void getScoreCellString_percentFormattedFormulaCell_convertsCachedFractionToWholeNumber() {
+        // A Total Score cell can be a formula (e.g. "=D5" pulling from a helper column) rather than
+        // a numeric literal — the earlier fix only special-cased CellType.NUMERIC, so a percent-
+        // formatted formula cell still read as a raw fraction (0.92 instead of 92).
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("BEM01");
+            Row row = sheet.createRow(0);
+            CellStyle percentStyle = wb.createCellStyle();
+            percentStyle.setDataFormat(wb.createDataFormat().getFormat("0%"));
+            Cell cell = row.createCell(0);
+            cell.setCellFormula("D5");
+            cell.setCellValue(0.92); // sets the cached formula result, per POI's Cell contract
+            cell.setCellStyle(percentStyle);
+
+            assertThat(ScoreSheetRowReader.getScoreCellString(row, 0)).isEqualTo("92");
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
+    void getCellString_formulaWithErrorCachedResult_returnsNullInsteadOfThrowing() {
+        // A formula cell whose cached result is an error (e.g. "=NA()") previously fell into the
+        // same branch as a numeric cached result and called getNumericCellValue(), which throws for
+        // an ERROR cached type — aborting the whole sheet's parse loop for one bad cell.
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("BEM01");
+            Row row = sheet.createRow(0);
+            Cell cell = row.createCell(0);
+            cell.setCellFormula("NA()");
+            cell.setCellErrorValue(FormulaError.NA.getCode());
+
+            assertThat(ScoreSheetRowReader.getCellString(row, 0)).isNull();
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
+    void getCellString_formulaWithBooleanCachedResult_returnsBooleanString() {
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("BEM01");
+            Row row = sheet.createRow(0);
+            Cell cell = row.createCell(0);
+            cell.setCellFormula("ISBLANK(B1)");
+            cell.setCellValue(true); // sets the cached formula result
+
+            assertThat(ScoreSheetRowReader.getCellString(row, 0)).isEqualTo("true");
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }

@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.domain.standup.service;
 
+import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
 
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
@@ -48,7 +49,7 @@ public class Gate4JobRunner {
 
         try {
             Cohort cohort = cohortRepository.findById(cohortId)
-                .orElseThrow(() -> new RuntimeException("Cohort " + cohortId + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Cohort " + cohortId + " not found"));
 
             String driveId = cohort.getSharepointDriveId();
             String parentItemId = cohort.getSharepointItemId();
@@ -65,7 +66,7 @@ public class Gate4JobRunner {
                 .filter(c -> c.isFolder() && scoresFolderName.equalsIgnoreCase(c.name()))
                 .map(DriveItemInfo::itemId)
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new ResourceNotFoundException(
                     "Scores folder '" + scoresFolderName + "' not found."));
 
             Gate4Result result = gate4Validator.validate(

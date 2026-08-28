@@ -3,7 +3,9 @@ package com.amalitech.labresultsvalidator.domain.notification.service;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.service.EmailService;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
+import com.amalitech.labresultsvalidator.domain.notification.NotificationTypes;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
@@ -94,5 +96,58 @@ class NotificationDispatchServiceTest {
             .isInstanceOf(UnprocessableEntityException.class);
 
         verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    void sendNow_pendingInstructorNotification_locksRowBeforeSending() {
+        // Regression test: sendNow must take the row lock (findByIdForUpdate) rather than a plain
+        // findById, so two concurrent send attempts for the same notification serialize instead of
+        // both passing the "not already SENT" check and emailing twice.
+        Notification notification = pendingNotification();
+        notification.setType(NotificationTypes.INSTRUCTOR_DIGEST);
+        notification.setRecipientInstructorId(UUID.randomUUID());
+        InstructorContact instructor = InstructorContact.builder().email("instructor@example.com").build();
+        when(notificationRepository.findByIdForUpdate(notificationId)).thenReturn(Optional.of(notification));
+        when(instructorContactRepository.findById(notification.getRecipientInstructorId()))
+            .thenReturn(Optional.of(instructor));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Notification sent = notificationDispatchService.sendNow(notificationId, actorId);
+
+        assertThat(sent.getStatus()).isEqualTo("SENT");
+        verify(notificationRepository).findByIdForUpdate(notificationId);
+        verify(notificationRepository, never()).findById(notificationId);
+        verify(emailService).sendPlainEmailSync("instructor@example.com", null, null);
+    }
+
+    @Test
+    void sendNow_alreadySent_doesNotSendAgain() {
+        Notification notification = pendingNotification();
+        notification.setStatus("SENT");
+        when(notificationRepository.findByIdForUpdate(notificationId)).thenReturn(Optional.of(notification));
+
+        Notification result = notificationDispatchService.sendNow(notificationId, actorId);
+
+        assertThat(result.getStatus()).isEqualTo("SENT");
+        verify(emailService, never()).sendPlainEmailSync(any(), any(), any());
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    void sendNow_nullRecipientInstructorId_marksFailedWithoutCrashing() {
+        // Regression test: resolveRecipientEmail must null-check before findById(...) — passing null
+        // straight through previously threw InvalidDataAccessApiUsageException instead of cleanly
+        // marking the notification FAILED.
+        Notification notification = pendingNotification();
+        notification.setType(NotificationTypes.INSTRUCTOR_DIGEST);
+        notification.setRecipientInstructorId(null);
+        when(notificationRepository.findByIdForUpdate(notificationId)).thenReturn(Optional.of(notification));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Notification result = notificationDispatchService.sendNow(notificationId, actorId);
+
+        assertThat(result.getStatus()).isEqualTo("FAILED");
+        verify(instructorContactRepository, never()).findById(any());
+        verify(emailService, never()).sendPlainEmailSync(any(), any(), any());
     }
 }

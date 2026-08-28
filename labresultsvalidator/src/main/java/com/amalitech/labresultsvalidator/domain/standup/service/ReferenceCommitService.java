@@ -179,22 +179,23 @@ public class ReferenceCommitService {
         learnerRepository.deleteAllByCohortId(cohortId);
 
         List<Specialization> specs = specializationRepository.findAllByCohortId(cohortId);
+        List<UUID> specIds = specs.stream().map(Specialization::getId).toList();
+
         // Instructor-specialization assignments are cohort-scoped through the specialization they
         // reference, so they follow the same delete-then-recreate lifecycle as the specs themselves.
         // InstructorContact (the person-level identity) is NOT touched here — it's a global table
         // shared across every cohort, upserted by email in persistInstructors below, never deleted.
-        instructorSpecializationAssignmentRepository.deleteAllBySpecializationIdIn(
-            specs.stream().map(Specialization::getId).toList());
-        for (Specialization spec : specs) {
-            List<LabModule> modules = labModuleRepository.findAllBySpecializationIdIn(
-                List.of(spec.getId()));
-            for (LabModule module : modules) {
-                List<Lab> labs = labRepository.findAllByModuleIdIn(List.of(module.getId()));
-                labRepository.deleteAll(labs);
-            }
-            labModuleRepository.deleteAll(modules);
-        }
-        specializationRepository.deleteAll(specs);
+        instructorSpecializationAssignmentRepository.deleteAllBySpecializationIdIn(specIds);
+
+        // Batched as two IN (...) queries across the whole cohort rather than one query per
+        // specialization/module — a cohort with N specializations previously issued ~2N extra
+        // reads (and per-entity deletes) every time reference data was accepted, discarded, or
+        // re-run.
+        List<LabModule> modules = labModuleRepository.findAllBySpecializationIdIn(specIds);
+        List<UUID> moduleIds = modules.stream().map(LabModule::getId).toList();
+        labRepository.deleteAll(labRepository.findAllByModuleIdIn(moduleIds));
+        labModuleRepository.deleteAll(modules);
+        specializationRepository.deleteAllByCohortId(cohortId);
     }
 
     private Map<String, Specialization> persistSpecializations(

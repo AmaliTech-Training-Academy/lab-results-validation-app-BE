@@ -1,5 +1,6 @@
 package com.amalitech.labresultsvalidator.domain.auth.service;
 
+import com.amalitech.labresultsvalidator.common.exceptions.AuthenticationFailedException;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.service.EmailService;
 import com.amalitech.labresultsvalidator.common.utils.CookieUtils;
@@ -13,8 +14,11 @@ import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.amalitech.labresultsvalidator.security.JwtService;
 import com.amalitech.labresultsvalidator.security.PasswordResetTokenService;
 import com.amalitech.labresultsvalidator.security.RefreshTokenService;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -26,6 +30,8 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(AuthService.class);
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
@@ -70,26 +76,29 @@ public class AuthService {
         String refreshToken = cookieUtils.extractRefreshTokenFromCookie(request);
 
         if (refreshToken == null) {
-            throw new RuntimeException("Refresh token not found");
+            throw new AuthenticationFailedException("Refresh token not found");
         }
 
+        // An actually-expired token throws ExpiredJwtException from isTokenExpired() itself (JJWT
+        // rejects it during parsing, before this check's true branch is ever reached) — that's
+        // fine, it's a JwtException, which GlobalExceptionHandler maps to the same clean 401.
         if (jwtService.isTokenExpired(refreshToken)) {
-            throw new RuntimeException("Refresh token expired");
+            throw new AuthenticationFailedException("Refresh token expired");
         }
 
         String email = jwtService.extractEmail(refreshToken);
         String userId = jwtService.extractUserId(refreshToken);
 
         if (!refreshTokenService.validateRefreshToken(userId, refreshToken)) {
-            throw new RuntimeException("Refresh token invalid");
+            throw new AuthenticationFailedException("Refresh token invalid");
         }
 
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new AuthenticationFailedException("User not found"));
 
         if (!user.isActive()) {
             refreshTokenService.deleteRefreshToken(userId);
-            throw new RuntimeException("User account is inactive");
+            throw new AuthenticationFailedException("User account is inactive");
         }
 
         String newAccessToken = jwtService.generateToken(user);
@@ -113,8 +122,15 @@ public class AuthService {
         String refreshToken = cookieUtils.extractRefreshTokenFromCookie(request);
 
         if (refreshToken != null) {
-            String userId = jwtService.extractUserId(refreshToken);
-            refreshTokenService.deleteRefreshToken(userId);
+            try {
+                String userId = jwtService.extractUserId(refreshToken);
+                refreshTokenService.deleteRefreshToken(userId);
+            } catch (JwtException ex) {
+                // An expired/malformed cookie has nothing left to revoke server-side, but logout
+                // must still succeed — its whole purpose is to clear client-side state, and the
+                // controller clears the cookie unconditionally right after this call returns.
+                LOG.debug("Ignoring unparsable refresh token during logout: {}", ex.getMessage());
+            }
         }
     }
 

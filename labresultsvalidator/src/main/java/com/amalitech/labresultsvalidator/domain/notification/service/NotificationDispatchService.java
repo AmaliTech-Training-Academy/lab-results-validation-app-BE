@@ -112,7 +112,7 @@ public class NotificationDispatchService {
      */
     @Transactional
     public Notification sendNow(UUID notificationId, UUID actorId) {
-        Notification notification = notificationRepository.findById(notificationId)
+        Notification notification = notificationRepository.findByIdForUpdate(notificationId)
             .orElseThrow(() -> new ResourceNotFoundException("Notification not found with id: " + notificationId));
 
         if ("SENT".equals(notification.getStatus())) {
@@ -149,8 +149,12 @@ public class NotificationDispatchService {
             notification.setSentAt(OffsetDateTime.now());
             notification.setErrorDetail(null);
         } catch (RuntimeException ex) {
+            // The raw transport exception (SMTP host/auth details) is logged server-side only —
+            // errorDetail is returned verbatim by GET /api/v1/notifications/{id} to any authenticated
+            // caller, so it must never carry mail-infra internals.
+            LOG.warn("[notification] email delivery failed for {}: {}", notification.getId(), ex.getMessage());
             notification.setStatus("FAILED");
-            notification.setErrorDetail(ex.getMessage());
+            notification.setErrorDetail("Email delivery failed. See server logs for details.");
         }
         return saveAndBroadcast(notification);
     }
@@ -193,11 +197,19 @@ public class NotificationDispatchService {
 
     private String resolveRecipientEmail(Notification notification) {
         if ("instructor".equals(notification.getRecipientKind())) {
-            return instructorContactRepository.findById(notification.getRecipientInstructorId())
+            UUID instructorId = notification.getRecipientInstructorId();
+            if (instructorId == null) {
+                return null;
+            }
+            return instructorContactRepository.findById(instructorId)
                 .map(InstructorContact::getEmail)
                 .orElse(null);
         }
-        return userRepository.findById(notification.getRecipientUserId())
+        UUID userId = notification.getRecipientUserId();
+        if (userId == null) {
+            return null;
+        }
+        return userRepository.findById(userId)
             .map(User::getEmail)
             .orElse(null);
     }
