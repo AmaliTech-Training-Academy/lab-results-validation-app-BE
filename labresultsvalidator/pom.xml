@@ -27,6 +27,7 @@
         <url/>
     </scm>
     <properties>
+        <greenmail.version>2.1.13</greenmail.version>
         <java.version>21</java.version>
         <!-- Override the Spring Boot-managed embedded Tomcat to patch the
              CRITICAL/HIGH CVEs flagged by Trivy (CVE-2026-41293, -43512,
@@ -165,6 +166,16 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- A real SMTP server for the notification tests. Epic C is entirely about what gets
+             emailed and when, so a mocked JavaMailSender would assert the code called a method
+             rather than that a message was actually delivered to a recipient. -->
+        <dependency>
+            <groupId>com.icegreen</groupId>
+            <artifactId>greenmail-junit5</artifactId>
+            <version>${greenmail.version}</version>
             <scope>test</scope>
         </dependency>
 

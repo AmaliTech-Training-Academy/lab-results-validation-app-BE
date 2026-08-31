@@ -46,8 +46,14 @@ public abstract class AbstractIntegrationTest {
     protected TestStorageConfig.InMemoryS3 archivedObjects;
 
     @DynamicPropertySource
-    static void driveProperties(DynamicPropertyRegistry registry) {
+    static void testInfrastructure(DynamicPropertyRegistry registry) {
         registry.add("validata.sharepoint.fixture.root", FIXTURE_ROOT::toString);
+        // Point the real JavaMailSender at the in-process SMTP server. Bound once for the shared
+        // context, which is why the port is reserved at class-init rather than per test.
+        registry.add("spring.mail.host", TestMailServer::host);
+        registry.add("spring.mail.port", TestMailServer::port);
+        registry.add("spring.mail.properties.mail.smtp.auth", () -> "false");
+        registry.add("spring.mail.properties.mail.smtp.starttls.enable", () -> "false");
     }
 
     /** The directory the application sees as the SharePoint drive. */
