@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Primary;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -25,8 +27,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * precisely so that a failure leaves the previous baseline in place. A store that actually
  * remembers what it was handed lets a test assert that, and lets it read the archived bytes back.
  *
- * <p>Only the two methods {@code S3StorageService} uses are implemented; anything else throws, so a
- * new call site cannot silently pass against a stub that quietly does nothing.
+ * <p>Only the methods {@code S3StorageService} actually uses are implemented — put, get and head;
+ * anything else throws, so a new call site cannot silently pass against a stub that quietly does
+ * nothing. That is not hypothetical: {@code headObject} was missing at first and the first real
+ * ingestion run failed on it immediately, which is exactly the behaviour wanted.
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestStorageConfig {
@@ -75,6 +79,21 @@ public class TestStorageConfig {
             @Override
             public void close() {
                 // nothing to release
+            }
+
+            @Override
+            public HeadObjectResponse headObject(HeadObjectRequest request) {
+                // Drives the change-detection short-circuit: ScoreSheetChangeDetector asks whether
+                // the previous version was archived before deciding NEW vs CHANGED vs UNCHANGED.
+                byte[] content = store.get(request.key());
+                if (content == null) {
+                    throw NoSuchKeyException.builder()
+                        .message("No such key: " + request.key())
+                        .build();
+                }
+                return HeadObjectResponse.builder()
+                    .contentLength((long) content.length)
+                    .build();
             }
 
             @Override

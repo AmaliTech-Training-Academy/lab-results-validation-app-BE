@@ -45,33 +45,33 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
     private UUID cohortId;
     private UUID firstJobId;
     private UUID secondJobId;
-    private static final String INSTRUCTOR_EMAIL = "instructor.dispatch@example.test";
-    private static final String ADMIN_EMAIL = "admin.dispatch@example.test";
+
+    // Every identity is unique per test, and nothing is deleted. instructor_contacts is a global
+    // table with a unique email and unique full_name; cohort_sync_jobs cannot be cleared once an
+    // ingestion_run references it, because ingestion_runs is append-only (V23) and its cohort FK is
+    // ON DELETE RESTRICT. An earlier version of this class opened with `DELETE FROM
+    // cohort_sync_jobs` and passed alone, then failed the moment another integration test ran
+    // first. Isolate by uniqueness, never by cleanup.
+    private String instructorEmail;
+    private String adminEmail;
     private static final String LEARNER_EMAIL = "learner.dispatch@example.test";
 
     @BeforeEach
     void seedRecipientsAndClearMailbox() {
         TestMailServer.reset();
-        notificationRepository.deleteAll();
-        jdbc.update("DELETE FROM cohort_sync_jobs");
-        jdbc.update("DELETE FROM instructor_contacts WHERE full_name LIKE '%Reviewer'");
-        jdbc.update("DELETE FROM cohorts WHERE name LIKE 'Dispatch Test Cohort%'");
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        instructorEmail = "instructor." + suffix + "@example.test";
+        adminEmail = "admin." + suffix + "@example.test";
 
         adminId = UUID.randomUUID();
         jdbc.update("INSERT INTO users (id, email, password_hash, role, is_active) "
-                + "VALUES (?, ?, 'x', 'admin', true) ON CONFLICT (email) DO NOTHING",
-            adminId, ADMIN_EMAIL);
-        adminId = jdbc.queryForObject(
-            "SELECT id FROM users WHERE email = ?", UUID.class, ADMIN_EMAIL);
+            + "VALUES (?, ?, 'x', 'admin', true)", adminId, adminEmail);
 
         instructorId = UUID.randomUUID();
         // No instructor_id column: V33 dropped it when identity moved to name-based matching.
         jdbc.update("INSERT INTO instructor_contacts (id, email, full_name, is_active) "
-                + "VALUES (?, ?, 'Dispatch Test Reviewer', true) "
-                + "ON CONFLICT (email) DO NOTHING",
-            instructorId, INSTRUCTOR_EMAIL);
-        instructorId = jdbc.queryForObject(
-            "SELECT id FROM instructor_contacts WHERE email = ?", UUID.class, INSTRUCTOR_EMAIL);
+                + "VALUES (?, ?, ?, true)",
+            instructorId, instructorEmail, "Dispatch Test Reviewer " + suffix);
 
         // sync_job_id and both recipient columns are real foreign keys, so the rows they point at
         // have to exist. Finding that out is itself a small win: a unit test with a mocked
@@ -107,7 +107,7 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(TestMailServer.awaitMessages(1, 5_000)).isTrue();
         MimeMessage delivered = TestMailServer.received()[0];
-        assertThat(delivered.getAllRecipients()[0].toString()).isEqualTo(INSTRUCTOR_EMAIL);
+        assertThat(delivered.getAllRecipients()[0].toString()).isEqualTo(instructorEmail);
         assertThat(delivered.getSubject()).isEqualTo("Grading corrections needed");
     }
 
@@ -192,7 +192,8 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
         // instructor contacts come from a spreadsheet column nobody validates.
         UUID brokenContactId = UUID.randomUUID();
         jdbc.update("INSERT INTO instructor_contacts (id, email, full_name, is_active) "
-            + "VALUES (?, 'not a valid address', 'Broken Address Reviewer', true)", brokenContactId);
+            + "VALUES (?, ?, ?, true)", brokenContactId,
+            "not a valid address " + brokenContactId, "Broken Address Reviewer " + brokenContactId);
 
         Notification staged = pendingDigest(firstJobId);
         staged.setRecipientInstructorId(brokenContactId);
@@ -210,7 +211,8 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
     void oneFailedSendDoesNotStopTheOthers() {
         UUID brokenContactId = UUID.randomUUID();
         jdbc.update("INSERT INTO instructor_contacts (id, email, full_name, is_active) "
-            + "VALUES (?, 'also not valid', 'Second Broken Reviewer', true)", brokenContactId);
+            + "VALUES (?, ?, ?, true)", brokenContactId,
+            "also not valid " + brokenContactId, "Second Broken Reviewer " + brokenContactId);
         Notification broken = pendingDigest(firstJobId);
         broken.setRecipientInstructorId(brokenContactId);
         Notification failing = notificationRepository.save(broken);
@@ -264,7 +266,7 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
         for (MimeMessage message : TestMailServer.received()) {
             for (var address : message.getAllRecipients()) {
                 assertThat(address.toString())
-                    .isIn(INSTRUCTOR_EMAIL, ADMIN_EMAIL)
+                    .isIn(instructorEmail, adminEmail)
                     .isNotEqualTo(LEARNER_EMAIL);
             }
         }
