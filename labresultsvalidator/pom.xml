@@ -149,6 +149,25 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Integration testing: a real Postgres (so the 35 Flyway migrations actually run) and a
+             real Redis (refresh tokens, password-reset tokens and the SSE registry live there).
+             Versions come from the Spring Boot parent BOM. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Source: https://mvnrepository.com/artifact/com.opencsv/opencsv -->
         <dependency>
             <groupId>com.opencsv</groupId>
