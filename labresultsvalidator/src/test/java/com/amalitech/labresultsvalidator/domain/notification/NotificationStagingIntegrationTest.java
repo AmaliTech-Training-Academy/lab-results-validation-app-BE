@@ -172,6 +172,27 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
             .doesNotContain(uninvolved);
     }
 
+    @Test
+    @DisplayName("C3 AC2 — the digest carries the run date, a per-module rejected count and each row")
+    void theDigestSaysWhatWasRejectedAndWhen() {
+        GradingWorkbookBuilder.sheet("Module-1")
+            .rowWithRawScore(LocalDate.of(2026, 3, 2), "Adwoa Frimpong-Baah", reviewer, LAB, "bad")
+            .writeTo(scoresFolder().resolve("Module 1 Grading.xlsx"));
+
+        runSyncAndWait(cohort.cohortId);
+
+        String body = instructorDigests().get(0).getBody();
+        // The AC was amended at acceptance: accepted and updated counts are deliberately absent,
+        // because digests are corrections-only (DEV-9). What must be there is the run date, a count
+        // grouped by module, and enough per-row detail to act on.
+        assertThat(body).contains("Run of");
+        assertThat(body).contains("rejected and need correcting");
+        assertThat(body).contains("Rejected:");
+        assertThat(body)
+            .as("the rejected row has to name the rule, or the instructor cannot fix it")
+            .containsPattern("F2-|R\\d-|F1-|F3-");
+    }
+
     // ── C4 — the admin digest ────────────────────────────────────────────────
 
     @Test
