@@ -169,6 +169,18 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- MockMvc autoconfiguration. In Spring Boot 4 @AutoConfigureMockMvc moved out of
+             spring-boot-test-autoconfigure into this module and changed package to
+             org.springframework.boot.webmvc.test.autoconfigure. Needed rather than a standalone
+             MockMvcBuilders setup because the auth tests must exercise the real Spring Security
+             filter chain — a standalone MockMvc skips it, which would make every authorization
+             assertion meaningless. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- A real SMTP server for the notification tests. Epic C is entirely about what gets
              emailed and when, so a mocked JavaMailSender would assert the code called a method
              rather than that a message was actually delivered to a recipient. -->

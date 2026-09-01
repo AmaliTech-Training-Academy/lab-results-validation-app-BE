@@ -6,12 +6,17 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
+import com.amalitech.labresultsvalidator.domain.sync.service.CohortSyncService;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Base class for tests that run against the real application: a real Spring context, a real
@@ -44,6 +49,43 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected TestStorageConfig.InMemoryS3 archivedObjects;
+
+    @Autowired
+    protected JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    protected CohortSyncService cohortSyncService;
+
+    /**
+     * Triggers a sync and blocks until the job leaves {@code RUNNING}.
+     *
+     * <p>The runner is {@code @Async}, so there is no return value to assert on and no completion
+     * callback — polling the job's terminal state is the only honest signal. Asserting immediately
+     * after the trigger is the classic way to get a suite that passes on a fast machine and fails
+     * in CI.
+     */
+    protected void runSyncAndWait(UUID cohortId) {
+        cohortSyncService.triggerScheduledSyncForCohort(cohortId);
+
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(30));
+        String status = null;
+        while (Instant.now().isBefore(deadline)) {
+            status = jdbcTemplate.query(
+                "SELECT status FROM cohort_sync_jobs WHERE cohort_id = ? "
+                    + "ORDER BY started_at DESC LIMIT 1",
+                rs -> rs.next() ? rs.getString(1) : null, cohortId);
+            if (status != null && !"RUNNING".equals(status)) {
+                return;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted waiting for the sync job", ex);
+            }
+        }
+        throw new AssertionError("Sync job did not finish within 30s; last status=" + status);
+    }
 
     @DynamicPropertySource
     static void testInfrastructure(DynamicPropertyRegistry registry) {

@@ -94,7 +94,7 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
             .rowWithRawScore(LocalDate.of(2026, 3, 2), "Yaw Oppong-Kyei", reviewer, LAB, "not-a-score")
             .writeTo(scoresFolder().resolve("Module 1 Grading.xlsx"));
 
-        runSyncAndWait();
+        runSyncAndWait(cohort.cohortId);
 
         List<Notification> staged = notificationRepository.findAll().stream()
             .filter(n -> cohort.cohortId.equals(n.getCohortId()))
@@ -121,7 +121,7 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
             .row(LocalDate.of(2026, 3, 2), "Yaw Oppong-Kyei", reviewer, LAB, 91)
             .writeTo(scoresFolder().resolve("Module 1 Grading.xlsx"));
 
-        runSyncAndWait();
+        runSyncAndWait(cohort.cohortId);
 
         // DEV-9: digests are corrections-only. Nothing was rejected, so the instructor hears
         // nothing — silence is the correct output, and the easiest thing to get wrong.
@@ -145,7 +145,7 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
             .rowWithRawScore(LocalDate.of(2026, 3, 3), "Yaw Oppong-Kyei", otherReviewer, SECOND_LAB, "bad")
             .writeTo(scoresFolder().resolve("Module 2 Grading.xlsx"));
 
-        runSyncAndWait();
+        runSyncAndWait(cohort.cohortId);
 
         List<Notification> digests = instructorDigests();
         // Three rejected rows belong to the first reviewer across two workbooks; one to the second.
@@ -164,7 +164,7 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
             .rowWithRawScore(LocalDate.of(2026, 3, 2), "Adwoa Frimpong-Baah", reviewer, LAB, "bad")
             .writeTo(scoresFolder().resolve("Module 1 Grading.xlsx"));
 
-        runSyncAndWait();
+        runSyncAndWait(cohort.cohortId);
 
         assertThat(instructorDigests())
             .isNotEmpty()
@@ -181,7 +181,7 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
             .row(LocalDate.of(2026, 3, 2), "Adwoa Frimpong-Baah", reviewer, LAB, 82)
             .writeTo(scoresFolder().resolve("Module 1 Grading.xlsx"));
 
-        runSyncAndWait();
+        runSyncAndWait(cohort.cohortId);
 
         List<Notification> adminDigests = notificationRepository.findAll().stream()
             .filter(n -> cohort.cohortId.equals(n.getCohortId()))
@@ -205,7 +205,7 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
             .row(LocalDate.of(2026, 3, 2), "Yaw Oppong-Kyei", reviewer, LAB, null)  // not yet graded
             .writeTo(scoresFolder().resolve("Module 1 Grading.xlsx"));
 
-        runSyncAndWait();
+        runSyncAndWait(cohort.cohortId);
 
         // One commit, and the blank-score row skipped silently: no commit and no rejection.
         assertThat(committedResultCount()).isEqualTo(1);
@@ -221,33 +221,6 @@ class NotificationStagingIntegrationTest extends AbstractIntegrationTest {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
-
-    /**
-     * Triggers the sync and waits for the job to leave RUNNING. The runner is {@code @Async}, so
-     * there is no return value to assert on — polling the job's terminal state is the only honest
-     * signal, and asserting straight after the trigger is the classic way to get a flaky suite.
-     */
-    private void runSyncAndWait() {
-        cohortSyncService.triggerScheduledSyncForCohort(cohort.cohortId);
-
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(30));
-        String status = null;
-        while (Instant.now().isBefore(deadline)) {
-            status = jdbc.query(
-                "SELECT status FROM cohort_sync_jobs WHERE cohort_id = ? ORDER BY started_at DESC LIMIT 1",
-                rs -> rs.next() ? rs.getString(1) : null, cohort.cohortId);
-            if (status != null && !"RUNNING".equals(status)) {
-                return;
-            }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted waiting for the sync job", ex);
-            }
-        }
-        throw new AssertionError("Sync job did not finish within 30s; last status=" + status);
-    }
 
     private List<Notification> instructorDigests() {
         return notificationRepository.findAll().stream()
