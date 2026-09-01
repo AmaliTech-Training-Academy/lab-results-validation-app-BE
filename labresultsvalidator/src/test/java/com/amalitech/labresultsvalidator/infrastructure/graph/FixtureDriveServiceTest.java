@@ -209,6 +209,23 @@ class FixtureDriveServiceTest {
     }
 
     @Test
+    void constructor_refusesToStart_whenTheFixtureRootIsBlank() {
+        // The dangerous case, and the reason this guard exists separately from the one below:
+        // Paths.get("") resolves to the WORKING DIRECTORY, which is a real directory — so a blank
+        // root would sail past an isDirectory check and quietly serve the application's own folder
+        // as if it were SharePoint. Choosing fixture mode without saying where the fixtures are has
+        // to stop the application, not guess.
+        FixtureDriveProperties blank = new FixtureDriveProperties("   ", SITE_ID, WEB_BASE);
+
+        assertThatThrownBy(() -> new FixtureDriveService(blank,
+            new AzureGraphProperties(null, null, null, SITE_ID),
+            new SharePointProperties("Reference Data", "Lab Scores",
+                new SharePointProperties.RefFiles("s", "m", "l", "t", "i"), MAX_BYTES)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Refusing to start");
+    }
+
+    @Test
     void constructor_failsFast_whenTheFixtureRootIsNotADirectory() {
         FixtureDriveProperties missing =
             new FixtureDriveProperties(root.resolve("nope").toString(), SITE_ID, WEB_BASE);

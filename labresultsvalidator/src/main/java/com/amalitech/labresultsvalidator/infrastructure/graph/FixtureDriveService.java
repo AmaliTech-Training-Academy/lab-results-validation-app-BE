@@ -71,7 +71,20 @@ public class FixtureDriveService implements GraphDriveService {
         this.fixtureProperties = fixtureProperties;
         this.azureGraphProperties = azureGraphProperties;
         this.sharePointProperties = sharePointProperties;
-        this.root = Paths.get(fixtureProperties.root()).toAbsolutePath().normalize();
+        String configuredRoot = fixtureProperties.root();
+
+        // Checked before resolving, because a blank value resolves to the WORKING DIRECTORY — which
+        // is a real directory, so it would sail past the isDirectory check below and quietly serve
+        // the application's own folder as if it were SharePoint. Selecting fixture mode without
+        // saying where the fixtures are must stop the application, not guess.
+        if (configuredRoot == null || configuredRoot.isBlank()) {
+            throw new IllegalStateException(
+                "validata.sharepoint.source=fixtures but validata.sharepoint.fixture.root is not set. "
+                    + "Refusing to start: a blank root would serve the working directory as the drive. "
+                    + "Set the root, or set validata.sharepoint.source=graph for the real SharePoint.");
+        }
+
+        this.root = Paths.get(configuredRoot).toAbsolutePath().normalize();
 
         if (!Files.isDirectory(root)) {
             throw new IllegalStateException(
