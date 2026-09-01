@@ -7,6 +7,7 @@ import com.microsoft.graph.core.requests.GraphClientFactory;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
 import com.microsoft.kiota.authentication.AuthenticationProvider;
 import okhttp3.OkHttpClient;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +18,8 @@ import java.time.Duration;
 @EnableConfigurationProperties({
     AzureGraphProperties.class,
     SharePointProperties.class,
-    GraphRetryProperties.class
+    GraphRetryProperties.class,
+    FixtureDriveProperties.class
 })
 public class GraphConfig {
 
@@ -27,7 +29,14 @@ public class GraphConfig {
         return Sleeper.real();
     }
 
+    /**
+     * Built only when the real drive is in use. In fixture mode there are no Azure credentials to
+     * build a credential from, so constructing this bean would fail startup for a run that never
+     * intends to call Graph.
+     */
     @Bean
+    @ConditionalOnProperty(
+        prefix = "validata.sharepoint", name = "source", havingValue = "graph", matchIfMissing = true)
     public GraphServiceClient graphServiceClient(AzureGraphProperties props) {
         ClientSecretCredential credential = new ClientSecretCredentialBuilder()
             .tenantId(props.tenantId())

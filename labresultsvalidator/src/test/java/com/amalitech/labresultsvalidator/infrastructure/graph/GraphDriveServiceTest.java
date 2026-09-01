@@ -48,7 +48,7 @@ class GraphDriveServiceTest {
     @Mock
     private ChildrenRequestBuilder childrenRequestBuilder;
 
-    private GraphDriveService graphDriveService;
+    private MicrosoftGraphDriveService graphDriveService;
 
     @BeforeEach
     void setUp() {
@@ -57,7 +57,7 @@ class GraphDriveServiceTest {
         GraphRetryExecutor retry = new GraphRetryExecutor(
             new GraphRetryProperties(1, 0L, 0L, 0L, 0L), millis -> { });
 
-        graphDriveService = new GraphDriveService(
+        graphDriveService = new MicrosoftGraphDriveService(
             graphServiceClient, azureGraphProperties, sharePointProperties, retry);
 
         when(graphServiceClient.drives()).thenReturn(drivesRequestBuilder);
