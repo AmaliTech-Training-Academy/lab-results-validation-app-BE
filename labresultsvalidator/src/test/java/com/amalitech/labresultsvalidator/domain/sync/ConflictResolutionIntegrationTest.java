@@ -210,6 +210,24 @@ class ConflictResolutionIntegrationTest extends AbstractIntegrationTest {
         assertThat(pendingConflicts()).isEmpty();
     }
 
+    @Test
+    @DisplayName("B10 AC3 — an UNRESOLVED conflict survives the next run rather than being dropped")
+    void anUnresolvedConflictSurvivesAReSync() throws Exception {
+        writeDuplicateRows();
+        runSyncAndWait(cohort.cohortId);
+        Object conflictId = pendingConflicts().get(0).get("id");
+
+        // Left undecided on purpose, then synced again.
+        runSyncAndWait(cohort.cohortId);
+
+        List<Map<String, Object>> stillPending = pendingConflicts();
+        // Dropping an undecided conflict would lose a grade decision silently — the queue is the only
+        // record that the duplicate ever happened.
+        assertThat(stillPending).hasSize(1);
+        assertThat(stillPending.get(0).get("id")).isEqualTo(conflictId);
+        assertThat(committedScores()).isEmpty();
+    }
+
     // ── FND-48 — it must stay resolved ───────────────────────────────────────
 
     @Test
