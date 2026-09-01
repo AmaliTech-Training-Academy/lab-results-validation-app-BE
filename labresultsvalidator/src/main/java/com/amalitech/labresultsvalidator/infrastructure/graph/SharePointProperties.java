@@ -9,7 +9,8 @@ public record SharePointProperties(
     String referenceFolder,
     String scoresFolder,
     RefFiles refFiles,
-    long maxWorkbookBytes
+    long maxWorkbookBytes,
+    int maxConcurrentPrefetch
 ) {
     public record RefFiles(
         String specializations,

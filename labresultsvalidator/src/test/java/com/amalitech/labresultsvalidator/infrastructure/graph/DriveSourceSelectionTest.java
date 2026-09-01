@@ -34,7 +34,7 @@ class DriveSourceSelectionTest {
                 MicrosoftGraphDriveService.class, FixtureDriveService.class)
             .withBean(SharePointProperties.class, () -> new SharePointProperties(
                 "Reference Data", "Lab Scores",
-                new SharePointProperties.RefFiles("s", "m", "l", "t", "i"), 1024L))
+                new SharePointProperties.RefFiles("s", "m", "l", "t", "i"), 1024L, 4))
             .withPropertyValues(
                 "azure.graph.tenant-id=placeholder",
                 "azure.graph.client-id=placeholder",

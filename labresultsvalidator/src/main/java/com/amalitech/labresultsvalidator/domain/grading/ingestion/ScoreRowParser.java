@@ -51,6 +51,12 @@ public class ScoreRowParser {
             }
 
             int headerRowIdx = ScoreSheetRowReader.findHeaderRowIndex(sheet);
+            if (headerRowIdx < 0) {
+                errors.add(new RowError(fileName, "sheet " + sheetName, "S1-HEADER-NOT-FOUND",
+                    "Could not locate a header row with the required columns in sheet '" + sheetName + "'.",
+                    null, null));
+                continue;
+            }
             Map<String, Integer> headers = ScoreSheetRowReader.readHeadersFromRow(sheet.getRow(headerRowIdx));
             List<String> missing = ScoreSheetRowReader.findMissingColumns(headers);
             if (!missing.isEmpty()) {
@@ -79,7 +85,7 @@ public class ScoreRowParser {
                 LocalDate reviewDate = parseReviewDate(row.getCell(reviewDateCol));
                 String nspName = ScoreSheetRowReader.getCellString(row, nspCol);
                 String labTitle = ScoreSheetRowReader.getCellString(row, labTitleCol);
-                String totalScoreRaw = ScoreSheetRowReader.getCellString(row, totalScoreCol);
+                String totalScoreRaw = ScoreSheetRowReader.getScoreCellString(row, totalScoreCol);
                 BigDecimal totalScore = parseTotalScore(totalScoreRaw);
                 String reviewer = ScoreSheetRowReader.getCellString(row, reviewerCol);
 
@@ -95,14 +101,21 @@ public class ScoreRowParser {
         if (cell == null) {
             return null;
         }
-        if (cell.getCellType() == CellType.NUMERIC) {
+        CellType type = cell.getCellType();
+        // A Review Date computed by formula (e.g. "=B2") caches a NUMERIC or STRING result the same
+        // way a literal cell would hold one — read the cached type rather than skipping formula cells
+        // outright, which otherwise fails validation with a confusing "invalid date" for a real date.
+        if (type == CellType.FORMULA) {
+            type = cell.getCachedFormulaResultType();
+        }
+        if (type == CellType.NUMERIC) {
             try {
                 return DateUtil.getLocalDateTime(cell.getNumericCellValue()).toLocalDate();
             } catch (IllegalArgumentException ex) {
                 return null;
             }
         }
-        if (cell.getCellType() == CellType.STRING) {
+        if (type == CellType.STRING) {
             String text = cell.getStringCellValue().trim();
             for (DateTimeFormatter fmt : STRING_DATE_FORMATS) {
                 try {

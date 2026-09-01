@@ -68,6 +68,15 @@ public class GraphRetryExecutor {
             try {
                 return call.get();
             } catch (RuntimeException ex) {
+                if (!isGraphFailure(ex)) {
+                    // Not a Graph/HTTP/network failure — a bug in our own code (or the caller's
+                    // supplier) that happened to throw from inside the retried call. Retrying or
+                    // reclassifying it as a GraphAccessException would misreport a genuine defect as
+                    // "can't access SharePoint" to the end user, so let it propagate as itself and
+                    // surface through the normal unexpected-exception path instead.
+                    throw ex;
+                }
+
                 lastFailure = ex;
 
                 if (attempt >= attempts || !isRetryable(ex)) {
@@ -91,8 +100,25 @@ public class GraphRetryExecutor {
             }
         }
 
+        // Retry attempts themselves are logged above as they happen; this is the one point where
+        // the call is given up on for good, so it's the last chance to capture the full cause chain
+        // (HTTP status/response body for an ApiException, the actual I/O fault otherwise) before it
+        // gets flattened into GraphAccessException's message for the end user.
+        LOG.error("[graph-retry] {} — giving up after exhausting retries: {}",
+            operation, describe(lastFailure), lastFailure);
         throw new GraphAccessException(
             "Graph call failed (" + operation + "): " + describe(lastFailure), lastFailure);
+    }
+
+    /**
+     * True for failures that genuinely originate from the Graph call itself — an HTTP-level
+     * failure surfaced by the SDK, or an I/O fault reaching the service — as opposed to a bug in
+     * our own code that happened to throw from inside the supplied lambda. Only these are worth
+     * retrying or reclassifying as a {@link GraphAccessException}; anything else (an NPE, a bad
+     * cast, an illegal-state bug) isn't a Graph access problem and must not be reported as one.
+     */
+    private boolean isGraphFailure(RuntimeException ex) {
+        return ex instanceof ApiException || hasIoCause(ex);
     }
 
     /** Throttling, transient server faults and network faults are worth another attempt. */

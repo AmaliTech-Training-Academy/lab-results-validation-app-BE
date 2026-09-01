@@ -33,13 +33,22 @@ public class MustChangePasswordFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Must accept the token the exact same way JwtAuthenticationFilter does (header, falling
+        // back to ?token= for SSE) — otherwise a user forced to change a temporary/leaked password
+        // could bypass this check entirely just by moving their token from the header to the query
+        // string, on any endpoint.
         String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
-            return;
+        String jwt;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwt = authHeader.substring(7);
+        } else {
+            String tokenParam = request.getParameter("token");
+            if (tokenParam == null || tokenParam.isBlank()) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            jwt = tokenParam;
         }
-
-        String jwt = authHeader.substring(7);
         boolean mustChange;
         try {
             mustChange = jwtService.extractMustChangePassword(jwt);

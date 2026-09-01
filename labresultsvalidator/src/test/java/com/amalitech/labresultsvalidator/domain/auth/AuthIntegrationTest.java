@@ -182,23 +182,10 @@ class AuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @Disabled("FND-56 / RTM E4-AC2 — refresh answers 500, not 401, when the cookie is absent. "
-        + "The endpoint's own OpenAPI contract documents 401. Enable when AuthService stops "
-        + "throwing a bare RuntimeException.")
     @DisplayName("E4 AC2 — refreshing without a cookie is rejected with 401, not a server error")
     void refreshWithoutACookieIsRejected() throws Exception {
         mockMvc.perform(post("/api/v1/auth/refresh"))
             .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    @DisplayName("E4 AC2 — refreshing without a cookie fails (currently as a 500 — see FND-56)")
-    void refreshWithoutACookieDoesNotMintAToken() throws Exception {
-        // Pinned separately from the one above so the suite still proves the security property —
-        // no cookie, no token — while the status-code defect stays visible rather than asserted
-        // as correct.
-        mockMvc.perform(post("/api/v1/auth/refresh"))
-            .andExpect(status().is5xxServerError());
     }
 
     @Test
@@ -213,10 +200,9 @@ class AuthIntegrationTest extends AbstractIntegrationTest {
             .andExpect(status().isOk());
 
         // Replaying the same cookie must fail. Clearing it browser-side would not be enough —
-        // anyone who captured it could keep minting access tokens. The security property holds;
-        // the status code is wrong (500 rather than 401) and is tracked as FND-56.
+        // anyone who captured it could keep minting access tokens.
         mockMvc.perform(post("/api/v1/auth/refresh").cookie(cookie))
-            .andExpect(status().is5xxServerError());
+            .andExpect(status().isUnauthorized());
     }
 
     // ── E5 — route protection ────────────────────────────────────────────────

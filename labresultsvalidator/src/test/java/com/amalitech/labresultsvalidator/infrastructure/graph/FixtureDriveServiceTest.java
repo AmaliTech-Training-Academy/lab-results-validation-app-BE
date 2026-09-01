@@ -59,7 +59,7 @@ class FixtureDriveServiceTest {
             new SharePointProperties(
                 "Reference Data", "Lab Scores",
                 new SharePointProperties.RefFiles("s.xlsx", "m.xlsx", "l.xlsx", "t.xlsx", "i.xlsx"),
-                MAX_BYTES));
+                MAX_BYTES, 4));
     }
 
     // ── resolveFolder ────────────────────────────────────────────────────────
@@ -220,7 +220,7 @@ class FixtureDriveServiceTest {
         assertThatThrownBy(() -> new FixtureDriveService(blank,
             new AzureGraphProperties(null, null, null, SITE_ID),
             new SharePointProperties("Reference Data", "Lab Scores",
-                new SharePointProperties.RefFiles("s", "m", "l", "t", "i"), MAX_BYTES)))
+                new SharePointProperties.RefFiles("s", "m", "l", "t", "i"), MAX_BYTES, 4)))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Refusing to start");
     }
@@ -233,7 +233,7 @@ class FixtureDriveServiceTest {
         assertThatThrownBy(() -> new FixtureDriveService(missing,
             new AzureGraphProperties(null, null, null, SITE_ID),
             new SharePointProperties("Reference Data", "Lab Scores",
-                new SharePointProperties.RefFiles("s", "m", "l", "t", "i"), MAX_BYTES)))
+                new SharePointProperties.RefFiles("s", "m", "l", "t", "i"), MAX_BYTES, 4)))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("not a directory");
     }

@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -29,7 +31,14 @@ public class RefreshTokenService {
 
     public boolean validateRefreshToken(String userId, String refreshToken) {
         String stored = redisTemplate.opsForValue().get(PREFIX + userId);
-        return stored != null && stored.equals(refreshToken);
+        if (stored == null || refreshToken == null) {
+            return false;
+        }
+        // Constant-time comparison as a matter of course for secret comparisons — String.equals()
+        // short-circuits on the first mismatched byte.
+        return MessageDigest.isEqual(
+                stored.getBytes(StandardCharsets.UTF_8),
+                refreshToken.getBytes(StandardCharsets.UTF_8));
     }
 
     public void deleteRefreshToken(String userId) {

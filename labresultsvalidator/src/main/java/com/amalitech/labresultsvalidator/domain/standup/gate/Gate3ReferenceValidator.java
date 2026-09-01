@@ -5,13 +5,16 @@ import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointProperties;
 import com.amalitech.labresultsvalidator.infrastructure.graph.exception.GraphAccessException;
-import org.apache.poi.openxml4j.util.ZipSecureFile;
+import org.apache.poi.EncryptedDocumentException;
+import org.apache.poi.UnsupportedFileFormatException;
+import org.apache.poi.ooxml.POIXMLException;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.util.RecordFormatException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -32,7 +35,6 @@ import java.util.stream.Collectors;
 public class Gate3ReferenceValidator {
 
     private static final Logger LOG = LoggerFactory.getLogger(Gate3ReferenceValidator.class);
-    private static final long MAX_ENTRY_SIZE = 20L * 1024 * 1024;
 
     // Real sheets may have a title block above the header row — scan the first few rows
     // and pick the one that best matches the columns we require, rather than assuming row 0.
@@ -60,6 +62,8 @@ public class Gate3ReferenceValidator {
         try {
             refChildren = graphDriveService.listChildren(driveId, referenceFolderItemId);
         } catch (GraphAccessException ex) {
+            LOG.error("[gate3] could not list children of driveId={} itemId={}: {}",
+                driveId, referenceFolderItemId, ex.getMessage(), ex);
             return new Gate3Result(
                 GateResult.fail(null, null, "G3-ACCESS",
                     "Cannot list reference folder contents."),
@@ -105,6 +109,8 @@ public class Gate3ReferenceValidator {
             try {
                 fileBytes.put(fname, graphDriveService.downloadFile(driveId, info.itemId()));
             } catch (GraphAccessException ex) {
+                LOG.error("[gate3] could not download reference file '{}' (itemId={}): {}",
+                    fname, info.itemId(), ex.getMessage(), ex);
                 downloadErrors.add(new GateError(fname, null, "G3-DOWNLOAD-FAIL",
                     "Could not download reference file '" + fname + "': " + ex.getMessage()));
             }
@@ -115,6 +121,8 @@ public class Gate3ReferenceValidator {
             try {
                 fileBytes.put(instructorsFile, graphDriveService.downloadFile(driveId, info.itemId()));
             } catch (GraphAccessException ex) {
+                LOG.error("[gate3] could not download instructors file '{}' (itemId={}): {}",
+                    instructorsFile, info.itemId(), ex.getMessage(), ex);
                 downloadErrors.add(new GateError(instructorsFile, null, "G3-DOWNLOAD-FAIL",
                     "Could not download reference file '" + instructorsFile + "': " + ex.getMessage()));
             }
@@ -180,6 +188,11 @@ public class Gate3ReferenceValidator {
         }
 
         int headerRowIdx = findHeaderRowIndex(sheet, SPEC_COLUMNS);
+        if (headerRowIdx < 0) {
+            errors.add(new GateError(fileName, null, "G3-HEADER-NOT-FOUND",
+                "Could not locate a header row with the required columns in '" + fileName + "'."));
+            return rows;
+        }
         Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
         List<GateError> colErrors = checkRequiredColumns(fileName, headers, "specializationid", "specialization");
         if (!colErrors.isEmpty()) {
@@ -228,6 +241,11 @@ public class Gate3ReferenceValidator {
         }
 
         int headerRowIdx = findHeaderRowIndex(sheet, MODULE_COLUMNS);
+        if (headerRowIdx < 0) {
+            errors.add(new GateError(fileName, null, "G3-HEADER-NOT-FOUND",
+                "Could not locate a header row with the required columns in '" + fileName + "'."));
+            return rows;
+        }
         Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
         List<GateError> colErrors = checkRequiredColumns(
             fileName, headers, "specializationid", "moduleid", "module name");
@@ -282,6 +300,11 @@ public class Gate3ReferenceValidator {
         }
 
         int headerRowIdx = findHeaderRowIndex(sheet, LAB_COLUMNS);
+        if (headerRowIdx < 0) {
+            errors.add(new GateError(fileName, null, "G3-HEADER-NOT-FOUND",
+                "Could not locate a header row with the required columns in '" + fileName + "'."));
+            return rows;
+        }
         Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
         List<GateError> colErrors = checkRequiredColumns(
             fileName, headers, "moduleid", "assessmentid", "lab title");
@@ -337,6 +360,11 @@ public class Gate3ReferenceValidator {
         }
 
         int headerRowIdx = findHeaderRowIndex(sheet, LEARNER_COLUMNS);
+        if (headerRowIdx < 0) {
+            errors.add(new GateError(fileName, null, "G3-HEADER-NOT-FOUND",
+                "Could not locate a header row with the required columns in '" + fileName + "'."));
+            return rows;
+        }
         Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
         List<GateError> colErrors = checkRequiredColumns(
             fileName, headers, "amalitech email", "full name", "specialization");
@@ -407,6 +435,11 @@ public class Gate3ReferenceValidator {
         }
 
         int headerRowIdx = findHeaderRowIndex(sheet, INSTRUCTOR_COLUMNS);
+        if (headerRowIdx < 0) {
+            errors.add(new GateError(fileName, null, "G3-HEADER-NOT-FOUND",
+                "Could not locate a header row with the required columns in '" + fileName + "'."));
+            return rows;
+        }
         Map<String, Integer> headers = readHeaders(sheet, headerRowIdx);
         List<GateError> colErrors = checkRequiredColumns(
             fileName, headers, "name", "email", "specialization");
@@ -477,34 +510,47 @@ public class Gate3ReferenceValidator {
         return rows;
     }
 
+    /**
+     * Opens the workbook and returns its first sheet. The catch here is scoped to
+     * {@code WorkbookFactory.create} alone (not the {@code getSheetAt} call below it) and to
+     * the specific exception family POI uses to signal "this isn't a valid/openable workbook" —
+     * {@link IOException} plus the unchecked {@link EncryptedDocumentException} /
+     * {@link UnsupportedFileFormatException} (covers {@code NotOfficeXmlFileException},
+     * {@code OldFileFormatException}, {@code EmptyFileException}) / {@link RecordFormatException}
+     * / {@link POIXMLException} family. A bug elsewhere (a bad cast, an NPE in
+     * {@code getSheetAt}) must not be relabelled as "corrupt reference file" — it should
+     * propagate so the pipeline reports it as the unexpected failure it actually is.
+     */
     private Sheet openFirstSheet(String fileName, byte[] bytes, List<GateError> errors) {
-        ZipSecureFile.setMinInflateRatio(0);
-        ZipSecureFile.setMaxEntrySize(MAX_ENTRY_SIZE);
+        // ZipSecureFile limits are JVM-global and are applied once at startup by
+        // PoiHardeningConfig. Setting them here per file meant this loop silently decided the
+        // zip-bomb policy for every other POI caller in the process — including a
+        // setMinInflateRatio(0) that disabled the guard outright (risk R-10). See Gate4ScoreSheetValidator.
+        Workbook wb;
         try {
-            Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(bytes));
-            Sheet sheet = wb.getSheetAt(0);
-            if (sheet == null) {
-                errors.add(new GateError(fileName, null, "G3-EMPTY-WORKBOOK",
-                    "Workbook '" + fileName + "' has no sheets."));
-            }
-            return sheet;
-        } catch (IOException ex) {
+            wb = WorkbookFactory.create(new ByteArrayInputStream(bytes));
+        } catch (IOException | EncryptedDocumentException | UnsupportedFileFormatException
+                 | RecordFormatException | POIXMLException ex) {
             LOG.warn("Failed to parse workbook {}: {}", fileName, ex.getMessage());
             errors.add(new GateError(fileName, null, "G3-PARSE-FAIL",
                 "Could not parse workbook '" + fileName + "': " + ex.getMessage()));
             return null;
-        } catch (Exception ex) {
-            LOG.warn("Unexpected error parsing workbook {}: {}", fileName, ex.getMessage());
-            errors.add(new GateError(fileName, null, "G3-PARSE-FAIL",
-                "Unexpected error reading '" + fileName + "': " + ex.getMessage()));
-            return null;
         }
+
+        Sheet sheet = wb.getSheetAt(0);
+        if (sheet == null) {
+            errors.add(new GateError(fileName, null, "G3-EMPTY-WORKBOOK",
+                "Workbook '" + fileName + "' has no sheets."));
+        }
+        return sheet;
     }
 
     // Scans the first few rows and returns the index of the one with the most required-column matches,
-    // so a title block above the real header row doesn't get mistaken for it.
+    // so a title block above the real header row doesn't get mistaken for it. Returns -1 if no row in
+    // the scan window matches any required column at all, so callers can report "no header row found"
+    // instead of silently treating row 0 as the header and mis-locating every column.
     private int findHeaderRowIndex(Sheet sheet, List<String> requiredColumns) {
-        int best = 0;
+        int best = -1;
         long bestMatches = 0;
         int limit = Math.min(HEADER_SCAN_LIMIT, sheet.getLastRowNum() + 1);
         for (int r = 0; r < limit; r++) {

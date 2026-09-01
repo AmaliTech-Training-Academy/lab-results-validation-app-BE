@@ -87,12 +87,19 @@ public class LabResultCommitService {
                         "Unexpected classification kind: " + classification.kind());
                 }
             } catch (RuntimeException ex) {
-                LOG.warn("[ingestion] could not commit row {}: {}", classification.row().location(),
-                    ex.getMessage());
+                // Deliberately broad — a commit can legitimately fail for many RuntimeException
+                // shapes (a DB constraint violation, an optimistic-lock conflict), and the row
+                // must still count as skipped regardless of which. But log the full exception
+                // (class + stack trace) at ERROR rather than just the message at WARN — this feeds
+                // the failure-rate alerting metric, so a persistent bug here would otherwise look
+                // identical to genuinely bad row data with no server-side trail to tell them apart.
+                LOG.error("[ingestion] could not commit row {}: {}", classification.row().location(),
+                    ex.getMessage(), ex);
+                String errorMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
                 // No labTitle: a validated row carries the resolved labId, not the raw title cell. The
                 // digest falls back to "module unknown" for these, which is rare (a commit failure).
                 rowErrors.add(new RowError(classification.row().fileName(), classification.row().location(),
-                    "COMMIT-FAILED", ex.getMessage(), classification.row().instructorContactId(), null));
+                    "COMMIT-FAILED", errorMessage, classification.row().instructorContactId(), null));
                 skippedInvalid++;
             }
         }

@@ -5,6 +5,7 @@ import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -33,8 +34,10 @@ public final class ScoreSheetRowReader {
     }
 
     // Scans the first 10 rows and returns the index of the one with the most required-column matches.
+    // Returns -1 if no row in the scan window matches any required column, so callers can report
+    // "no header row found" instead of silently treating row 0 as the header.
     public static int findHeaderRowIndex(Sheet sheet) {
-        int best = 0;
+        int best = -1;
         long bestMatches = 0;
         int limit = Math.min(10, sheet.getLastRowNum() + 1);
         for (int r = 0; r < limit; r++) {
@@ -93,6 +96,38 @@ public final class ScoreSheetRowReader {
         return true;
     }
 
+    // Excel stores a percent-formatted cell's raw fraction, not its displayed value: typing "62"
+    // into a cell formatted as a percentage leaves the cell holding 0.62, which
+    // getNumericCellValue() returns as-is — the ×100 is purely a display-time multiplier applied by
+    // the percent format, invisible to any code that reads the underlying number. Score columns are
+    // the only place this bites (dates/names/lab titles are never percent-formatted), so this is a
+    // dedicated read for the Total Score column rather than folded into getCellString, which every
+    // other column also shares.
+    public static String getScoreCellString(Row row, Integer colIndex) {
+        if (row == null || colIndex == null) {
+            return null;
+        }
+        Cell cell = row.getCell(colIndex);
+        if (cell == null) {
+            return null;
+        }
+        // A percent-formatted cell can be a plain numeric literal or a formula whose cached result
+        // is numeric (e.g. "=D5" pulling from a helper column) — both store the raw fraction, so
+        // both need the same ×100 correction.
+        boolean numericValue = cell.getCellType() == CellType.NUMERIC
+            || (cell.getCellType() == CellType.FORMULA && cell.getCachedFormulaResultType() == CellType.NUMERIC);
+        if (numericValue && isPercentFormatted(cell)) {
+            BigDecimal asWhole = BigDecimal.valueOf(cell.getNumericCellValue()).multiply(BigDecimal.valueOf(100));
+            return asWhole.stripTrailingZeros().toPlainString();
+        }
+        return getCellString(row, colIndex);
+    }
+
+    private static boolean isPercentFormatted(Cell cell) {
+        String format = cell.getCellStyle().getDataFormatString();
+        return format != null && format.contains("%");
+    }
+
     public static String getCellString(Row row, Integer colIndex) {
         if (row == null || colIndex == null) {
             return null;
@@ -108,9 +143,18 @@ public final class ScoreSheetRowReader {
                 yield d == Math.floor(d) ? String.valueOf((long) d) : String.valueOf(d);
             }
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            case FORMULA -> cell.getCachedFormulaResultType() == CellType.STRING
-                ? cell.getStringCellValue().trim()
-                : String.valueOf(cell.getNumericCellValue());
+            // Only STRING/NUMERIC/BOOLEAN cached results have a value POI can safely read back —
+            // an ERROR or BLANK cached result throws from getNumericCellValue()/getStringCellValue(),
+            // which previously aborted the whole sheet's parse loop for one bad formula cell.
+            case FORMULA -> switch (cell.getCachedFormulaResultType()) {
+                case STRING -> cell.getStringCellValue().trim();
+                case NUMERIC -> {
+                    double d = cell.getNumericCellValue();
+                    yield d == Math.floor(d) ? String.valueOf((long) d) : String.valueOf(d);
+                }
+                case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+                default -> null;
+            };
             default -> null;
         };
     }

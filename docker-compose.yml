@@ -37,6 +37,9 @@ services:
       dockerfile: Dockerfile
     container_name: labresultsvalidator-app
     restart: on-failure:2
+    # Gives -XX:MaxRAMPercentage (Dockerfile) something concrete to size the heap against —
+    # without this the JVM sizes off host RAM instead of the container's actual budget.
+    mem_limit: 1g
     env_file:
       - .env
     environment:

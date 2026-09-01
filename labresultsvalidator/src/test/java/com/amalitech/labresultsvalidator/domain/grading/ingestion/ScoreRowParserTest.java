@@ -1,5 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.grading.ingestion;
 
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -118,6 +120,44 @@ class ScoreRowParserTest {
             assertThat(row.reviewDate()).isNull();
             assertThat(row.totalScoreRaw()).isEqualTo("not-a-number");
             assertThat(row.totalScore()).isNull();
+        }
+    }
+
+    @Test
+    void parse_percentFormattedScoreCell_convertsRawFractionToWholeNumber() throws IOException {
+        // Excel's percent-format trap: typing "62" into a cell formatted as a percentage leaves
+        // the cell storing the raw fraction 0.62 — the ×100 is only applied at display time. Reading
+        // the raw numeric value without checking the cell's format silently loses that factor of
+        // 100. The Total Score column must detect this from the cell's actual format and correct
+        // for it, rather than passing 0.62 downstream as if it were the real score.
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("Module-5");
+            Row headerRow = sheet.createRow(0);
+            for (int c = 0; c < HEADERS.size(); c++) {
+                headerRow.createCell(c).setCellValue(HEADERS.get(c));
+            }
+            Row row = sheet.createRow(1);
+            row.createCell(0).setCellValue("2026-01-15");
+            row.createCell(1).setCellValue("Ama Owusu");
+            row.createCell(2).setCellValue("REST API Basics");
+            CellStyle percentStyle = wb.createCellStyle();
+            percentStyle.setDataFormat(wb.createDataFormat().getFormat("0%"));
+            Cell scoreCell = row.createCell(3);
+            scoreCell.setCellValue(0.62);
+            scoreCell.setCellStyle(percentStyle);
+            row.createCell(4).setCellValue("Kofi Mensah");
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            wb.write(out);
+
+            try (var readBack = open(out.toByteArray())) {
+                ScoreRowParser.SheetParseResult result = parser.parse(FILE_NAME, readBack);
+
+                assertThat(result.rows()).hasSize(1);
+                ParsedScoreRow parsedRow = result.rows().get(0);
+                assertThat(parsedRow.totalScoreRaw()).isEqualTo("62");
+                assertThat(parsedRow.totalScore()).isEqualTo(new BigDecimal("62"));
+            }
         }
     }
 
