@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class FixtureDriveServiceTest {
 
     private static final String SITE_ID = "fixture-site";
-    private static final String WEB_BASE = "https://fixtures.invalid/sites/validata";
+    private static final String WEB_BASE = "https://fixtures.sharepoint.com/sites/validata";
     private static final long MAX_BYTES = 1024;
 
     @TempDir

@@ -12,7 +12,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *                  subfolders — which is the layout {@code QA_Fixtures/} already has.
  * @param siteId    site id reported for resolved items, so the Gate 1 sanctioned-site check can be
  *                  exercised in both directions
- * @param webUrlBase prefix used to synthesise a plausible {@code webUrl} for audit provenance
+ * @param webUrlBase prefix used to synthesise a plausible {@code webUrl} for audit provenance.
+ *                  It must be a {@code *.sharepoint.com} URL: Gate 1 checks the link's *format*
+ *                  against that pattern before it ever tries to resolve it, so a cohort configured
+ *                  with a bare path fails G1-INVALID-URL and never reaches the fixture drive.
  */
 @ConfigurationProperties(prefix = "validata.sharepoint.fixture")
 public record FixtureDriveProperties(
@@ -26,7 +29,7 @@ public record FixtureDriveProperties(
 
     public String webUrlBaseOrDefault() {
         return webUrlBase == null || webUrlBase.isBlank()
-            ? "https://fixtures.invalid/sites/validata"
+            ? "https://fixtures.sharepoint.com/sites/validata"
             : webUrlBase;
     }
 }

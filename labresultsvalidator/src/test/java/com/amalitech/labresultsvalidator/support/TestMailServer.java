@@ -52,6 +52,49 @@ public final class TestMailServer {
         return SERVER.waitForIncomingEmail(timeoutMillis, count);
     }
 
+    /**
+     * Messages delivered to one address.
+     *
+     * <p>Prefer this over counting {@link #received()} wholesale. The mailbox is shared and some
+     * dispatch is asynchronous — an admin run digest is AUTO and goes out on an AFTER_COMMIT
+     * listener, so a message caused by one test can land while a later one is asserting. Scoping by
+     * recipient is what makes a mail assertion stable in a full-suite run; counting everything
+     * passes alone and fails in the suite.
+     */
+    public static java.util.List<MimeMessage> messagesTo(String address) {
+        java.util.List<MimeMessage> matches = new java.util.ArrayList<>();
+        for (MimeMessage message : received()) {
+            try {
+                for (jakarta.mail.Address recipient : message.getAllRecipients()) {
+                    if (recipient.toString().equalsIgnoreCase(address)) {
+                        matches.add(message);
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {
+                // A message we cannot read the recipients of is not a message addressed to us.
+            }
+        }
+        return matches;
+    }
+
+    /** Blocks until at least {@code count} messages have arrived for one address. */
+    public static boolean awaitMessagesTo(String address, int count, long timeoutMillis) {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (messagesTo(address).size() >= count) {
+                return true;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return messagesTo(address).size() >= count;
+    }
+
     /** Clears the mailbox so one test cannot see another's messages. */
     public static void reset() {
         SERVER.reset();

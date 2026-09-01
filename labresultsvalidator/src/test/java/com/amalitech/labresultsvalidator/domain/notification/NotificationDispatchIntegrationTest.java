@@ -105,9 +105,8 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
         assertThat(sent.getErrorDetail()).isNull();
         assertThat(sent.getSentBy()).isEqualTo(adminId);
 
-        assertThat(TestMailServer.awaitMessages(1, 5_000)).isTrue();
-        MimeMessage delivered = TestMailServer.received()[0];
-        assertThat(delivered.getAllRecipients()[0].toString()).isEqualTo(instructorEmail);
+        assertThat(TestMailServer.awaitMessagesTo(instructorEmail, 1, 5_000)).isTrue();
+        MimeMessage delivered = TestMailServer.messagesTo(instructorEmail).get(0);
         assertThat(delivered.getSubject()).isEqualTo("Grading corrections needed");
     }
 
@@ -142,14 +141,14 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
     void resendingASentNotificationDoesNotDeliverTwice() {
         Notification staged = givenPendingInstructorDigest();
         dispatchService.sendNow(staged.getId(), adminId);
-        assertThat(TestMailServer.awaitMessages(1, 5_000)).isTrue();
+        assertThat(TestMailServer.awaitMessagesTo(instructorEmail, 1, 5_000)).isTrue();
 
         Notification again = dispatchService.sendNow(staged.getId(), adminId);
 
         assertThat(again.getStatus()).isEqualTo("SENT");
         // The guard is the point: a duplicate digest to an instructor is a real-world annoyance
         // and this is the only thing standing between them and one per retry.
-        assertThat(TestMailServer.received()).hasSize(1);
+        assertThat(TestMailServer.messagesTo(instructorEmail)).hasSize(1);
     }
 
     @Test
@@ -225,8 +224,8 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
             .isEqualTo("FAILED");
         assertThat(notificationRepository.findById(healthy.getId()).orElseThrow().getStatus())
             .isEqualTo("SENT");
-        assertThat(TestMailServer.awaitMessages(1, 5_000)).isTrue();
-        assertThat(TestMailServer.received()).hasSize(1);
+        assertThat(TestMailServer.awaitMessagesTo(instructorEmail, 1, 5_000)).isTrue();
+        assertThat(TestMailServer.messagesTo(instructorEmail)).hasSize(1);
     }
 
     // ── C5 AC2 — in-app only ─────────────────────────────────────────────────
@@ -261,15 +260,12 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("C10 AC1 — every delivered message goes to an instructor or admin, never a learner")
     void everyDeliveredMessageGoesToAnInstructorOrAdmin() throws Exception {
         dispatchService.sendNow(givenPendingInstructorDigest().getId(), adminId);
-        assertThat(TestMailServer.awaitMessages(1, 5_000)).isTrue();
+        assertThat(TestMailServer.awaitMessagesTo(instructorEmail, 1, 5_000)).isTrue();
 
-        for (MimeMessage message : TestMailServer.received()) {
-            for (var address : message.getAllRecipients()) {
-                assertThat(address.toString())
-                    .isIn(instructorEmail, adminEmail)
-                    .isNotEqualTo(LEARNER_EMAIL);
-            }
-        }
+        // This test's own message went where it should, and nothing in the mailbox — including
+        // whatever other tests produced — is addressed to a learner.
+        assertThat(TestMailServer.messagesTo(instructorEmail)).hasSize(1);
+        assertThat(TestMailServer.messagesTo(LEARNER_EMAIL)).isEmpty();
     }
 
     @Test

@@ -55,7 +55,7 @@ public final class CohortFixture {
         jdbc.update("INSERT INTO cohorts (id, name, start_date, end_date, lifecycle_state, "
                 + "sharepoint_folder_url, sharepoint_drive_id, sharepoint_item_id) "
                 + "VALUES (?, ?, DATE '2026-01-01', DATE '2026-12-31', 'STOOD_UP', ?, ?, ?)",
-            cohortId, name, "https://fixtures.invalid/sites/validata/" + folderItemId,
+            cohortId, name, "https://fixtures.sharepoint.com/sites/validata/" + folderItemId,
             "fixture-drive", folderItemId);
 
         UUID specializationId = UUID.randomUUID();
