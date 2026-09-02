@@ -509,15 +509,7 @@ public class Gate3ReferenceValidator {
                 }
             }
 
-            // FND-54 / RTM A6-AC2 — instructor_contacts is global, not cohort-scoped, and is
-            // upserted by full_name at Accept (ReferenceCommitService.persistInstructors): a name
-            // this DB has never seen is created outright, carrying whatever email this file gives
-            // it. email is separately UNIQUE, so if that email already belongs to a different
-            // instructor from another cohort, Accept's INSERT is the first thing to notice —
-            // failing with a raw, unnamed 409. Catch it here instead, where the file, row, email
-            // and both names are all still on hand to name in the error. A match under the SAME
-            // name is not a conflict — it's this instructor's existing row, e.g. this cohort's own
-            // prior successful run.
+
             if (!rowHasError) {
                 Optional<InstructorContact> existingByEmail =
                     instructorContactRepository.findByEmailIgnoreCase(email.trim());
