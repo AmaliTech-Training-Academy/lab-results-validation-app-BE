@@ -8,7 +8,6 @@ import com.amalitech.labresultsvalidator.support.AbstractIntegrationTest;
 import com.amalitech.labresultsvalidator.support.TestMailServer;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -280,20 +279,44 @@ class NotificationDispatchIntegrationTest extends AbstractIntegrationTest {
             .hasMessageContaining("chk_notif_kind");
     }
 
-    // ── C7 AC4 — known gap ───────────────────────────────────────────────────
+    // ── C7 AC4 — audit trail ─────────────────────────────────────────────────
 
     @Test
-    @Disabled("FND-53 / RTM C7-AC4 — dispatch and dismiss write no audit_event row. "
-        + "The requirement is real and this test states it; enable it when the gap is closed.")
     @DisplayName("C7 AC4 — every dispatch and dismiss is written to the audit trail")
-    void everyDispatchIsAudited() {
+    void everyDispatchAndDismissIsAudited() {
+        Notification toSend = givenPendingInstructorDigest();
+        Notification toDismiss = notificationRepository.save(pendingDigest(secondJobId));
+
+        dispatchService.sendNow(toSend.getId(), adminId);
+        dispatchService.dismiss(toDismiss.getId(), adminId);
+
+        // Scoped to this test's own cohortId (fresh per test, see seedRecipientsAndClearMailbox) —
+        // audit_event is a shared table across the whole class with no per-test rollback.
+        Integer sentAuditRows = jdbc.queryForObject(
+            "SELECT count(*) FROM audit_event WHERE event_type = 'NOTIFICATION_SENT' AND cohort_id = ?",
+            Integer.class, cohortId);
+        assertThat(sentAuditRows).isEqualTo(1);
+
+        Integer dismissedAuditRows = jdbc.queryForObject(
+            "SELECT count(*) FROM audit_event WHERE event_type = 'NOTIFICATION_DISMISSED' AND cohort_id = ?",
+            Integer.class, cohortId);
+        assertThat(dismissedAuditRows).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("C7 AC4 — auto-dispatch (nobody clicked) does not write an audit row")
+    void autoDispatchIsNotAudited() {
+        // onNotificationsStaged calls sendNow with a null actorId for system-triggered auto-send —
+        // there's nobody who "clicked", so this must not flood the audit trail with one row per
+        // digest a sync run stages.
         Notification staged = givenPendingInstructorDigest();
 
-        dispatchService.sendNow(staged.getId(), adminId);
+        dispatchService.sendNow(staged.getId(), null);
 
         Integer auditRows = jdbc.queryForObject(
-            "SELECT count(*) FROM audit_event WHERE event_type = 'NOTIFICATION_SENT'", Integer.class);
-        assertThat(auditRows).isEqualTo(1);
+            "SELECT count(*) FROM audit_event WHERE event_type = 'NOTIFICATION_SENT' AND cohort_id = ?",
+            Integer.class, cohortId);
+        assertThat(auditRows).isEqualTo(0);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

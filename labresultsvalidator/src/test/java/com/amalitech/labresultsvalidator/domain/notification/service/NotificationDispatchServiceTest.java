@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.notification.service;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.service.EmailService;
+import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
 import com.amalitech.labresultsvalidator.domain.notification.NotificationTypes;
@@ -23,8 +24,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,6 +45,8 @@ class NotificationDispatchServiceTest {
     private NotificationSseRegistry sseRegistry;
     @Mock
     private ObjectMapper objectMapper;
+    @Mock
+    private AuditEventService auditEventService;
 
     @InjectMocks
     private NotificationDispatchService notificationDispatchService;
@@ -76,6 +81,18 @@ class NotificationDispatchServiceTest {
         assertThat(dismissed.getStatus()).isEqualTo("SKIPPED");
         assertThat(dismissed.getDismissedBy()).isEqualTo(actorId);
         assertThat(dismissed.getDismissedAt()).isNotNull();
+    }
+
+    @Test
+    void dismiss_pendingNotification_writesAuditEvent() {
+        // FND-53 / C7 AC4 — dismiss must record who dismissed it and when.
+        Notification notification = pendingNotification();
+        when(notificationRepository.findById(notificationId)).thenReturn(Optional.of(notification));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationDispatchService.dismiss(notificationId, actorId);
+
+        verify(auditEventService).record(eq("NOTIFICATION_DISMISSED"), any(), eq(actorId), any());
     }
 
     @Test
@@ -118,6 +135,41 @@ class NotificationDispatchServiceTest {
         verify(notificationRepository).findByIdForUpdate(notificationId);
         verify(notificationRepository, never()).findById(notificationId);
         verify(emailService).sendPlainEmailSync("instructor@example.com", null, null);
+    }
+
+    @Test
+    void sendNow_manualSendByAnAdmin_writesAuditEvent() {
+        // FND-53 / C7 AC4 — a manual send (a real actorId) must record who clicked and when.
+        Notification notification = pendingNotification();
+        notification.setType(NotificationTypes.INSTRUCTOR_DIGEST);
+        notification.setRecipientInstructorId(UUID.randomUUID());
+        InstructorContact instructor = InstructorContact.builder().email("instructor@example.com").build();
+        when(notificationRepository.findByIdForUpdate(notificationId)).thenReturn(Optional.of(notification));
+        when(instructorContactRepository.findById(notification.getRecipientInstructorId()))
+            .thenReturn(Optional.of(instructor));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationDispatchService.sendNow(notificationId, actorId);
+
+        verify(auditEventService).record(eq("NOTIFICATION_SENT"), any(), eq(actorId), any());
+    }
+
+    @Test
+    void sendNow_systemAutoDispatchWithNoActor_writesNoAuditEvent() {
+        // FND-53 / C7 AC4 — auto-dispatch (onNotificationsStaged) passes a null actorId: nobody
+        // "clicked", so this must not flood the audit trail with one row per staged digest.
+        Notification notification = pendingNotification();
+        notification.setType(NotificationTypes.INSTRUCTOR_DIGEST);
+        notification.setRecipientInstructorId(UUID.randomUUID());
+        InstructorContact instructor = InstructorContact.builder().email("instructor@example.com").build();
+        when(notificationRepository.findByIdForUpdate(notificationId)).thenReturn(Optional.of(notification));
+        when(instructorContactRepository.findById(notification.getRecipientInstructorId()))
+            .thenReturn(Optional.of(instructor));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationDispatchService.sendNow(notificationId, null);
+
+        verifyNoInteractions(auditEventService);
     }
 
     @Test
