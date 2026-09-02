@@ -48,59 +48,33 @@ jobs:
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:dev"
 
-      - name: Deploy over SSM
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          INSTANCE_ID: ${{ secrets.DEPLOY_INSTANCE_ID }}
+      # Resolved by tag rather than read from a stored secret: the box runs on Spot, so its
+      # instance ID changes every time it is reclaimed and recreated, and a pinned
+      # DEPLOY_INSTANCE_ID secret goes stale the first time that happens.
+      - name: Resolve the box
+        id: box
         run: |
           set -euo pipefail
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=labresults-dev" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
 
-          # Mint an ECR token (CI has AWS creds via OIDC); the box uses it to log in itself.
-          # Short-lived (12h), so it's fine to pass directly in the SSM command.
-          ECR_TOKEN=$(aws ecr get-login-password --region "$AWS_REGION")
-          echo "::add-mask::$ECR_TOKEN"
-
-          REMOTE_SCRIPT=$(printf '%s\n' \
-            "set -eu" \
-            "/opt/app/refresh-env.sh" \
-            "echo '$ECR_TOKEN' | docker login --username AWS --password-stdin '$REGISTRY'" \
-            "cd /opt/app" \
-            "docker compose pull app" \
-            "docker compose up -d redis app" \
-            "docker image prune -f")
-
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters "{\"commands\":[$(jq -Rs . <<< "$REMOTE_SCRIPT")]}" \
-            --comment "deploy-dev ${{ github.sha }}" \
-            --query "Command.CommandId" --output text)
-
-          echo "SSM command: $COMMAND_ID"
-
-          # Poll until the command reaches a terminal status.
-          for _ in $(seq 1 30); do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
-              --query "Status" --output text 2>/dev/null || echo "Pending")
-            case "$STATUS" in
-              Success) break ;;
-              Failed|Cancelled|TimedOut)
-                aws ssm get-command-invocation \
-                  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
-                  --query "StandardErrorContent" --output text
-                echo "SSM command ended with status $STATUS" >&2
-                exit 1
-                ;;
-              *) sleep 10 ;;
-            esac
-          done
-
-          if [ "$STATUS" != "Success" ]; then
-            echo "SSM command did not complete in time (last status: $STATUS)" >&2
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "No running instance tagged labresults-dev — has Spot reclaimed it?" >&2
+            echo "The Recover Dev Box workflow rebuilds it; re-run this deploy afterwards." >&2
             exit 1
           fi
 
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
-            --query "StandardOutputContent" --output text
+          echo "Deploying to $INSTANCE_ID"
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy over SSM
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          INSTANCE_ID: ${{ steps.box.outputs.instance_id }}
+        run: |
+          chmod +x infra/scripts/deploy-over-ssm.sh
+          # redis app only: this workflow builds the backend, so leave the frontend running.
+          infra/scripts/deploy-over-ssm.sh \
+            "$INSTANCE_ID" "$REGISTRY" "deploy-dev ${{ github.sha }}" redis app
