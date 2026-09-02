@@ -13,6 +13,7 @@ import com.amalitech.labresultsvalidator.domain.auditlog.entity.LabReferenceAudi
 import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
 import com.amalitech.labresultsvalidator.domain.grading.entity.LabResult;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
+import com.amalitech.labresultsvalidator.domain.sync.repository.CohortSyncFileRepository;
 import com.amalitech.labresultsvalidator.domain.sync.repository.CohortSyncJobRepository;
 import com.amalitech.labresultsvalidator.domain.grading.repository.IngestionConflictRepository;
 import com.amalitech.labresultsvalidator.domain.grading.repository.IngestionRunRepository;
@@ -54,6 +55,8 @@ class CohortSyncServiceTest {
     private CohortRepository cohortRepository;
     @Mock
     private CohortSyncJobRepository syncJobRepository;
+    @Mock
+    private CohortSyncFileRepository syncFileRepository;
     @Mock
     private IngestionRunRepository ingestionRunRepository;
     @Mock

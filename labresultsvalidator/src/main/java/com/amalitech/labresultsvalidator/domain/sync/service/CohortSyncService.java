@@ -12,11 +12,13 @@ import com.amalitech.labresultsvalidator.domain.grading.dto.IngestionConflictRes
 import com.amalitech.labresultsvalidator.domain.grading.dto.ResolveConflictRequest;
 import com.amalitech.labresultsvalidator.domain.standup.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.sync.dto.SyncBatchResponse;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileResponse;
 import com.amalitech.labresultsvalidator.domain.sync.dto.SyncRunResponse;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.entity.CohortLifecycleState;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJob;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJobStatus;
+import com.amalitech.labresultsvalidator.domain.sync.repository.CohortSyncFileRepository;
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionConflict;
 import com.amalitech.labresultsvalidator.domain.auditlog.entity.LabReferenceAuditLog;
 import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
@@ -59,6 +61,7 @@ public class CohortSyncService {
 
     private final CohortRepository cohortRepository;
     private final CohortSyncJobRepository syncJobRepository;
+    private final CohortSyncFileRepository syncFileRepository;
     private final IngestionRunRepository ingestionRunRepository;
     private final IngestionConflictRepository ingestionConflictRepository;
     private final LabResultRepository labResultRepository;
@@ -121,6 +124,18 @@ public class CohortSyncService {
         CohortSyncJob job = getJobOrThrow(cohortId, jobId);
         var runs = ingestionRunRepository.findBySyncJobId(jobId);
         return GradingSyncOverviewResponse.from(job, runs);
+    }
+
+    /**
+     * Lists every file a sync run touched — new, changed, unchanged and failed alike — newest
+     * first. Previously the only way to see which files failed (and why) after the fact was to
+     * hold the run's SSE stream open; this exposes the same {@code cohort_sync_files} rows as a
+     * plain, pollable list for a run-detail screen.
+     */
+    public Page<SyncFileResponse> listFilesForRun(UUID cohortId, UUID jobId, Pageable pageable) {
+        getJobOrThrow(cohortId, jobId);
+        return syncFileRepository.findBySyncJobIdOrderByCreatedAtDesc(jobId, pageable)
+            .map(SyncFileResponse::from);
     }
 
     /**

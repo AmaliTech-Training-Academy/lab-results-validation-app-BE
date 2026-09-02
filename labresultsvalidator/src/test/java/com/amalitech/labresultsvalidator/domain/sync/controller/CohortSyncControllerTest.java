@@ -6,8 +6,10 @@ import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityEx
 import com.amalitech.labresultsvalidator.domain.grading.dto.FileIngestionSummary;
 import com.amalitech.labresultsvalidator.domain.sync.dto.GradingSyncOverviewResponse;
 import com.amalitech.labresultsvalidator.domain.grading.dto.IngestionConflictResponse;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileResponse;
 import com.amalitech.labresultsvalidator.domain.sync.dto.SyncRunResponse;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJobStatus;
+import com.amalitech.labresultsvalidator.domain.sync.entity.SyncFileChangeState;
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionConflict;
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun;
 import com.amalitech.labresultsvalidator.domain.sync.service.CohortSyncService;
@@ -151,6 +153,36 @@ class CohortSyncControllerTest {
             .thenThrow(new ResourceNotFoundException("No sync job found with ID " + jobId + " for cohort " + cohortId));
 
         mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/overview"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listFilesForRun_existingJob_returnsFilesNewestFirst() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+
+        SyncFileResponse failed = new SyncFileResponse(UUID.randomUUID(), "Corrupt.xlsx", null,
+            SyncFileChangeState.FAILED, "not a valid .xlsx", OffsetDateTime.now());
+        Page<SyncFileResponse> response = new PageImpl<>(List.of(failed), PageRequest.of(0, 20), 1);
+        when(cohortSyncService.listFilesForRun(eq(cohortId), eq(jobId), any(Pageable.class)))
+            .thenReturn(response);
+
+        mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/files"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content.length()").value(1))
+            .andExpect(jsonPath("$.data.content[0].fileName").value("Corrupt.xlsx"))
+            .andExpect(jsonPath("$.data.content[0].changeState").value("FAILED"))
+            .andExpect(jsonPath("$.data.content[0].errorMessage").value("not a valid .xlsx"));
+    }
+
+    @Test
+    void listFilesForRun_unknownOrMismatchedCohort_returns404() throws Exception {
+        UUID cohortId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        when(cohortSyncService.listFilesForRun(eq(cohortId), eq(jobId), any(Pageable.class)))
+            .thenThrow(new ResourceNotFoundException("No sync job found with ID " + jobId + " for cohort " + cohortId));
+
+        mockMvc.perform(get(BASE_URL + "/" + cohortId + "/sync/runs/" + jobId + "/files"))
             .andExpect(status().isNotFound());
     }
 

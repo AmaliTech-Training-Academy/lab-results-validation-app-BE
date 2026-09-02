@@ -1,6 +1,8 @@
 package com.amalitech.labresultsvalidator.domain.sync.repository;
 
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncFile;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,4 +21,7 @@ public interface CohortSyncFileRepository extends JpaRepository<CohortSyncFile, 
         + "ORDER BY f.createdAt DESC")
     List<CohortSyncFile> findByCohortIdAndFileNameOrderByCreatedAtDesc(
         @Param("cohortId") UUID cohortId, @Param("fileName") String fileName);
+
+    /** Backs the run-detail files list (which files this run touched, and why any of them failed). */
+    Page<CohortSyncFile> findBySyncJobIdOrderByCreatedAtDesc(UUID syncJobId, Pageable pageable);
 }
