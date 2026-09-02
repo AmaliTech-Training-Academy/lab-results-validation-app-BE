@@ -25,6 +25,14 @@ public final class NotificationTypes {
     /** C5 AC1 — duplicates awaiting resolution. */
     public static final String CONFLICT_ALERT = "conflict_alert";
 
+    /**
+     * A file the sync run could not even read (bad metadata, download/parse failure, or a failed
+     * archive). Unlike {@link #HIGH_FAILURE}, this never produces an {@code IngestionRun}, so
+     * without this type the failure had no admin-facing notification at all — only the sync SSE
+     * stream and the server log.
+     */
+    public static final String FILE_READ_FAILURE = "file_read_failure";
+
     /** C5 AC2 — a cohort reached STOOD_UP. In-app only. */
     public static final String STOOD_UP = "stood_up";
 

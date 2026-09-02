@@ -11,6 +11,7 @@ import com.amalitech.labresultsvalidator.domain.reference.dto.LabModuleName;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabRepository;
 import com.amalitech.labresultsvalidator.domain.notification.event.SyncJobNotificationsStagedEvent;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileFailure;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -86,9 +87,13 @@ public class NotificationStagingService {
     }
 
     @Transactional
-    public void stageForSyncJob(UUID cohortId, UUID syncJobId, UUID actorId) {
+    public void stageForSyncJob(UUID cohortId, UUID syncJobId, UUID actorId, List<SyncFileFailure> failedFiles) {
         List<IngestionRun> runs = ingestionRunRepository.findBySyncJobId(syncJobId);
-        if (runs.isEmpty()) {
+        List<SyncFileFailure> safeFailedFiles = failedFiles == null ? List.of() : failedFiles;
+        // A file that couldn't even be read never produces an IngestionRun, so a run where every
+        // file failed that way would otherwise have an empty runs list and be mistaken here for
+        // "nothing to report" — the exact case where the admin digest matters most.
+        if (runs.isEmpty() && safeFailedFiles.isEmpty()) {
             return;
         }
 
@@ -160,7 +165,7 @@ public class NotificationStagingService {
                 syncJobId);
         } else {
             for (User admin : admins) {
-                toStage.add(buildAdminDigest(cohortId, syncJobId, admin, unattributed, totals));
+                toStage.add(buildAdminDigest(cohortId, syncJobId, admin, unattributed, totals, safeFailedFiles));
                 if (!highFailureRuns.isEmpty()) {
                     toStage.add(buildHighFailureRateDigest(cohortId, syncJobId, admin, highFailureRuns));
                 }
@@ -246,7 +251,8 @@ public class NotificationStagingService {
     }
 
     private Notification buildAdminDigest(UUID cohortId, UUID syncJobId, User admin,
-                                          List<RowIssueSummary> issues, RunTotals totals) {
+                                          List<RowIssueSummary> issues, RunTotals totals,
+                                          List<SyncFileFailure> failedFiles) {
         return Notification.builder()
             .cohortId(cohortId)
             .syncJobId(syncJobId)
@@ -257,8 +263,8 @@ public class NotificationStagingService {
             .dispatchPolicy("AUTO")
             .subject("Validata run summary — " + totals.filesProcessed() + " file(s), "
                 + totals.rowsRead() + " row(s) read")
-            .body(renderAdminDigestBody(issues, totals))
-            .payloadJson(writeAdminPayloadJson(issues, totals))
+            .body(renderAdminDigestBody(issues, totals, failedFiles))
+            .payloadJson(writeAdminPayloadJson(issues, totals, failedFiles))
             .status("PENDING")
             .build();
     }
@@ -373,7 +379,8 @@ public class NotificationStagingService {
      * The admin payload keeps the issue list under {@code issues} so {@code NotificationResponse}
      * still parses it, and adds the run counts alongside.
      */
-    private String writeAdminPayloadJson(List<RowIssueSummary> issues, RunTotals totals) {
+    private String writeAdminPayloadJson(List<RowIssueSummary> issues, RunTotals totals,
+                                         List<SyncFileFailure> failedFiles) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("filesProcessed", totals.filesProcessed());
         payload.put("rowsRead", totals.rowsRead());
@@ -383,6 +390,7 @@ public class NotificationStagingService {
         payload.put("skippedUnchanged", totals.skippedUnchanged());
         payload.put("conflictsCount", totals.conflictsCount());
         payload.put("highFailureFiles", totals.highFailureFiles());
+        payload.put("unreadableFiles", failedFiles);
         payload.put("unresolvedReviewerRows", issues.size());
         payload.put("issues", issues);
         try {
@@ -397,7 +405,8 @@ public class NotificationStagingService {
      * C4 AC1 — the six counts and any high-failure files, then the unresolved-reviewer rows that
      * could not reach an instructor (AC2: rolled in here, not sent separately).
      */
-    private String renderAdminDigestBody(List<RowIssueSummary> issues, RunTotals totals) {
+    private String renderAdminDigestBody(List<RowIssueSummary> issues, RunTotals totals,
+                                         List<SyncFileFailure> failedFiles) {
         StringBuilder sb = new StringBuilder();
         sb.append(provisionalBanner());
 
@@ -410,6 +419,21 @@ public class NotificationStagingService {
         appendCount(sb, "Skipped — unchanged", totals.skippedUnchanged());
         appendCount(sb, "Conflicts awaiting resolution", totals.conflictsCount());
         sb.append("</table>");
+
+        if (!failedFiles.isEmpty()) {
+            // Distinct from "high-failure" below: these files never got as far as being read at
+            // all, so there's no row-level detail to show, only the file and why it failed.
+            sb.append("<h3 style=\"margin:16px 0 8px;font-size:15px;color:#08283B;\">")
+                .append("Files that could not be synced</h3>");
+            sb.append("<p style=\"margin:0 0 8px;font-size:13px;color:#6B7280;\">")
+                .append("Their scores were not updated; the next sync will retry them automatically.</p>");
+            sb.append("<ul style=\"margin:0 0 16px;padding-left:20px;font-size:13px;color:#374151;\">");
+            for (SyncFileFailure failure : failedFiles) {
+                sb.append("<li>").append(escape(failure.fileName()))
+                    .append(" — ").append(escape(failure.errorMessage())).append("</li>");
+            }
+            sb.append("</ul>");
+        }
 
         if (!totals.highFailureFiles().isEmpty()) {
             sb.append("<h3 style=\"margin:16px 0 8px;font-size:15px;color:#08283B;\">")

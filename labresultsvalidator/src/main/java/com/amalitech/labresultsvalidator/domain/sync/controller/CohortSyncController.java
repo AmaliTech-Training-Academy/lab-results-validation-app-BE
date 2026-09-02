@@ -8,6 +8,7 @@ import com.amalitech.labresultsvalidator.domain.grading.dto.ResolveConflictReque
 import com.amalitech.labresultsvalidator.domain.standup.dto.StandupGateEvent;
 import com.amalitech.labresultsvalidator.domain.standup.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.sync.dto.SyncBatchResponse;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileResponse;
 import com.amalitech.labresultsvalidator.domain.sync.dto.SyncRunResponse;
 import com.amalitech.labresultsvalidator.domain.sync.service.CohortSyncService;
 import com.amalitech.labresultsvalidator.domain.standup.service.SseGateEventStreamer;
@@ -121,6 +122,25 @@ public class CohortSyncController {
     ) {
         return ResponseEntity.ok(ApiResponse.success(
             "Grading sync overview retrieved.", cohortSyncService.getGradingSyncOverview(id, jobId)));
+    }
+
+    @Operation(summary = "List a sync run's files",
+        description = "Returns a paginated list of every file one sync run touched — new, changed, "
+            + "unchanged and failed alike — newest first, including the reason for any failure.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Files retrieved"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404",
+            description = "No sync job with that ID for this cohort")
+    })
+    @GetMapping("/{id}/sync/runs/{jobId}/files")
+    public ResponseEntity<ApiResponse<Page<SyncFileResponse>>> listFilesForRun(
+        @PathVariable UUID id,
+        @PathVariable UUID jobId,
+        @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+            "Files retrieved.", cohortSyncService.listFilesForRun(id, jobId, pageable)));
     }
 
     @Operation(summary = "List ingestion conflicts",

@@ -76,4 +76,12 @@ public class CohortSyncFile extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "change_state", length = 20)
     private SyncFileChangeState changeState;
+
+    /**
+     * Why this file failed (metadata read, download/parse, ingestion or archive), set only when
+     * {@code changeState == FAILED}. Previously this text only ever reached the sync SSE stream's
+     * events JSON and the server log — neither queryable after the fact.
+     */
+    @Column(name = "error_message", length = 1000)
+    private String errorMessage;
 }
