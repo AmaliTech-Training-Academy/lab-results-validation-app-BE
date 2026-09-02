@@ -75,8 +75,11 @@ public class LabResultCommitService {
                     }
                     case UNCHANGED -> skippedUnchanged++;
                     case CHANGED -> {
-                        commitChanged(classification, ingestionRunId, triggeredBy);
-                        updatedCount++;
+                        if (commitChanged(classification, ingestionRunId, triggeredBy)) {
+                            updatedCount++;
+                        } else {
+                            skippedUnchanged++;
+                        }
                     }
                     case DUPLICATE -> {
                         if (holdDuplicate(classification, cohortId, ingestionRunId)) {
@@ -87,17 +90,10 @@ public class LabResultCommitService {
                         "Unexpected classification kind: " + classification.kind());
                 }
             } catch (RuntimeException ex) {
-                // Deliberately broad — a commit can legitimately fail for many RuntimeException
-                // shapes (a DB constraint violation, an optimistic-lock conflict), and the row
-                // must still count as skipped regardless of which. But log the full exception
-                // (class + stack trace) at ERROR rather than just the message at WARN — this feeds
-                // the failure-rate alerting metric, so a persistent bug here would otherwise look
-                // identical to genuinely bad row data with no server-side trail to tell them apart.
+
                 LOG.error("[ingestion] could not commit row {}: {}", classification.row().location(),
                     ex.getMessage(), ex);
                 String errorMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
-                // No labTitle: a validated row carries the resolved labId, not the raw title cell. The
-                // digest falls back to "module unknown" for these, which is rare (a commit failure).
                 rowErrors.add(new RowError(classification.row().fileName(), classification.row().location(),
                     "COMMIT-FAILED", errorMessage, classification.row().instructorContactId(), null));
                 skippedInvalid++;
@@ -125,23 +121,32 @@ public class LabResultCommitService {
         labResultRepository.save(result);
     }
 
-    private void commitChanged(RowClassification classification, UUID ingestionRunId, UUID triggeredBy) {
+    /**
+     * @return true if the mark itself changed (a genuine re-grade), false if the fingerprint moved
+     *     for some other reason (in practice, {@code submittedOn} alone — a review-date correction).
+     *     Either way the row is persisted with the incoming values and a fresh fingerprint, so the
+     *     correction sticks and this row is not re-flagged as CHANGED on the next run; only the
+     *     {@code true} case is a re-grade worth an audit-log entry and an "updated" count.
+     */
+    private boolean commitChanged(RowClassification classification, UUID ingestionRunId, UUID triggeredBy) {
         LabResult existing = classification.existing();
         ValidatedScoreRow row = classification.row();
         BigDecimal oldScore = existing.getScore();
+        // compareTo, not equals: a rescaled-but-equal score (85 vs 85.00) is not a mark change, and
+        // RowFingerprint normalizes to scale 2 for the same reason.
+        boolean scoreChanged = oldScore.compareTo(row.score()) != 0;
 
-        // D3 AC1 — the prior value must be durable before the update lands: with no enclosing
-        // transaction (see class javadoc), a crash between these two saves must never leave an
-        // updated score with no prior-value record, so this write comes first.
-        labReferenceAuditLogRepository.save(LabReferenceAuditLog.builder()
-            .tableName("lab_results")
-            .recordId(existing.getId())
-            .fieldName("score")
-            .oldValue(oldScore.toPlainString())
-            .newValue(row.score().toPlainString())
-            .changedBy(triggeredBy)
-            .reason("Re-grade detected during ingestion run " + ingestionRunId)
-            .build());
+        if (scoreChanged) {
+            labReferenceAuditLogRepository.save(LabReferenceAuditLog.builder()
+                .tableName("lab_results")
+                .recordId(existing.getId())
+                .fieldName("score")
+                .oldValue(oldScore.toPlainString())
+                .newValue(row.score().toPlainString())
+                .changedBy(triggeredBy)
+                .reason("Re-grade detected during ingestion run " + ingestionRunId)
+                .build());
+        }
 
         existing.setScore(row.score());
         existing.setSubmittedOn(row.submittedOn());
@@ -150,6 +155,7 @@ public class LabResultCommitService {
         existing.setRowValueHash(RowFingerprint.compute(row.submittedOn(), row.score()));
         existing.setUpdatedBy(triggeredBy);
         labResultRepository.save(existing);
+        return scoreChanged;
     }
 
     /**
