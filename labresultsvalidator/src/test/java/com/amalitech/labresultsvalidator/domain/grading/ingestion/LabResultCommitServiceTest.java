@@ -161,6 +161,38 @@ class LabResultCommitServiceTest {
         assertThat(resultCaptor.getValue().getSubmittedOn()).isEqualTo(regradeDate);
     }
 
+    @Test
+    void commit_reviewDateCorrectedButMarkUntouched_isNotReportedAsAnUpdateAndLogsNoScoreChange() {
+        // A review-date typo fix trips the fingerprint (it hashes submittedOn + score together)
+        // exactly like a real re-grade would, but nobody's mark moved — this must not be announced
+        // to instructors/admins as a grade change, nor fabricate a "score changed X -> X" history
+        // entry.
+        LocalDate correctedDate = SUBMITTED_ON.plusDays(1);
+        BigDecimal score = new BigDecimal("90.00");
+        UUID existingId = UUID.randomUUID();
+        LabResult existing = LabResult.builder().id(existingId).score(score).submittedOn(SUBMITTED_ON).build();
+        ValidatedScoreRow row = new ValidatedScoreRow("Instructor1.xlsx", "BEM01", 2, UUID.randomUUID(),
+            UUID.randomUUID(), null, NSP_NAME, correctedDate, score);
+        RowClassification classification = new RowClassification(ClassificationKind.CHANGED, row, existing);
+
+        LabResultCommitService.CommitOutcome outcome =
+            service.commit(List.of(classification), cohortId, ingestionRunId, triggeredBy);
+
+        // Not counted as a re-grade...
+        assertThat(outcome.updatedCount()).isZero();
+        assertThat(outcome.skippedUnchanged()).isEqualTo(1);
+        // ...but the correction is still persisted, including a fresh fingerprint so it isn't
+        // re-flagged as CHANGED on the next run.
+        ArgumentCaptor<LabResult> resultCaptor = ArgumentCaptor.forClass(LabResult.class);
+        verify(labResultRepository).save(resultCaptor.capture());
+        assertThat(resultCaptor.getValue().getSubmittedOn()).isEqualTo(correctedDate);
+        assertThat(resultCaptor.getValue().getScore()).isEqualTo(score);
+        assertThat(resultCaptor.getValue().getRowValueHash())
+            .isEqualTo(RowFingerprint.compute(correctedDate, score));
+        // ...and no audit-log entry claims the score changed from a value to the same value.
+        verify(labReferenceAuditLogRepository, never()).save(any());
+    }
+
     /** The group the classifier now hands over: one DUPLICATE carrying every conflicting copy. */
     private RowClassification duplicateGroup(LabResult existing, ValidatedScoreRow... copies) {
         ValidatedScoreRow[] rows = copies;
