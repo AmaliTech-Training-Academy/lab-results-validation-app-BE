@@ -8,7 +8,6 @@ import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -95,20 +94,6 @@ public class S3StorageService {
         } catch (SdkException ex) {
             LOG.warn("S3 headObject failed for key {}: {}", key, ex.getMessage());
             throw new S3StorageException("Failed to check object existence in S3 (key=" + key + ").", ex);
-        }
-    }
-
-    /** Delete an object. No-op (from the caller's view) if the key does not exist. */
-    public void deleteObject(String key) {
-        try {
-            s3Client.deleteObject(DeleteObjectRequest.builder()
-                .bucket(props.bucket())
-                .key(key)
-                .build());
-            LOG.debug("Deleted s3://{}/{}", props.bucket(), key);
-        } catch (SdkException ex) {
-            LOG.warn("S3 deleteObject failed for key {}: {}", key, ex.getMessage());
-            throw new S3StorageException("Failed to delete object from S3 (key=" + key + ").", ex);
         }
     }
 }

@@ -1,6 +1,5 @@
 package com.amalitech.labresultsvalidator.common.service;
 
-import com.amalitech.labresultsvalidator.domain.user.event.AdminProvisionedEvent;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
@@ -12,8 +11,6 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -52,23 +49,6 @@ public class EmailService {
 
     private volatile String template;
 
-    // ── Transactional event handlers ──────────────────────────────────────────
-
-    @Async("emailTaskExecutor")
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onAdminProvisioned(AdminProvisionedEvent event) {
-        LOG.info("[email] admin-provisioned welcome email queued to={}", event.email());
-        dispatch(
-            event.email(),
-            "Welcome to Amalitech Training Validata — Your Account Details",
-            buildHtmlEmail(
-                buildWelcomeContent(event.email(), event.temporaryPassword()),
-                frontendUrl,
-                "Sign In to Validata"
-            )
-        );
-    }
-
     @Async("emailTaskExecutor")
     public void sendPasswordResetEmail(String toEmail, String resetLink) {
         LOG.info("[email] password-reset email queued to={}", toEmail);
@@ -85,17 +65,7 @@ public class EmailService {
 
     /**
      * Sends an arbitrary pre-rendered subject/body — used for notification digests, whose content
-     * is built and stored at staging time, not here. Async: use for fire-and-forget dispatch
-     * (the auto-send batch listener). See {@link #sendPlainEmailSync} for the synchronous variant.
-     */
-    @Async("emailTaskExecutor")
-    public void sendPlainEmail(String toEmail, String subject, String htmlContent) {
-        LOG.info("[email] async plain email queued to={} subject={}", toEmail, subject);
-        dispatch(toEmail, subject, buildHtmlEmail(htmlContent, frontendUrl, "Open Validata"));
-    }
-
-    /**
-     * Same as {@link #sendPlainEmail} but synchronous — for callers that need immediate
+     * is built and stored at staging time, not here. Synchronous, for callers that need immediate
      * success/failure feedback, such as an admin's manual "send now"/"retry" action, where
      * fire-and-forget would hide the result from the request that triggered it.
      */
@@ -165,41 +135,6 @@ public class EmailService {
             }
         }
         return template;
-    }
-
-    private static String buildWelcomeContent(String email, String temporaryPassword) {
-        return """
-                <p style="margin:0 0 4px;font-size:22px;font-weight:700;color:#08283B;">
-                  Welcome aboard!
-                </p>
-                <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#374151;">
-                  Your admin account on Amalitech Training Validata is ready.
-                  Use the credentials below to sign in — you will be prompted to set a new password on your first login.
-                </p>
-                <table cellpadding="0" cellspacing="0" width="100%%"
-                       style="margin:0 0 24px;background-color:#F0F4F8;border-radius:6px;">
-                  <tr>
-                    <td style="padding:20px 24px;border-left:4px solid #08283B;border-radius:6px;">
-                      <p style="margin:0 0 14px;font-size:11px;font-weight:700;color:#6B7280;\
-                      text-transform:uppercase;letter-spacing:1px;">Your Login Credentials</p>
-                      <p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#6B7280;\
-                      text-transform:uppercase;letter-spacing:0.5px;">Email</p>
-                      <p style="margin:0 0 14px;font-size:15px;font-weight:600;color:#08283B;">%s</p>
-                      <p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#6B7280;\
-                      text-transform:uppercase;letter-spacing:0.5px;">Temporary Password</p>
-                      <p style="margin:0;font-size:16px;font-weight:700;color:#08283B;\
-                      font-family:'Courier New',Courier,monospace;letter-spacing:2px;">%s</p>
-                    </td>
-                  </tr>
-                </table>
-                <p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:#374151;">
-                  <strong>Important:</strong> This is a temporary password. You will be \
-                  required to change it upon your first login.
-                </p>
-                <p style="margin:0;font-size:13px;line-height:1.6;color:#6B7280;">
-                  If you were not expecting this email, please disregard it or contact your administrator.
-                </p>
-                """.formatted(email, temporaryPassword);
     }
 
     private static String buildPasswordResetContent() {

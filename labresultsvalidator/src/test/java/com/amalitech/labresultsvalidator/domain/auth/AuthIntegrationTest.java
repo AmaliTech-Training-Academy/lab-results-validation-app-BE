@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -245,8 +244,6 @@ class AuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @Disabled("FND-14 / RTM E6-AC2 — InstructorProvisionedEvent is still in the codebase. It is "
-        + "referenced by nothing, so removing it is a one-file deletion; enable this then.")
     @DisplayName("E6 AC2 — the instructor-provisioning event class is gone")
     void theInstructorProvisioningEventIsRemoved() {
         assertThatThrownBy(() -> Class.forName(
