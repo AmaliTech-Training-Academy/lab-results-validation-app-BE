@@ -1,6 +1,8 @@
 package com.amalitech.labresultsvalidator.domain.standup.gate;
 
 import com.amalitech.labresultsvalidator.common.utils.SpecializationNameMatcher;
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointProperties;
@@ -27,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -51,10 +54,13 @@ public class Gate3ReferenceValidator {
 
     private final GraphDriveService graphDriveService;
     private final SharePointProperties sharePointProperties;
+    private final InstructorContactRepository instructorContactRepository;
 
-    public Gate3ReferenceValidator(GraphDriveService graphDriveService, SharePointProperties sharePointProperties) {
+    public Gate3ReferenceValidator(GraphDriveService graphDriveService, SharePointProperties sharePointProperties,
+                                    InstructorContactRepository instructorContactRepository) {
         this.graphDriveService = graphDriveService;
         this.sharePointProperties = sharePointProperties;
+        this.instructorContactRepository = instructorContactRepository;
     }
 
     public Gate3Result validate(String driveId, String referenceFolderItemId) {
@@ -499,6 +505,22 @@ public class Gate3ReferenceValidator {
                     errors.add(new GateError(fileName, "row " + rowNum, "G3-DUP-INSTRUCTOR-SPECIALIZATION",
                         "Instructor '" + email + "' is already listed for specialization '"
                             + matchedSpecName + "'."));
+                    rowHasError = true;
+                }
+            }
+
+
+            if (!rowHasError) {
+                Optional<InstructorContact> existingByEmail =
+                    instructorContactRepository.findByEmailIgnoreCase(email.trim());
+                if (existingByEmail.isPresent()
+                        && !existingByEmail.get().getFullName().equalsIgnoreCase(fullName.trim())) {
+                    errors.add(new GateError(fileName, "row " + rowNum, "G3-INSTRUCTOR-EMAIL-CONFLICT",
+                        "Email '" + email + "' is already registered to instructor '"
+                            + existingByEmail.get().getFullName() + "' from another cohort; '"
+                            + fileName + "' lists the same email under a different name, '"
+                            + fullName + "'. Confirm which name is correct and fix the file before "
+                            + "accepting."));
                     rowHasError = true;
                 }
             }
