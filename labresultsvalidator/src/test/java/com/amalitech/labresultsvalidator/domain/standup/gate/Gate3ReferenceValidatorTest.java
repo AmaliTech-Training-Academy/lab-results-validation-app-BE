@@ -1,5 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.standup.gate;
 
+import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
+import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
 import com.amalitech.labresultsvalidator.infrastructure.graph.DriveItemInfo;
 import com.amalitech.labresultsvalidator.infrastructure.graph.GraphDriveService;
 import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointProperties;
@@ -16,8 +18,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +39,9 @@ class Gate3ReferenceValidatorTest {
     @Mock
     private GraphDriveService graphDriveService;
 
+    @Mock
+    private InstructorContactRepository instructorContactRepository;
+
     private Gate3ReferenceValidator validator;
 
     @BeforeEach
@@ -45,7 +53,7 @@ class Gate3ReferenceValidatorTest {
             20L * 1024 * 1024,
             4
         );
-        validator = new Gate3ReferenceValidator(graphDriveService, properties);
+        validator = new Gate3ReferenceValidator(graphDriveService, properties, instructorContactRepository);
     }
 
     private void stubFolderContents(byte[] specsBytes, byte[] modulesBytes, byte[] labsBytes, byte[] learnersBytes) {
@@ -60,6 +68,24 @@ class Gate3ReferenceValidatorTest {
         when(graphDriveService.downloadFile(DRIVE_ID, "id-modules")).thenReturn(modulesBytes);
         when(graphDriveService.downloadFile(DRIVE_ID, "id-labs")).thenReturn(labsBytes);
         when(graphDriveService.downloadFile(DRIVE_ID, "id-learners")).thenReturn(learnersBytes);
+    }
+
+    /** Same as {@link #stubFolderContents}, but also wires up the optional instructors file. */
+    private void stubFolderContentsWithInstructors(byte[] specsBytes, byte[] modulesBytes, byte[] labsBytes,
+                                                    byte[] learnersBytes, byte[] instructorsBytes) {
+        List<DriveItemInfo> children = List.of(
+            new DriveItemInfo(DRIVE_ID, "id-specs", SPECS_FILE, false, "site-1"),
+            new DriveItemInfo(DRIVE_ID, "id-modules", MODULES_FILE, false, "site-1"),
+            new DriveItemInfo(DRIVE_ID, "id-labs", LABS_FILE, false, "site-1"),
+            new DriveItemInfo(DRIVE_ID, "id-learners", LEARNERS_FILE, false, "site-1"),
+            new DriveItemInfo(DRIVE_ID, "id-instructors", INSTRUCTORS_FILE, false, "site-1")
+        );
+        when(graphDriveService.listChildren(DRIVE_ID, REF_FOLDER_ID)).thenReturn(children);
+        when(graphDriveService.downloadFile(DRIVE_ID, "id-specs")).thenReturn(specsBytes);
+        when(graphDriveService.downloadFile(DRIVE_ID, "id-modules")).thenReturn(modulesBytes);
+        when(graphDriveService.downloadFile(DRIVE_ID, "id-labs")).thenReturn(labsBytes);
+        when(graphDriveService.downloadFile(DRIVE_ID, "id-learners")).thenReturn(learnersBytes);
+        when(graphDriveService.downloadFile(DRIVE_ID, "id-instructors")).thenReturn(instructorsBytes);
     }
 
     // Writes `titleRows` blank/title rows before the header row, then the header, then the data rows.
@@ -232,5 +258,103 @@ class Gate3ReferenceValidatorTest {
 
         assertThat(result.gate().passed()).isTrue();
         assertThat(result.bundle().learners()).hasSize(1);
+    }
+
+    // ── FND-54 / RTM A6-AC2 — cross-cohort instructor email conflict ──────────────────────────
+
+    @Test
+    void validate_withInstructorEmailAlreadyRegisteredToADifferentInstructor_reportsEmailConflictError() {
+        byte[] specs = buildWorkbook(0,
+            List.of("specializationid", "specialization"),
+            List.of(List.of("SWE", "Software Engineering")));
+        byte[] modules = buildWorkbook(0,
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE", "BEM01", "Backend Fundamentals")));
+        byte[] labs = buildWorkbook(0,
+            List.of("moduleid", "assessmentid", "lab title"),
+            List.of(List.of("BEM01", "A1", "REST API Basics")));
+        byte[] learners = buildWorkbook(0,
+            List.of("amalitech email", "full name", "specialization"),
+            List.of(List.of("ama.owusu@example.com", "Ama Owusu", "Software Engineering")));
+        // This cohort's file lists a NEW name under an email another cohort already recorded for
+        // a DIFFERENT instructor — exactly the FND-54 repro (steps 1-3).
+        byte[] instructors = buildWorkbook(0,
+            List.of("name", "email", "specialization"),
+            List.of(List.of("New Instructor", "shared@example.com", "Software Engineering")));
+        stubFolderContentsWithInstructors(specs, modules, labs, learners, instructors);
+        when(instructorContactRepository.findByEmailIgnoreCase("shared@example.com"))
+            .thenReturn(Optional.of(InstructorContact.builder()
+                .id(UUID.randomUUID())
+                .email("shared@example.com")
+                .fullName("Existing Instructor")
+                .build()));
+
+        Gate3Result result = validator.validate(DRIVE_ID, REF_FOLDER_ID);
+
+        assertThat(result.gate().passed()).isFalse();
+        assertThat(result.gate().errors()).anyMatch(e -> "G3-INSTRUCTOR-EMAIL-CONFLICT".equals(e.rule())
+            // Names the file, the email, and both instructor names — not a generic message.
+            && e.file().equals(INSTRUCTORS_FILE)
+            && e.message().contains("shared@example.com")
+            && e.message().contains("Existing Instructor")
+            && e.message().contains("New Instructor"));
+    }
+
+    @Test
+    void validate_withInstructorEmailMatchingSameNameFromAnotherCohort_passes() {
+        // Same person, same email, recorded again in a different cohort's file — not a conflict.
+        byte[] specs = buildWorkbook(0,
+            List.of("specializationid", "specialization"),
+            List.of(List.of("SWE", "Software Engineering")));
+        byte[] modules = buildWorkbook(0,
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE", "BEM01", "Backend Fundamentals")));
+        byte[] labs = buildWorkbook(0,
+            List.of("moduleid", "assessmentid", "lab title"),
+            List.of(List.of("BEM01", "A1", "REST API Basics")));
+        byte[] learners = buildWorkbook(0,
+            List.of("amalitech email", "full name", "specialization"),
+            List.of(List.of("ama.owusu@example.com", "Ama Owusu", "Software Engineering")));
+        byte[] instructors = buildWorkbook(0,
+            List.of("name", "email", "specialization"),
+            List.of(List.of("Existing Instructor", "shared@example.com", "Software Engineering")));
+        stubFolderContentsWithInstructors(specs, modules, labs, learners, instructors);
+        when(instructorContactRepository.findByEmailIgnoreCase("shared@example.com"))
+            .thenReturn(Optional.of(InstructorContact.builder()
+                .id(UUID.randomUUID())
+                .email("shared@example.com")
+                .fullName("Existing Instructor")
+                .build()));
+
+        Gate3Result result = validator.validate(DRIVE_ID, REF_FOLDER_ID);
+
+        assertThat(result.gate().passed()).isTrue();
+        assertThat(result.bundle().instructors()).hasSize(1);
+    }
+
+    @Test
+    void validate_withInstructorEmailNotYetRegisteredAnywhere_passes() {
+        byte[] specs = buildWorkbook(0,
+            List.of("specializationid", "specialization"),
+            List.of(List.of("SWE", "Software Engineering")));
+        byte[] modules = buildWorkbook(0,
+            List.of("specializationid", "moduleid", "module name"),
+            List.of(List.of("SWE", "BEM01", "Backend Fundamentals")));
+        byte[] labs = buildWorkbook(0,
+            List.of("moduleid", "assessmentid", "lab title"),
+            List.of(List.of("BEM01", "A1", "REST API Basics")));
+        byte[] learners = buildWorkbook(0,
+            List.of("amalitech email", "full name", "specialization"),
+            List.of(List.of("ama.owusu@example.com", "Ama Owusu", "Software Engineering")));
+        byte[] instructors = buildWorkbook(0,
+            List.of("name", "email", "specialization"),
+            List.of(List.of("Brand New Instructor", "brand.new@example.com", "Software Engineering")));
+        stubFolderContentsWithInstructors(specs, modules, labs, learners, instructors);
+        when(instructorContactRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
+
+        Gate3Result result = validator.validate(DRIVE_ID, REF_FOLDER_ID);
+
+        assertThat(result.gate().passed()).isTrue();
+        assertThat(result.bundle().instructors()).hasSize(1);
     }
 }
