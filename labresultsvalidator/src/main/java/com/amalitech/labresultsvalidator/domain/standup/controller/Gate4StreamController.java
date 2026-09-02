@@ -65,6 +65,7 @@ public class Gate4StreamController {
         @PathVariable UUID cohortId,
         @PageableDefault(size = 20) Pageable pageable
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Gate 4 runs retrieved.", gate4Service.listRuns(cohortId, pageable)));
+        Page<Gate4JobResponse> runs = gate4Service.listRuns(cohortId, pageable);
+        return ResponseEntity.ok(ApiResponse.success("Gate 4 runs retrieved.", runs));
     }
 }
