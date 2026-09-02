@@ -23,6 +23,12 @@ import java.util.stream.Collectors;
 public record FileIngestionSummary(
     String workbookFilename,
     String status,
+    /** SharePoint's cTag for the version this run read — lets an admin confirm a since-edited
+     *  file was actually re-fetched, not stale. Populated for every file, including skipped ones. */
+    String sharepointVersionId,
+    /** SharePoint's content hash for the same version — distinguishes a real re-save from a
+     *  metadata-only touch (cTag changed, bytes didn't). */
+    String quickXorHash,
     int rowsRead,
     int committedNew,
     int updatedCount,
@@ -43,6 +49,8 @@ public record FileIngestionSummary(
         return new FileIngestionSummary(
             run.getWorkbookFilename(),
             run.getStatus(),
+            run.getSharepointVersionId(),
+            run.getQuickXorHash(),
             run.getRowsRead(),
             run.getCommittedNew(),
             run.getUpdatedCount(),

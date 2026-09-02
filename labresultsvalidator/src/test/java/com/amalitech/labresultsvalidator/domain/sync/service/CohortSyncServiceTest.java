@@ -12,7 +12,11 @@ import com.amalitech.labresultsvalidator.domain.grading.service.IngestionConflic
 import com.amalitech.labresultsvalidator.domain.auditlog.entity.LabReferenceAuditLog;
 import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
 import com.amalitech.labresultsvalidator.domain.grading.entity.LabResult;
+import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
+import com.amalitech.labresultsvalidator.domain.sync.dto.GradingSyncOverviewResponse;
+import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJob;
+import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.sync.repository.CohortSyncFileRepository;
 import com.amalitech.labresultsvalidator.domain.sync.repository.CohortSyncJobRepository;
 import com.amalitech.labresultsvalidator.domain.grading.repository.IngestionConflictRepository;
@@ -34,6 +38,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -436,5 +441,48 @@ class CohortSyncServiceTest {
             .isInstanceOf(UnprocessableEntityException.class);
 
         verify(labResultRepository, never()).save(any());
+    }
+
+    private CohortSyncJob syncJob(UUID jobId, CohortSyncJobStatus status, OffsetDateTime startedAt, OffsetDateTime completedAt) {
+        return CohortSyncJob.builder()
+            .id(jobId)
+            .cohort(Cohort.builder().id(cohortId).build())
+            .status(status)
+            .startedAt(startedAt)
+            .completedAt(completedAt)
+            .build();
+    }
+
+    @Test
+    void getGradingSyncOverview_reportsWhenThePreviousRunFinished() {
+        UUID jobId = UUID.randomUUID();
+        OffsetDateTime startedAt = OffsetDateTime.parse("2026-08-10T09:00:00Z");
+        CohortSyncJob job = syncJob(jobId, CohortSyncJobStatus.SKIPPED, startedAt, OffsetDateTime.parse("2026-08-10T09:00:05Z"));
+        OffsetDateTime previousCompletedAt = OffsetDateTime.parse("2026-08-03T09:00:07Z");
+        CohortSyncJob previousJob = syncJob(UUID.randomUUID(), CohortSyncJobStatus.COMPLETED, OffsetDateTime.parse("2026-08-03T09:00:00Z"), previousCompletedAt);
+        when(syncJobRepository.findByIdAndCohortId(jobId, cohortId)).thenReturn(Optional.of(job));
+        when(syncJobRepository.findFirstByCohortIdAndStartedAtBeforeOrderByStartedAtDesc(cohortId, startedAt))
+            .thenReturn(Optional.of(previousJob));
+        when(ingestionRunRepository.findBySyncJobId(jobId)).thenReturn(List.of());
+
+        GradingSyncOverviewResponse overview = cohortSyncService.getGradingSyncOverview(cohortId, jobId);
+
+        assertThat(overview.jobStatus()).isEqualTo(CohortSyncJobStatus.SKIPPED);
+        assertThat(overview.previousRunCompletedAt()).isEqualTo(previousCompletedAt);
+    }
+
+    @Test
+    void getGradingSyncOverview_leavesPreviousRunCompletedAtNullForACohortsFirstRun() {
+        UUID jobId = UUID.randomUUID();
+        OffsetDateTime startedAt = OffsetDateTime.parse("2026-08-10T09:00:00Z");
+        CohortSyncJob job = syncJob(jobId, CohortSyncJobStatus.COMPLETED, startedAt, OffsetDateTime.parse("2026-08-10T09:00:05Z"));
+        when(syncJobRepository.findByIdAndCohortId(jobId, cohortId)).thenReturn(Optional.of(job));
+        when(syncJobRepository.findFirstByCohortIdAndStartedAtBeforeOrderByStartedAtDesc(cohortId, startedAt))
+            .thenReturn(Optional.empty());
+        when(ingestionRunRepository.findBySyncJobId(jobId)).thenReturn(List.of());
+
+        GradingSyncOverviewResponse overview = cohortSyncService.getGradingSyncOverview(cohortId, jobId);
+
+        assertThat(overview.previousRunCompletedAt()).isNull();
     }
 }

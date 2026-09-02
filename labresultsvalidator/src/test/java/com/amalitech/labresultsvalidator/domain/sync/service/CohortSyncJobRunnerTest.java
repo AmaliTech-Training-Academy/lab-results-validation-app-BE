@@ -241,6 +241,25 @@ class CohortSyncJobRunnerTest {
             any(DriveItemDetails.class), eq("sha-steady"), eq(actorId), eq("MANUAL"));
 
         verifyAuditCounts(0, 1, 0);
+
+        // The run reached a file and every one of them was unchanged — distinct from COMPLETED so
+        // "nothing to do" doesn't read the same as "genuinely nothing to grade" or "everything failed".
+        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.SKIPPED);
+    }
+
+    @Test
+    void aRunThatFindsNoScoreSheetsAtAllStaysCompletedRatherThanSkipped() throws Exception {
+        when(sharePointProperties.scoresFolder()).thenReturn(SCORES_FOLDER_NAME);
+        when(graphDriveService.listChildren(DRIVE_ID, ROOT_ITEM_ID))
+            .thenReturn(List.of(item("scores-1", SCORES_FOLDER_NAME, true)));
+        when(graphDriveService.listChildren(DRIVE_ID, "scores-1")).thenReturn(List.of());
+
+        runner.run(cohortId, jobId, actorId);
+
+        // SKIPPED specifically means "reached files and all were unchanged" — a cohort with
+        // nothing to grade at all never reached any file, so it's not the same outcome.
+        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
+        verify(gradingIngestionService, never()).recordSkipped(any(), any(), anyString(), any(), anyString(), any(), anyString());
     }
 
     @Test

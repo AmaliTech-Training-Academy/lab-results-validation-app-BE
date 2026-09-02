@@ -119,7 +119,7 @@ class CohortSyncControllerTest {
                 .errorReportJson(errorReportJson).build());
 
         GradingSyncOverviewResponse response = new GradingSyncOverviewResponse(
-            jobId, cohortId, CohortSyncJobStatus.COMPLETED, OffsetDateTime.now(), OffsetDateTime.now(),
+            jobId, cohortId, CohortSyncJobStatus.COMPLETED, OffsetDateTime.now(), OffsetDateTime.now(), null,
             2, 5, 2, 1, 1, 0, 1, 0, List.of(file1, file2));
         when(cohortSyncService.getGradingSyncOverview(cohortId, jobId)).thenReturn(response);
 

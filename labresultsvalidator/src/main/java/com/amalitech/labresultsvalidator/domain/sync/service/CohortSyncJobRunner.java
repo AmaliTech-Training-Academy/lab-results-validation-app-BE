@@ -126,10 +126,17 @@ public class CohortSyncJobRunner {
                 processFile(cohort, jobId, result, counts, effectiveActorId, triggerType);
             }
 
-            // A run that reaches here always ran to completion — PARTIAL vs COMPLETED only says
-            // whether every file made it, distinct from FAILED below (couldn't even start: bad
-            // cohort/SharePoint reference, or the scores folder itself unreachable/missing).
-            finalStatus = counts.failed > 0 ? CohortSyncJobStatus.PARTIAL : CohortSyncJobStatus.COMPLETED;
+            // A run that reaches here always ran to completion — PARTIAL vs COMPLETED/SKIPPED
+            // only says whether every file made it, distinct from FAILED below (couldn't even
+            // start: bad cohort/SharePoint reference, or the scores folder itself
+            // unreachable/missing). SKIPPED further separates "reached files, all unchanged" from
+            // plain COMPLETED (which still covers a genuinely-empty cohort, or a run that actually
+            // committed new/changed data) — those two used to be indistinguishable on screen.
+            finalStatus = counts.failed > 0
+                ? CohortSyncJobStatus.PARTIAL
+                : (counts.filesSeen() > 0 && counts.newFiles == 0 && counts.changed == 0)
+                    ? CohortSyncJobStatus.SKIPPED
+                    : CohortSyncJobStatus.COMPLETED;
             auditEventService.record("SYNC_COMPLETED", cohortId, effectiveActorId, counts.toPayload(cohort.getName()));
             LOG.info("[sync] job={} cohort={} {} — {}", jobId, cohortId, finalStatus, counts);
 
