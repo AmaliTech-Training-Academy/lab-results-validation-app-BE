@@ -123,7 +123,11 @@ public class CohortSyncService {
     public GradingSyncOverviewResponse getGradingSyncOverview(UUID cohortId, UUID jobId) {
         CohortSyncJob job = getJobOrThrow(cohortId, jobId);
         var runs = ingestionRunRepository.findBySyncJobId(jobId);
-        return GradingSyncOverviewResponse.from(job, runs);
+        OffsetDateTime previousRunCompletedAt = syncJobRepository
+            .findFirstByCohortIdAndStartedAtBeforeOrderByStartedAtDesc(cohortId, job.getStartedAt())
+            .map(CohortSyncJob::getCompletedAt)
+            .orElse(null);
+        return GradingSyncOverviewResponse.from(job, runs, previousRunCompletedAt);
     }
 
     /**

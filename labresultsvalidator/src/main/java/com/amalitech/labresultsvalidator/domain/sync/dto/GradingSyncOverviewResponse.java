@@ -20,6 +20,10 @@ public record GradingSyncOverviewResponse(
     CohortSyncJobStatus jobStatus,
     OffsetDateTime startedAt,
     OffsetDateTime completedAt,
+    /** When the cohort's previous sync run finished, if one exists — lets the screen say "no
+     *  changes since &lt;this&gt;" for a SKIPPED run instead of just naming the status. Null for a
+     *  cohort's first-ever run. */
+    OffsetDateTime previousRunCompletedAt,
     int filesProcessed,
     int rowsRead,
     int committedNew,
@@ -30,7 +34,9 @@ public record GradingSyncOverviewResponse(
     int highFailureFileCount,
     List<FileIngestionSummary> files
 ) {
-    public static GradingSyncOverviewResponse from(CohortSyncJob job, List<IngestionRun> runs) {
+    public static GradingSyncOverviewResponse from(
+        CohortSyncJob job, List<IngestionRun> runs, OffsetDateTime previousRunCompletedAt
+    ) {
         int rowsRead = 0;
         int committedNew = 0;
         int updatedCount = 0;
@@ -58,6 +64,7 @@ public record GradingSyncOverviewResponse(
             job.getStatus(),
             job.getStartedAt(),
             job.getCompletedAt(),
+            previousRunCompletedAt,
             runs.size(),
             rowsRead,
             committedNew,
