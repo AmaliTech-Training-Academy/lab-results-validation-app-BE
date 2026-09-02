@@ -10,6 +10,7 @@ import com.amalitech.labresultsvalidator.domain.notification.entity.Notification
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
 import com.amalitech.labresultsvalidator.domain.reference.dto.LabModuleName;
 import com.amalitech.labresultsvalidator.domain.reference.repository.LabRepository;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileFailure;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -89,7 +90,7 @@ class NotificationStagingServiceTest {
     void stageForSyncJob_adminDigest_isStagedForEveryActiveAdmin() {
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(10, 4, 2, 1, 3, 0)));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         assertThat(adminDigests()).hasSize(2);
         assertThat(adminDigests()).extracting(Notification::getRecipientUserId)
@@ -103,7 +104,7 @@ class NotificationStagingServiceTest {
     void stageForSyncJob_cleanRunWithNoIssues_stillStagesTheAdminDigest() {
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(10, 10, 0, 0, 0, 0)));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         assertThat(adminDigests()).hasSize(2);
         assertThat(adminDigests().get(0).getBody()).contains("Rows read", "Skipped");
@@ -118,7 +119,7 @@ class NotificationStagingServiceTest {
         when(ingestionRunRepository.findBySyncJobId(syncJobId))
             .thenReturn(List.of(run(10, 4, 2, 1, 3, 0), flagged));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         Notification digest = adminDigests().get(0);
         assertThat(digest.getSubject()).contains("2 file(s)", "16 row(s) read");
@@ -145,7 +146,7 @@ class NotificationStagingServiceTest {
             """.formatted(instructorId, instructorId));
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         Notification digest = digestsOfType("instructor_digest").get(0);
         assertThat(digest.getBody())
@@ -164,7 +165,7 @@ class NotificationStagingServiceTest {
             notificationSettingsService, eventPublisher, new ObjectMapper(), false);
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(1, 1, 0, 0, 0, 0)));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         assertThat(adminDigests().get(0).getBody()).doesNotContain("PROVISIONAL FORMAT");
     }
@@ -173,7 +174,7 @@ class NotificationStagingServiceTest {
     void stageForSyncJob_provisionalFlagOn_rendersTheBanner() {
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(1, 1, 0, 0, 0, 0)));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         assertThat(adminDigests().get(0).getBody()).contains("PROVISIONAL FORMAT", "Decision Log Q3");
     }
@@ -190,7 +191,7 @@ class NotificationStagingServiceTest {
         flagged.setFailureRatePercent(66.7);
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(flagged));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         List<Notification> highFailure = digestsOfType("high_failure");
         assertThat(highFailure).hasSize(2);
@@ -216,7 +217,7 @@ class NotificationStagingServiceTest {
             """);
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(flagged));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         assertThat(staged()).extracting(Notification::getType)
             .containsExactlyInAnyOrder("admin_run_digest", "admin_run_digest",
@@ -228,7 +229,7 @@ class NotificationStagingServiceTest {
         when(userRepository.findAllByRoleAndIsActiveTrue(UserRole.ADMIN)).thenReturn(List.of());
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(1, 1, 0, 0, 0, 0)));
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         verify(notificationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
         verify(eventPublisher, never()).publishEvent(org.mockito.ArgumentMatchers.any());
@@ -238,9 +239,43 @@ class NotificationStagingServiceTest {
     void stageForSyncJob_noRunsForTheJob_stagesNothing() {
         when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of());
 
-        service.stageForSyncJob(cohortId, syncJobId, null);
+        service.stageForSyncJob(cohortId, syncJobId, null, List.of());
 
         verify(notificationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+    }
+
+    /**
+     * A file that couldn't even be read never produces an IngestionRun, so a run where every file
+     * failed that way has an empty {@code runs} list — previously indistinguishable here from
+     * "nothing to report", which meant the worst-case run got zero admin notifications.
+     */
+    @Test
+    void stageForSyncJob_noRunsButFilesFailedToRead_stillStagesTheAdminDigest() {
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of());
+
+        service.stageForSyncJob(cohortId, syncJobId, null,
+            List.of(new SyncFileFailure("Corrupt.xlsx", "not a valid .xlsx")));
+
+        assertThat(adminDigests()).hasSize(2);
+        assertThat(adminDigests().get(0).getBody())
+            .contains("Files that could not be synced")
+            .contains("Corrupt.xlsx")
+            .contains("not a valid .xlsx");
+        assertThat(adminDigests().get(0).getPayloadJson()).contains("Corrupt.xlsx");
+    }
+
+    /** The failed-files section sits alongside the usual counts, not instead of them. */
+    @Test
+    void stageForSyncJob_adminDigestBody_carriesFailedFilesWhenARunAlsoHadThem() {
+        when(ingestionRunRepository.findBySyncJobId(syncJobId)).thenReturn(List.of(run(10, 4, 2, 1, 3, 0)));
+
+        service.stageForSyncJob(cohortId, syncJobId, null,
+            List.of(new SyncFileFailure("Ghost.xlsx", "item vanished")));
+
+        assertThat(adminDigests().get(0).getBody())
+            .contains("Rows read")
+            .contains("Files that could not be synced")
+            .contains("Ghost.xlsx — item vanished");
     }
 
     // ── fixtures ──────────────────────────────────────────────────────────────

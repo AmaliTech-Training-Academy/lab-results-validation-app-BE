@@ -8,6 +8,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileFailure;
 import com.amalitech.labresultsvalidator.domain.sync.entity.SyncFileChangeState;
 import com.amalitech.labresultsvalidator.domain.grading.ingestion.GradingIngestionService;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -136,10 +137,15 @@ public class CohortSyncJobRunner {
             // otherwise-successful sync into a FAILED one, so it gets its own narrow try/catch
             // rather than sharing the outer one.
             try {
-                notificationStagingService.stageForSyncJob(cohortId, jobId, actorId);
+                notificationStagingService.stageForSyncJob(cohortId, jobId, actorId, counts.failedFiles());
                 if (counts.conflicts > 0) {
                     // C5 AC1 — dispatched immediately rather than held for the digest.
                     notificationAlertService.alertConflictsPending(cohortId, jobId, counts.conflicts);
+                }
+                if (!counts.failedFiles().isEmpty()) {
+                    // Same urgency as a conflict alert — a file that couldn't be read means this
+                    // cohort's grades silently didn't sync this week, not just "one duplicate row".
+                    notificationAlertService.alertUnreadableFiles(cohortId, jobId, counts.failedFiles());
                 }
             } catch (Exception ex) {
                 LOG.warn("[sync] job={} cohort={} notification staging failed: {}",
@@ -324,7 +330,7 @@ public class CohortSyncJobRunner {
             syncEventService.emit(jobId, "file.failed", payload(
                 "itemId", itemId,
                 "error", text(prefetched.metadataError().getMessage())));
-            counts.failed++;
+            counts.addFailure("item " + itemId, prefetched.metadataError().getMessage());
             return;
         }
 
@@ -349,7 +355,7 @@ public class CohortSyncJobRunner {
             syncEventService.emit(jobId, "file.failed", payload(
                 "file", fileName,
                 "error", text(prefetched.fetchError().getMessage())));
-            counts.failed++;
+            counts.addFailure(fileName, prefetched.fetchError().getMessage());
             return;
         }
 
@@ -416,7 +422,7 @@ public class CohortSyncJobRunner {
                 syncEventService.emit(jobId, "file.ingestion_failed", payload(
                     "file", fileName,
                     "error", text(errorMessage)));
-                counts.failed++;
+                counts.addFailure(fileName, errorMessage);
                 return;
             }
 
@@ -442,7 +448,7 @@ public class CohortSyncJobRunner {
             syncEventService.emit(jobId, "file.archive_failed", payload(
                 "file", fileName,
                 "error", text(ex.getMessage())));
-            counts.failed++;
+            counts.addFailure(fileName, ex.getMessage());
         } catch (IOException ex) {
             // Thrown only by Workbook.close(); the work itself already succeeded.
             LOG.warn("[sync] job={} failed to close workbook '{}': {}", jobId, fileName, ex.getMessage());
@@ -565,6 +571,17 @@ public class CohortSyncJobRunner {
         private int failed;
         /** Rows queued for conflict resolution across every workbook in the run (C5 AC1). */
         private int conflicts;
+        /** Which files failed and why, for the admin digest and the immediate alert below. */
+        private final List<SyncFileFailure> failedFiles = new ArrayList<>();
+
+        private void addFailure(String fileName, String errorMessage) {
+            failed++;
+            failedFiles.add(new SyncFileFailure(fileName, errorMessage));
+        }
+
+        private List<SyncFileFailure> failedFiles() {
+            return List.copyOf(failedFiles);
+        }
 
         private int filesSeen() {
             return newFiles + changed + unchanged + failed;

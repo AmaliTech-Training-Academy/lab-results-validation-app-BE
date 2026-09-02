@@ -6,6 +6,7 @@ import com.amalitech.labresultsvalidator.domain.notification.NotificationTypes;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
 import com.amalitech.labresultsvalidator.domain.standup.gate.GateError;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileFailure;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -89,6 +90,34 @@ public class NotificationAlertService {
 
         stageForAllAdmins(NotificationTypes.CONFLICT_ALERT, cohortId, syncJobId, null,
             conflictCount + " conflict(s) awaiting resolution — " + cohortName, body, payload);
+    }
+
+    /**
+     * A file the run could not read or process at all (bad metadata, download/parse failure, or a
+     * failed archive). One alert per run, however many files failed — these never produce an
+     * {@link com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun}, so without this
+     * they had no admin-facing notification, only the sync SSE stream and the server log.
+     */
+    public void alertUnreadableFiles(UUID cohortId, UUID syncJobId, List<SyncFileFailure> failedFiles) {
+        String cohortName = cohortName(cohortId);
+        String body = renderAlert(
+            "Files could not be synced",
+            "This run could not read or process " + failedFiles.size() + " file(s). Their scores were "
+                + "not updated; the next sync will retry them automatically.",
+            details("Cohort", cohortName, "Files failed", String.valueOf(failedFiles.size())),
+            failedFiles.stream()
+                .limit(MAX_ERRORS_LISTED)
+                .map(f -> text(f.fileName()) + " — " + text(f.errorMessage()))
+                .toList());
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("cohortName", cohortName);
+        payload.put("failedFiles", failedFiles.stream()
+            .map(f -> Map.of("fileName", text(f.fileName()), "errorMessage", text(f.errorMessage())))
+            .toList());
+
+        stageForAllAdmins(NotificationTypes.FILE_READ_FAILURE, cohortId, syncJobId, null,
+            failedFiles.size() + " file(s) could not be synced — " + cohortName, body, payload);
     }
 
     /**
