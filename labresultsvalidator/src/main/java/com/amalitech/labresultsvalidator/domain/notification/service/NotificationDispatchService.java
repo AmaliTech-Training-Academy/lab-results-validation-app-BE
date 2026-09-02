@@ -3,6 +3,7 @@ package com.amalitech.labresultsvalidator.domain.notification.service;
 import com.amalitech.labresultsvalidator.common.exceptions.ResourceNotFoundException;
 import com.amalitech.labresultsvalidator.common.exceptions.UnprocessableEntityException;
 import com.amalitech.labresultsvalidator.common.service.EmailService;
+import com.amalitech.labresultsvalidator.domain.auditlog.service.AuditEventService;
 import com.amalitech.labresultsvalidator.domain.instructor.entity.InstructorContact;
 import com.amalitech.labresultsvalidator.domain.instructor.repository.InstructorContactRepository;
 import com.amalitech.labresultsvalidator.domain.notification.NotificationTypes;
@@ -23,7 +24,9 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -43,6 +46,7 @@ public class NotificationDispatchService {
     private final EmailService emailService;
     private final NotificationSseRegistry sseRegistry;
     private final ObjectMapper objectMapper;
+    private final AuditEventService auditEventService;
 
     /** Auto-dispatch: fires once the staging transaction that produced these rows has committed. */
     @Async("emailTaskExecutor")
@@ -129,7 +133,7 @@ public class NotificationDispatchService {
             notification.setErrorDetail(null);
             LOG.info("[notification] {} type={} raised in-app only (no email by design)",
                 notification.getId(), notification.getType());
-            return saveAndBroadcast(notification);
+            return finishSend(notification, actorId);
         }
 
         String recipientEmail = resolveRecipientEmail(notification);
@@ -137,7 +141,7 @@ public class NotificationDispatchService {
         if (recipientEmail == null) {
             notification.setStatus("FAILED");
             notification.setErrorDetail("Could not resolve a recipient email address.");
-            return saveAndBroadcast(notification);
+            return finishSend(notification, actorId);
         }
 
         try {
@@ -157,7 +161,35 @@ public class NotificationDispatchService {
             notification.setStatus("FAILED");
             notification.setErrorDetail("Email delivery failed. See server logs for details.");
         }
-        return saveAndBroadcast(notification);
+        return finishSend(notification, actorId);
+    }
+
+    /**
+     * C7 AC4 / FND-53 — records who clicked "send" and when. Only for a manual click
+     * ({@code actorId != null}) — system auto-dispatch ({@link #onNotificationsStaged}) has nobody
+     * who "clicked", so it's left out of the audit trail rather than writing one row per
+     * automatically-dispatched digest. One event type regardless of the outcome (SENT/FAILED/
+     * SKIPPED all reached the same admin action, "send"); the outcome itself is in the payload,
+     * same as {@code Notification.status} already is — the audit trail is the durable copy of
+     * "who clicked, when", not a second source of truth for delivery status.
+     */
+    private Notification finishSend(Notification notification, UUID actorId) {
+        Notification saved = saveAndBroadcast(notification);
+        if (actorId != null) {
+            auditEventService.record("NOTIFICATION_SENT", saved.getCohortId(), actorId,
+                notificationAuditPayload(saved));
+        }
+        return saved;
+    }
+
+    private Map<String, Object> notificationAuditPayload(Notification notification) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("notificationId", notification.getId().toString());
+        payload.put("type", notification.getType());
+        payload.put("recipientKind", notification.getRecipientKind());
+        payload.put("subject", notification.getSubject());
+        payload.put("resultStatus", notification.getStatus());
+        return payload;
     }
 
     /**
@@ -180,7 +212,12 @@ public class NotificationDispatchService {
         notification.setStatus("SKIPPED");
         notification.setDismissedBy(actorId);
         notification.setDismissedAt(OffsetDateTime.now());
-        return saveAndBroadcast(notification);
+        Notification saved = saveAndBroadcast(notification);
+        // Unlike sendNow, dismiss has no system-triggered path — the controller is its only caller
+        // and always supplies the authenticated admin's id — so this is unconditional (C7 AC4).
+        auditEventService.record("NOTIFICATION_DISMISSED", saved.getCohortId(), actorId,
+            notificationAuditPayload(saved));
+        return saved;
     }
 
     /**
