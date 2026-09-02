@@ -5,7 +5,6 @@ import com.amalitech.labresultsvalidator.domain.sync.dto.CohortSyncJobResponse;
 import com.amalitech.labresultsvalidator.domain.sync.dto.GradingSyncOverviewResponse;
 import com.amalitech.labresultsvalidator.domain.grading.dto.IngestionConflictResponse;
 import com.amalitech.labresultsvalidator.domain.grading.dto.ResolveConflictRequest;
-import com.amalitech.labresultsvalidator.domain.standup.dto.StandupGateEvent;
 import com.amalitech.labresultsvalidator.domain.standup.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.sync.dto.SyncBatchResponse;
 import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileResponse;
@@ -38,7 +37,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -221,7 +219,8 @@ public class CohortSyncController {
         StreamJobHandle handle = cohortSyncService.getLatestJobForStream(cohortId);
         LOG.debug("[sse-sync] cohort={} job={} client connected lastEventId={}", cohortId, handle.jobId(), lastEventId);
 
-        List<StandupGateEvent> events = syncEventService.getEvents(handle.jobId());
-        return sseStreamer.stream(handle.jobId(), handle.running(), "sync.done", events, lastEventId, "sse-sync");
+        // FND-58: see StandupStreamController — events are read lazily, inside sseStreamer's lock.
+        return sseStreamer.stream(handle.jobId(), handle.running(), "sync.done",
+            () -> syncEventService.getEvents(handle.jobId()), lastEventId, "sse-sync");
     }
 }

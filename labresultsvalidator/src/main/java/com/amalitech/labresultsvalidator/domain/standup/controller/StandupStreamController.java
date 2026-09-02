@@ -1,6 +1,5 @@
 package com.amalitech.labresultsvalidator.domain.standup.controller;
 
-import com.amalitech.labresultsvalidator.domain.standup.dto.StandupGateEvent;
 import com.amalitech.labresultsvalidator.domain.standup.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.standup.service.CohortStandUpService;
 import com.amalitech.labresultsvalidator.domain.standup.service.SseGateEventStreamer;
@@ -18,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -47,7 +45,9 @@ public class StandupStreamController {
         StreamJobHandle handle = standUpService.getLatestJobForStream(cohortId);
         LOG.debug("[sse] cohort={} job={} client connected lastEventId={}", cohortId, handle.jobId(), lastEventId);
 
-        List<StandupGateEvent> events = eventService.getEvents(handle.jobId());
-        return sseStreamer.stream(handle.jobId(), handle.running(), "pipeline.done", events, lastEventId, "sse");
+        // FND-58: events are read lazily, inside sseStreamer's lock, so a gate event emitted between
+        // resolving the job and registering the emitter is never lost — see SseGateEventStreamer.stream().
+        return sseStreamer.stream(handle.jobId(), handle.running(), "pipeline.done",
+            () -> eventService.getEvents(handle.jobId()), lastEventId, "sse");
     }
 }

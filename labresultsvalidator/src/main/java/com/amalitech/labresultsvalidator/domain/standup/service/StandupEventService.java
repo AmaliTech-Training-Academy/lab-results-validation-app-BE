@@ -42,20 +42,25 @@ public class StandupEventService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void emit(UUID jobId, String eventName, Map<String, Object> payload) {
         jobRepository.findById(jobId).ifPresent(job -> {
-            List<Map<String, Object>> events = parseEvents(job.getGateEventsJson());
-            int index = events.size();
+            // FND-58: shares sseRegistry.lockFor(jobId) with SseGateEventStreamer.stream() so a fresh
+            // client's "read stored events, then register" can never straddle this "append, then push
+            // live" — see the lock's own doc comment for why that gap used to lose events.
+            synchronized (sseRegistry.lockFor(jobId)) {
+                List<Map<String, Object>> events = parseEvents(job.getGateEventsJson());
+                int index = events.size();
 
-            Map<String, Object> stored = new LinkedHashMap<>();
-            stored.put("index", index);
-            stored.put("event", eventName);
-            stored.putAll(payload);
-            events.add(stored);
+                Map<String, Object> stored = new LinkedHashMap<>();
+                stored.put("index", index);
+                stored.put("event", eventName);
+                stored.putAll(payload);
+                events.add(stored);
 
-            job.setGateEventsJson(serialize(events));
-            jobRepository.save(job);
+                job.setGateEventsJson(serialize(events));
+                jobRepository.save(job);
 
-            sseRegistry.send(jobId, new StandupGateEvent(index, eventName, payload));
-            LOG.debug("[standup-event] job={} index={} event={}", jobId, index, eventName);
+                sseRegistry.send(jobId, new StandupGateEvent(index, eventName, payload));
+                LOG.debug("[standup-event] job={} index={} event={}", jobId, index, eventName);
+            }
         });
     }
 
