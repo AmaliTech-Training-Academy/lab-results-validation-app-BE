@@ -18,6 +18,21 @@ public class StandupSseRegistry {
 
     private final ConcurrentHashMap<UUID, SseEmitter> emitters = new ConcurrentHashMap<>();
 
+    // FND-58: a per-job monitor shared by SseGateEventStreamer.stream() (connect + replay stored
+    // events) and each *EventService.emit() (append a new event + push it live). Without this, a
+    // gate event emitted in the gap between a fresh client reading its stored-event snapshot and
+    // that client's emitter being registered is silently lost forever — never in the snapshot
+    // (already read), never delivered live (not registered yet) — which is what left gate steps
+    // stuck on "Pending" after they'd actually passed. Never removed: one Object per job ever
+    // created is a negligible, bounded-in-practice cost, and removing entries risks two callers
+    // synchronizing on different objects for the same job (a classic striped-lock hazard) if a
+    // removal races a lookup.
+    private final ConcurrentHashMap<UUID, Object> locks = new ConcurrentHashMap<>();
+
+    public Object lockFor(UUID jobId) {
+        return locks.computeIfAbsent(jobId, id -> new Object());
+    }
+
     public SseEmitter register(UUID jobId) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
         emitters.put(jobId, emitter);

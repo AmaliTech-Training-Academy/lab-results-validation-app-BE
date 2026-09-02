@@ -42,20 +42,23 @@ public class SyncEventService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void emit(UUID jobId, String eventName, Map<String, Object> payload) {
         jobRepository.findById(jobId).ifPresent(job -> {
-            List<Map<String, Object>> events = parseEvents(job.getSyncEventsJson());
-            int index = events.size();
+            // FND-58: see StandupEventService.emit()/StandupSseRegistry.lockFor() — same fix, same reason.
+            synchronized (sseRegistry.lockFor(jobId)) {
+                List<Map<String, Object>> events = parseEvents(job.getSyncEventsJson());
+                int index = events.size();
 
-            Map<String, Object> stored = new LinkedHashMap<>();
-            stored.put("index", index);
-            stored.put("event", eventName);
-            stored.putAll(payload);
-            events.add(stored);
+                Map<String, Object> stored = new LinkedHashMap<>();
+                stored.put("index", index);
+                stored.put("event", eventName);
+                stored.putAll(payload);
+                events.add(stored);
 
-            job.setSyncEventsJson(serialize(events));
-            jobRepository.save(job);
+                job.setSyncEventsJson(serialize(events));
+                jobRepository.save(job);
 
-            sseRegistry.send(jobId, new StandupGateEvent(index, eventName, payload));
-            LOG.debug("[sync-event] job={} index={} event={}", jobId, index, eventName);
+                sseRegistry.send(jobId, new StandupGateEvent(index, eventName, payload));
+                LOG.debug("[sync-event] job={} index={} event={}", jobId, index, eventName);
+            }
         });
     }
 

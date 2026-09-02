@@ -1,6 +1,5 @@
 package com.amalitech.labresultsvalidator.domain.standup.controller;
 
-import com.amalitech.labresultsvalidator.domain.standup.dto.StandupGateEvent;
 import com.amalitech.labresultsvalidator.domain.standup.dto.StreamJobHandle;
 import com.amalitech.labresultsvalidator.domain.standup.service.CohortGate4Service;
 import com.amalitech.labresultsvalidator.domain.standup.service.Gate4EventService;
@@ -18,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -48,7 +46,8 @@ public class Gate4StreamController {
         LOG.debug("[sse-gate4] cohort={} job={} client connected lastEventId={}",
             cohortId, handle.jobId(), lastEventId);
 
-        List<StandupGateEvent> events = eventService.getEvents(handle.jobId());
-        return sseStreamer.stream(handle.jobId(), handle.running(), "gate4.done", events, lastEventId, "sse-gate4");
+        // FND-58: see StandupStreamController — events are read lazily, inside sseStreamer's lock.
+        return sseStreamer.stream(handle.jobId(), handle.running(), "gate4.done",
+            () -> eventService.getEvents(handle.jobId()), lastEventId, "sse-gate4");
     }
 }
