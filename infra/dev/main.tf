@@ -122,6 +122,11 @@ module "cicd" {
   ecr_arns             = module.ecr.repository_arns
   create_oidc_provider = var.create_github_oidc_provider
   aws_region           = var.aws_region
-  deploy_instance_id   = module.app.instance_id
   tags                 = local.common_tags
+
+  # Dev runs on Spot, so it needs the recovery role that lets CI re-apply this root after a
+  # reclaim. Prod won't set this.
+  create_recover_role = true
+  tfstate_bucket      = var.tfstate_bucket
+  recover_repo        = var.github_repos[0]
 }

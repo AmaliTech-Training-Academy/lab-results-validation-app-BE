@@ -36,3 +36,13 @@ build/
 ### Local dev docs (never push) ###
 SECURITY_IMPLEMENTATION.md
 LEARNER_ROSTER_IMPLEMENTATION.md
+
+### Terraform ###
+# infra/.gitignore covers state, plans, keys and tfvars inside infra/. These catch the same
+# artefacts if Terraform is ever run from the repo root.
+*.tfstate
+*.tfstate.*
+.terraform/
+tfplan
+*.tfplan
+crash.log

@@ -57,6 +57,11 @@ output "github_deploy_role_arn" {
   description = "Set as AWS_DEPLOY_ROLE_ARN repo secret in BOTH repos."
 }
 
+output "github_recover_role_arn" {
+  value       = module.cicd.recover_role_arn
+  description = "Set as AWS_RECOVER_ROLE_ARN repo secret in THIS repo (spot-recovery workflow)."
+}
+
 output "ssh_private_key" {
   value       = tls_private_key.box.private_key_openssh
   sensitive   = true

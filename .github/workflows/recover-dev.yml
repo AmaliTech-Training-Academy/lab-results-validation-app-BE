@@ -1,0 +1,169 @@
+name: Recover Dev Box (spot)
+
+# The dev box runs on a one-time Spot request, so an interruption terminates it outright and
+# nothing brings it back on its own. This workflow is the watchdog: on a schedule it checks
+# whether a running box exists and, if not, re-applies the dev Terraform root (which recreates
+# the instance and re-attaches the same Elastic IP) and redeploys the stack.
+#
+# Recovery goes through `terraform apply` rather than calling RunInstances directly, so state
+# always matches reality — no drift for the next person to apply.
+#
+# Detection is polling, not event-driven: an EventBridge rule would be faster, but firing a
+# workflow from AWS needs a GitHub App or PAT that this org won't issue. Worst-case downtime is
+# therefore one interval (plus GitHub's own scheduling lag, which can add several minutes).
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-apply and redeploy even if the box looks healthy"
+        type: boolean
+        default: false
+
+# Never let two recoveries overlap: both would contend for the Terraform state lock and one
+# would fail noisily for no reason.
+concurrency:
+  group: recover-dev
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+  NAME_PREFIX: labresults-dev
+  TF_INPUT: "false"
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      needs_recovery: ${{ steps.probe.outputs.needs_recovery }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_RECOVER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Is a box running?
+        id: probe
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+
+          if [ "${FORCE:-false}" = "true" ]; then
+            echo "Forced by workflow_dispatch input."
+            echo "needs_recovery=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Tag-filtered rather than by instance ID: the ID changes on every recovery, and the
+          # point of this check is to notice when the tracked one has gone away.
+          RUNNING=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$NAME_PREFIX" \
+                      "Name=instance-state-name,Values=pending,running" \
+            --query "length(Reservations[].Instances[])" --output text)
+
+          echo "Running instances tagged $NAME_PREFIX: $RUNNING"
+
+          if [ "$RUNNING" -eq 0 ]; then
+            echo "needs_recovery=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_recovery=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  recover:
+    needs: check
+    if: needs.check.outputs.needs_recovery == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_RECOVER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Re-apply the dev root
+        working-directory: infra/dev
+        run: |
+          set -euo pipefail
+          terraform init
+          # Recreates the terminated Spot instance and re-associates the existing Elastic IP.
+          terraform apply -auto-approve
+
+      - name: Collect outputs
+        id: tf
+        working-directory: infra/dev
+        run: |
+          set -euo pipefail
+          echo "instance_id=$(terraform output -raw instance_id)" >> "$GITHUB_OUTPUT"
+          echo "registry=$(terraform output -raw backend_ecr_url | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
+          echo "app_url=$(terraform output -raw app_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSM to come online
+        env:
+          INSTANCE_ID: ${{ steps.tf.outputs.instance_id }}
+        run: |
+          set -euo pipefail
+          # The box needs its cloud-init run (~40s) before the agent registers; until it does,
+          # send-command has nothing to talk to.
+          for _ in $(seq 1 30); do
+            PING=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query "InstanceInformationList[0].PingStatus" --output text 2>/dev/null || echo "None")
+            echo "SSM ping: $PING"
+            [ "$PING" = "Online" ] && exit 0
+            sleep 10
+          done
+          echo "SSM agent never came online for $INSTANCE_ID" >&2
+          exit 1
+
+      - name: Deploy the stack
+        env:
+          INSTANCE_ID: ${{ steps.tf.outputs.instance_id }}
+          REGISTRY: ${{ steps.tf.outputs.registry }}
+        run: |
+          chmod +x infra/scripts/deploy-over-ssm.sh
+          infra/scripts/deploy-over-ssm.sh "$INSTANCE_ID" "$REGISTRY" "spot-recovery ${{ github.run_id }}"
+
+      - name: Confirm the app answers
+        env:
+          APP_URL: ${{ steps.tf.outputs.app_url }}
+        run: |
+          set -euo pipefail
+          # The backend needs a moment to boot after the containers start.
+          for _ in $(seq 1 20); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
+            echo "GET $APP_URL -> $CODE"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 15
+          done
+          echo "App did not return 200 at $APP_URL" >&2
+          exit 1
+
+      - name: Summary
+        if: always()
+        env:
+          INSTANCE_ID: ${{ steps.tf.outputs.instance_id }}
+          APP_URL: ${{ steps.tf.outputs.app_url }}
+        run: |
+          {
+            echo "### Dev box recovery"
+            echo ""
+            echo "- Instance: \`$INSTANCE_ID\`"
+            echo "- URL: $APP_URL"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
