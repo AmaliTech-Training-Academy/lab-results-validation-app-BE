@@ -8,6 +8,7 @@ import com.amalitech.labresultsvalidator.domain.cohort.entity.Cohort;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncFile;
 import com.amalitech.labresultsvalidator.domain.sync.entity.CohortSyncJobStatus;
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileFailure;
 import com.amalitech.labresultsvalidator.domain.sync.entity.SyncFileChangeState;
 import com.amalitech.labresultsvalidator.domain.grading.ingestion.GradingIngestionService;
 import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortRepository;
@@ -125,18 +126,26 @@ public class CohortSyncJobRunner {
                 processFile(cohort, jobId, result, counts, effectiveActorId, triggerType);
             }
 
-            finalStatus = CohortSyncJobStatus.COMPLETED;
+            // A run that reaches here always ran to completion — PARTIAL vs COMPLETED only says
+            // whether every file made it, distinct from FAILED below (couldn't even start: bad
+            // cohort/SharePoint reference, or the scores folder itself unreachable/missing).
+            finalStatus = counts.failed > 0 ? CohortSyncJobStatus.PARTIAL : CohortSyncJobStatus.COMPLETED;
             auditEventService.record("SYNC_COMPLETED", cohortId, effectiveActorId, counts.toPayload(cohort.getName()));
-            LOG.info("[sync] job={} cohort={} COMPLETED — {}", jobId, cohortId, counts);
+            LOG.info("[sync] job={} cohort={} {} — {}", jobId, cohortId, finalStatus, counts);
 
             // Staging is a distinct concern from the sync itself — a bug here must never turn an
             // otherwise-successful sync into a FAILED one, so it gets its own narrow try/catch
             // rather than sharing the outer one.
             try {
-                notificationStagingService.stageForSyncJob(cohortId, jobId, actorId);
+                notificationStagingService.stageForSyncJob(cohortId, jobId, actorId, counts.failedFiles());
                 if (counts.conflicts > 0) {
                     // C5 AC1 — dispatched immediately rather than held for the digest.
                     notificationAlertService.alertConflictsPending(cohortId, jobId, counts.conflicts);
+                }
+                if (!counts.failedFiles().isEmpty()) {
+                    // Same urgency as a conflict alert — a file that couldn't be read means this
+                    // cohort's grades silently didn't sync this week, not just "one duplicate row".
+                    notificationAlertService.alertUnreadableFiles(cohortId, jobId, counts.failedFiles());
                 }
             } catch (Exception ex) {
                 LOG.warn("[sync] job={} cohort={} notification staging failed: {}",
@@ -321,7 +330,7 @@ public class CohortSyncJobRunner {
             syncEventService.emit(jobId, "file.failed", payload(
                 "itemId", itemId,
                 "error", text(prefetched.metadataError().getMessage())));
-            counts.failed++;
+            counts.addFailure("item " + itemId, prefetched.metadataError().getMessage());
             return;
         }
 
@@ -342,11 +351,11 @@ public class CohortSyncJobRunner {
             LOG.warn("[sync] job={} file '{}' failed: {}",
                 jobId, fileName, prefetched.fetchError().getMessage(), prefetched.fetchError());
             saveFileRecord(jobId, itemId, fileName, scenarioFolder, s3Key,
-                details, null, null, SyncFileChangeState.FAILED);
+                details, null, null, SyncFileChangeState.FAILED, prefetched.fetchError().getMessage());
             syncEventService.emit(jobId, "file.failed", payload(
                 "file", fileName,
                 "error", text(prefetched.fetchError().getMessage())));
-            counts.failed++;
+            counts.addFailure(fileName, prefetched.fetchError().getMessage());
             return;
         }
 
@@ -409,11 +418,11 @@ public class CohortSyncJobRunner {
                 String errorMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
                 saveFileRecord(jobId, itemId, fileName, scenarioFolder,
                     buildS3Key(cohort.getId(), scenarioFolder, fileName),
-                    details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED);
+                    details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED, errorMessage);
                 syncEventService.emit(jobId, "file.ingestion_failed", payload(
                     "file", fileName,
                     "error", text(errorMessage)));
-                counts.failed++;
+                counts.addFailure(fileName, errorMessage);
                 return;
             }
 
@@ -435,11 +444,11 @@ public class CohortSyncJobRunner {
             LOG.warn("[sync] job={} could not archive '{}': {}", jobId, fileName, ex.getMessage());
             saveFileRecord(jobId, itemId, fileName, scenarioFolder,
                 buildS3Key(cohort.getId(), scenarioFolder, fileName),
-                details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED);
+                details, outcome.sha256Hex(), null, SyncFileChangeState.FAILED, ex.getMessage());
             syncEventService.emit(jobId, "file.archive_failed", payload(
                 "file", fileName,
                 "error", text(ex.getMessage())));
-            counts.failed++;
+            counts.addFailure(fileName, ex.getMessage());
         } catch (IOException ex) {
             // Thrown only by Workbook.close(); the work itself already succeeded.
             LOG.warn("[sync] job={} failed to close workbook '{}': {}", jobId, fileName, ex.getMessage());
@@ -491,6 +500,19 @@ public class CohortSyncJobRunner {
     private void saveFileRecord(UUID jobId, String itemId, String fileName,
                                 String scenarioFolder, String s3Key, DriveItemDetails details,
                                 String sha256Hex, String s3VersionId, SyncFileChangeState state) {
+        saveFileRecord(jobId, itemId, fileName, scenarioFolder, s3Key, details, sha256Hex, s3VersionId,
+            state, null);
+    }
+
+    /**
+     * @param errorMessage why the file failed, or {@code null} for every non-FAILED state. Kept
+     *                     off the 9-arg overload above so the many call sites that never fail
+     *                     don't have to pass null explicitly.
+     */
+    private void saveFileRecord(UUID jobId, String itemId, String fileName,
+                                String scenarioFolder, String s3Key, DriveItemDetails details,
+                                String sha256Hex, String s3VersionId, SyncFileChangeState state,
+                                String errorMessage) {
         try {
             syncFileRepository.save(CohortSyncFile.builder()
                 .syncJob(syncJobRepository.getReferenceById(jobId))
@@ -503,6 +525,7 @@ public class CohortSyncJobRunner {
                 .sharepointVersionId(details == null ? null : details.versionId())
                 .fileSha256(sha256Hex)
                 .changeState(state)
+                .errorMessage(errorMessage)
                 .build());
         } catch (RuntimeException ex) {
             // Losing the audit row must not lose the file's actual outcome from the run.
@@ -548,6 +571,17 @@ public class CohortSyncJobRunner {
         private int failed;
         /** Rows queued for conflict resolution across every workbook in the run (C5 AC1). */
         private int conflicts;
+        /** Which files failed and why, for the admin digest and the immediate alert below. */
+        private final List<SyncFileFailure> failedFiles = new ArrayList<>();
+
+        private void addFailure(String fileName, String errorMessage) {
+            failed++;
+            failedFiles.add(new SyncFileFailure(fileName, errorMessage));
+        }
+
+        private List<SyncFileFailure> failedFiles() {
+            return List.copyOf(failedFiles);
+        }
 
         private int filesSeen() {
             return newFiles + changed + unchanged + failed;

@@ -274,7 +274,9 @@ class CohortSyncJobRunnerTest {
         // The baseline must not move, so nothing is uploaded and the next run retries.
         verify(s3StorageService, never()).putObject(anyString(), any(byte[].class), anyString());
         verify(syncEventService).emit(eq(jobId), eq("file.failed"), any());
-        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
+        // The run itself finished — PARTIAL says "one file didn't make it", not FAILED (which is
+        // reserved for the job never getting off the ground at all).
+        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.PARTIAL);
         verifyAuditCounts(0, 0, 1);
     }
 
@@ -399,7 +401,7 @@ class CohortSyncJobRunnerTest {
 
         verify(syncEventService).emit(eq(jobId), eq("file.archive_failed"), any());
         verify(syncEventService, never()).emit(eq(jobId), eq("file.archived"), any());
-        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
+        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.PARTIAL);
     }
 
     @Test
@@ -460,7 +462,7 @@ class CohortSyncJobRunnerTest {
         assertThat(captor.getValue().getS3VersionId()).isNull();
 
         verify(syncEventService).emit(eq(jobId), eq("file.ingestion_failed"), any());
-        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.COMPLETED);
+        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.PARTIAL);
         verifyAuditCounts(0, 0, 1);
     }
 
@@ -567,6 +569,7 @@ class CohortSyncJobRunnerTest {
         verify(syncFileRepository, never()).save(any());
         verify(workbookFetchService, never()).fetchIfChanged(anyString(), anyString(), any(), anyString());
         verifyAuditCounts(0, 0, 1);
+        assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.PARTIAL);
     }
 
     @Test

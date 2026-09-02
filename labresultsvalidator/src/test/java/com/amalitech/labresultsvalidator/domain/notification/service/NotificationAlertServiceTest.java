@@ -6,6 +6,7 @@ import com.amalitech.labresultsvalidator.domain.enums.UserRole;
 import com.amalitech.labresultsvalidator.domain.notification.entity.Notification;
 import com.amalitech.labresultsvalidator.domain.notification.repository.NotificationRepository;
 import com.amalitech.labresultsvalidator.domain.standup.gate.GateError;
+import com.amalitech.labresultsvalidator.domain.sync.dto.SyncFileFailure;
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import com.amalitech.labresultsvalidator.domain.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -101,6 +102,22 @@ class NotificationAlertServiceTest {
         Notification notification = staged(2).get(0);
         assertThat(notification.getType()).isEqualTo("conflict_alert");
         assertThat(notification.getSubject()).contains("3 conflict(s)");
+    }
+
+    /** These never produce an IngestionRun, so this alert is the only notification they get. */
+    @Test
+    void alertUnreadableFiles_namesEachFileAndItsReason() {
+        service.alertUnreadableFiles(cohortId, syncJobId, List.of(
+            new SyncFileFailure("Corrupt.xlsx", "not a valid .xlsx"),
+            new SyncFileFailure("item file-9", "item vanished")));
+
+        Notification notification = staged(2).get(0);
+        assertThat(notification.getType()).isEqualTo("file_read_failure");
+        assertThat(notification.getSubject()).contains("2 file(s)", "Cohort 7");
+        assertThat(notification.getBody())
+            .contains("Corrupt.xlsx — not a valid .xlsx")
+            .contains("item file-9 — item vanished");
+        assertThat(notification.getPayloadJson()).contains("Corrupt.xlsx", "not a valid .xlsx");
     }
 
     /** C5 AC2 — staged like the rest; suppressing the email is the dispatcher's job. */
