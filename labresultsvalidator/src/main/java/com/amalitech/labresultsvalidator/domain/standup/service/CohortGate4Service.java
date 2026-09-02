@@ -14,6 +14,8 @@ import com.amalitech.labresultsvalidator.domain.cohort.repository.CohortReposito
 import com.amalitech.labresultsvalidator.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -62,6 +64,13 @@ public class CohortGate4Service {
 
         gate4JobRunner.run(cohortId, job.getId(), actorId);
         return Gate4JobResponse.from(job);
+    }
+
+    /** FND-58: cheap existence check the frontend uses on mount to decide whether to re-attach the
+     *  Gate 4 stream on reload, mirroring CohortStandUpService.listRuns(). */
+    public Page<Gate4JobResponse> listRuns(UUID cohortId, Pageable pageable) {
+        return gate4JobRepository.findByCohortIdOrderByStartedAtDesc(cohortId, pageable)
+            .map(Gate4JobResponse::from);
     }
 
     /** Resolves the most recent Gate 4 job for the SSE stream endpoint. */
