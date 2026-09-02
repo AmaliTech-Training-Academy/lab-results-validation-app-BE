@@ -52,6 +52,12 @@ variable "create_github_oidc_provider" {
   description = "Create the account-level OIDC provider here (the first env). Set false in prod."
 }
 
+variable "tfstate_bucket" {
+  type        = string
+  default     = "lab-results-validator-tfstate"
+  description = "Bucket holding this root's state (see versions.tf); scopes the recovery role."
+}
+
 variable "sharepoint_bucket_name" {
   type        = string
   default     = "lab-results-validator-bucket"
