@@ -331,13 +331,18 @@ public class CohortSyncJobRunner {
                              UUID actorId, String triggerType) {
         String itemId = prefetched.itemId();
         if (prefetched.metadataFailed()) {
-            // No filename or key is known yet, so there is nothing to key an audit row on.
+            // No real filename is known yet (metadata is exactly what failed to load), so the
+            // same itemId-based label used for the failure count/alert below also keys this row —
+            // it's the only handle an admin has to find this file in the run's file list (D1 AC2).
             LOG.warn("[sync] job={} cannot read metadata for item {}: {}",
                 jobId, itemId, prefetched.metadataError().getMessage(), prefetched.metadataError());
             syncEventService.emit(jobId, "file.failed", payload(
                 "itemId", itemId,
                 "error", text(prefetched.metadataError().getMessage())));
-            counts.addFailure("item " + itemId, prefetched.metadataError().getMessage());
+            String syntheticFileName = "item " + itemId;
+            saveFileRecord(jobId, itemId, syntheticFileName, null, null,
+                null, null, null, SyncFileChangeState.FAILED, prefetched.metadataError().getMessage());
+            counts.addFailure(syntheticFileName, prefetched.metadataError().getMessage());
             return;
         }
 

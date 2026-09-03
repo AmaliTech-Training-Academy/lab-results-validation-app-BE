@@ -572,8 +572,9 @@ class CohortSyncJobRunnerTest {
     }
 
     @Test
-    void metadataFailureCountsTheFileAsFailedWithoutAnAuditRow() throws Exception {
+    void metadataFailureStillRecordsAnAuditRowKeyedByItemId() throws Exception {
         when(sharePointProperties.scoresFolder()).thenReturn(SCORES_FOLDER_NAME);
+        when(syncJobRepository.getReferenceById(jobId)).thenReturn(jobEntity);
         when(graphDriveService.listChildren(DRIVE_ID, ROOT_ITEM_ID))
             .thenReturn(List.of(item("scores-1", SCORES_FOLDER_NAME, true)));
         when(graphDriveService.listChildren(DRIVE_ID, "scores-1"))
@@ -583,9 +584,21 @@ class CohortSyncJobRunnerTest {
 
         runner.run(cohortId, jobId, actorId);
 
-        // Without metadata there is no key to record a row against, so only the count and the
-        // event carry the failure.
-        verify(syncFileRepository, never()).save(any());
+        // No real filename survives a metadata failure, but the run's file list is built from
+        // exactly these rows (D1 AC2) — leaving this file unrecorded would let the run go PARTIAL
+        // and the alert name the file, while the file list itself stayed silent about it. The
+        // itemId-based label used for the failure count doubles as the row's file name.
+        ArgumentCaptor<CohortSyncFile> captor = ArgumentCaptor.forClass(CohortSyncFile.class);
+        verify(syncFileRepository).save(captor.capture());
+        assertThat(captor.getValue().getFileName()).isEqualTo("item file-1");
+        assertThat(captor.getValue().getChangeState()).isEqualTo(SyncFileChangeState.FAILED);
+        assertThat(captor.getValue().getErrorMessage()).isEqualTo("item vanished");
+        assertThat(captor.getValue().getSharepointItemId()).isEqualTo("file-1");
+        assertThat(captor.getValue().getS3Key()).isNull();
+        assertThat(captor.getValue().getScenarioFolder()).isNull();
+        assertThat(captor.getValue().getQuickXorHash()).isNull();
+        assertThat(captor.getValue().getSharepointVersionId()).isNull();
+
         verify(workbookFetchService, never()).fetchIfChanged(anyString(), anyString(), any(), anyString());
         verifyAuditCounts(0, 0, 1);
         assertThat(jobEntity.getStatus()).isEqualTo(CohortSyncJobStatus.PARTIAL);
