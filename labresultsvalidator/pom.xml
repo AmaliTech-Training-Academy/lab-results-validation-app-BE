@@ -31,8 +31,10 @@
         <java.version>21</java.version>
         <!-- Override the Spring Boot-managed embedded Tomcat to patch the
              CRITICAL/HIGH CVEs flagged by Trivy (CVE-2026-41293, -43512,
-             -43515, -41284, -42498, -43513). Fixed in 11.0.22. -->
-        <tomcat.version>11.0.22</tomcat.version>
+             -43515, -41284, -42498, -43513, and newly disclosed CRITICALs
+             -65182 security constraint bypass, -65905 DIGEST auth replay,
+             -68525 FORM auth bypass). Fixed in 11.0.25. -->
+        <tomcat.version>11.0.25</tomcat.version>
         <!-- Override Netty to patch HIGH CVEs: CVE-2026-42579 (DNS domain name
              constraint handling), CVE-2026-44249 (IPv6 subnet filter bypass),
              CVE-2026-45416 (SNI handler over-allocation), CVE-2026-45674 and
