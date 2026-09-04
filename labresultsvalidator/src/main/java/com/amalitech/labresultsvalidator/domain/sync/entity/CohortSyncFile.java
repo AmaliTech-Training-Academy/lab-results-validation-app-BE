@@ -38,7 +38,12 @@ public class CohortSyncFile extends BaseEntity {
     @JoinColumn(name = "sync_job_id", nullable = false)
     private CohortSyncJob syncJob;
 
-    @Column(name = "s3_key", nullable = false, length = 500)
+    /**
+     * Null only for a row whose file failed before it was ever downloaded — a metadata-fetch
+     * failure has no archive key and never will. Enforced by chk_sync_files_s3_key_present (V42):
+     * every other change state must carry one.
+     */
+    @Column(name = "s3_key", length = 500)
     private String s3Key;
 
     @Column(name = "s3_version_id", length = 200)
