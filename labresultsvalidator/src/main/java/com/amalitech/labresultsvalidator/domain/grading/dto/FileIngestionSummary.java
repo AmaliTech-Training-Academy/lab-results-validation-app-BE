@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.grading.dto;
 
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun;
+import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointCTag;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,11 +25,16 @@ public record FileIngestionSummary(
     String workbookFilename,
     String status,
     /** SharePoint's cTag for the version this run read — lets an admin confirm a since-edited
-     *  file was actually re-fetched, not stale. Populated for every file, including skipped ones. */
+     *  file was actually re-fetched, not stale. Populated for every file, including skipped ones.
+     *  Opaque; kept for audit/troubleshooting. Prefer {@link #sharepointRevision} for display. */
     String sharepointVersionId,
     /** SharePoint's content hash for the same version — distinguishes a real re-save from a
      *  metadata-only touch (cTag changed, bytes didn't). */
     String quickXorHash,
+    /** The numeric revision parsed out of {@code sharepointVersionId} (see {@link SharePointCTag}),
+     *  or {@code null} if it didn't match the expected shape — display-only, never used for
+     *  change-detection. */
+    Integer sharepointRevision,
     int rowsRead,
     int committedNew,
     int updatedCount,
@@ -51,6 +57,7 @@ public record FileIngestionSummary(
             run.getStatus(),
             run.getSharepointVersionId(),
             run.getQuickXorHash(),
+            SharePointCTag.parseRevision(run.getSharepointVersionId()),
             run.getRowsRead(),
             run.getCommittedNew(),
             run.getUpdatedCount(),

@@ -1,6 +1,7 @@
 package com.amalitech.labresultsvalidator.domain.grading.dto;
 
 import com.amalitech.labresultsvalidator.domain.grading.entity.IngestionRun;
+import com.amalitech.labresultsvalidator.infrastructure.graph.SharePointCTag;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -22,7 +23,15 @@ public record IngestionRunAuditResponse(
     int conflictsCount,
     boolean highFailureRate,
     double failureRatePercent,
-    OffsetDateTime runAt
+    OffsetDateTime runAt,
+    /** SharePoint's cTag for the version this run read. Opaque; kept for audit/troubleshooting.
+     *  Prefer {@link #sharepointRevision} for display. */
+    String sharepointVersionId,
+    /** SharePoint's content hash for the same version. */
+    String quickXorHash,
+    /** The numeric revision parsed out of {@code sharepointVersionId} (see {@link SharePointCTag}),
+     *  or {@code null} if it didn't match the expected shape. */
+    Integer sharepointRevision
 ) {
     public static IngestionRunAuditResponse from(IngestionRun run) {
         return new IngestionRunAuditResponse(
@@ -41,6 +50,9 @@ public record IngestionRunAuditResponse(
             run.getConflictsCount(),
             run.isHighFailureRate(),
             run.getFailureRatePercent(),
-            run.getRunAt());
+            run.getRunAt(),
+            run.getSharepointVersionId(),
+            run.getQuickXorHash(),
+            SharePointCTag.parseRevision(run.getSharepointVersionId()));
     }
 }
