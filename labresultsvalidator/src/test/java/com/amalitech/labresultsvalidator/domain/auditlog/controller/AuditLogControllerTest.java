@@ -58,7 +58,7 @@ class AuditLogControllerTest {
         UUID cohortId = UUID.randomUUID();
         IngestionRunAuditResponse run = new IngestionRunAuditResponse(
             UUID.randomUUID(), cohortId, UUID.randomUUID(), "BEM01.xlsx", "completed", "MANUAL", UUID.randomUUID(),
-            10, 8, 1, 1, 0, 0, false, 0.0, OffsetDateTime.now());
+            10, 8, 1, 1, 0, 0, false, 0.0, OffsetDateTime.now(), "c:{6B0CF5FB-13F3-4368-AF03-84091F227C3E},89", "hash1", 89);
         when(auditLogService.listIngestionRuns(eq(cohortId), isNull(), isNull(), isNull(), isNull(), any()))
             .thenReturn(new PageImpl<>(List.of(run), PageRequest.of(0, 20), 1));
 
