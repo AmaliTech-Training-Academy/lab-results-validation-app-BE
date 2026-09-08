@@ -52,6 +52,17 @@ variable "create_github_oidc_provider" {
   description = "Create the account-level OIDC provider here (the first env). Set false in prod."
 }
 
+variable "app_domain" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    Hostname the app is served on, e.g. validata-dev.amalitech.com. Caddy requests a
+    Let's Encrypt certificate for it, so an A record must already point at the box's Elastic IP
+    before setting this — ACME validates over port 80 and fails (and gets rate-limited) if the
+    name does not resolve here yet. Empty serves plain HTTP on the IP with no certificate.
+  EOT
+}
+
 variable "tfstate_bucket" {
   type        = string
   default     = "lab-results-validator-tfstate"

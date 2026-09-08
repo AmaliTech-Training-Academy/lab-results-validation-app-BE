@@ -28,6 +28,20 @@ locals {
   }
 
   ssm_prefix = "/labresults/dev"
+
+  # With a domain, everything user-facing goes over TLS (Caddy on the box terminates it and
+  # renews the certificate itself). Without one, fall back to the Elastic IP over plain HTTP —
+  # no public CA will issue a certificate for a bare IP address.
+  app_base_url = var.app_domain != "" ? "https://${var.app_domain}" : "http://${module.app.public_ip}"
+
+  # Every origin the SPA is legitimately served from. The API authenticates with cookies, so
+  # these must be listed explicitly — Spring rejects allowCredentials=true with a "*" origin.
+  # The bare IP stays allowed because the box is still reachable that way.
+  cors_allowed_origins = join(",", compact([
+    var.app_domain != "" ? "https://${var.app_domain}" : "",
+    var.app_domain != "" ? "http://${var.app_domain}" : "",
+    "http://${module.app.public_ip}",
+  ]))
 }
 
 # Break-glass key pair for console SSH (SG has no port 22 ingress by default). CI deploys
@@ -64,11 +78,23 @@ module "secrets" {
     REDIS_HOST                    = "redis"
     REDIS_PORT                    = "6379"
     SPRING_JPA_HIBERNATE_DDL_AUTO = "none"
-    CORS_ALLOWED_ORIGINS          = "*"
-    FRONTEND_URL                  = "http://${module.app.public_ip}"
-    BASE_URL                      = "http://${module.app.public_ip}"
-    AWS_REGION                    = var.aws_region
-    S3_BUCKET                     = var.sharepoint_bucket_name
+
+    # Must be the real origin, not "*": the API authenticates with cookies, and Spring rejects
+    # allowCredentials=true alongside a wildcard origin (it cannot echo "*" back in
+    # Access-Control-Allow-Origin). Requests used to be same-origin through the frontend's
+    # nginx, so this was never exercised until Caddy started forwarding an Origin header.
+    CORS_ALLOWED_ORIGINS = local.cors_allowed_origins
+    AWS_REGION           = var.aws_region
+    S3_BUCKET            = var.sharepoint_bucket_name
+
+    # Caddy reads this to decide which hostname to request a certificate for; empty means
+    # plain HTTP on the IP (no ACME attempt). See render-caddyfile.sh on the box.
+    APP_DOMAIN = var.app_domain
+
+    # These end up in password-reset and notification emails, so they must be the address a
+    # recipient can actually open — https once a domain exists, the bare IP until then.
+    FRONTEND_URL = local.app_base_url
+    BASE_URL     = local.app_base_url
   }
 
   external_secret_names = [

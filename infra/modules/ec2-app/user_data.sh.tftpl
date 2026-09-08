@@ -46,6 +46,12 @@ aws ssm get-parameters-by-path \
 
 chown ubuntu:ubuntu /opt/app/.env
 chmod 600 /opt/app/.env
+
+# The certificate hostname comes from the same parameter set, so re-render the Caddyfile here.
+# `docker compose up -d` then restarts Caddy only if the file actually changed.
+if [ -x /opt/app/render-caddyfile.sh ]; then
+  /opt/app/render-caddyfile.sh
+fi
 SCRIPT
 chmod +x "$${APP_DIR}/refresh-env.sh"
 
@@ -70,10 +76,69 @@ services:
     image: ${frontend_repo}:${image_tag}
     restart: unless-stopped
     # nginx listens on 8080 in the container; serves the SPA and proxies /api -> app:8080.
-    ports:
-      - "80:8080"
+    # No host port: Caddy terminates TLS on 80/443 and proxies to it over the compose network.
+    expose:
+      - "8080"
     depends_on:
       - app
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # Caddy obtains and renews a Let's Encrypt certificate on its own. It needs 80 reachable
+    # from the internet for the ACME HTTP-01 challenge, not just for the redirect.
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account key live here. Losing this volume means re-issuing,
+      # and Let's Encrypt rate-limits duplicate certificates (5 per week per hostname), so it
+      # must survive container restarts.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  caddy_data:
+  caddy_config:
 EOF
+
+# APP_DOMAIN is written by refresh-env.sh from SSM. Caddy needs the hostname at startup to
+# request the certificate, and it cannot read .env, so the Caddyfile is rendered from that
+# value instead of hardcoding a domain into the AMI bootstrap.
+cat > "$${APP_DIR}/render-caddyfile.sh" <<'SCRIPT'
+#!/bin/bash
+set -eu
+APP_DIR=/opt/app
+
+# shellcheck disable=SC1091
+DOMAIN=$(grep -E '^APP_DOMAIN=' "$APP_DIR/.env" | cut -d= -f2- || true)
+
+if [ -z "$${DOMAIN:-}" ]; then
+  echo "APP_DOMAIN is not set in .env — serving plain HTTP on :80 without a certificate." >&2
+  # `http://` prefix tells Caddy to serve HTTP only and skip ACME entirely. Without this the
+  # box would sit in a failing certificate-request loop before a domain has been pointed at it.
+  SITE="http://"
+else
+  SITE="$DOMAIN"
+fi
+
+cat > "$APP_DIR/Caddyfile" <<CADDY
+$SITE {
+    encode zstd gzip
+    # The SPA and its /api proxy are both served by the frontend nginx, so one upstream is
+    # enough — Caddy only adds TLS in front of it.
+    reverse_proxy frontend:8080
+}
+CADDY
+
+chown ubuntu:ubuntu "$APP_DIR/Caddyfile"
+SCRIPT
+chmod +x "$${APP_DIR}/render-caddyfile.sh"
+
+# Render once now so the stack can start before the first deploy runs.
+touch "$${APP_DIR}/.env"
+"$${APP_DIR}/render-caddyfile.sh"
 
 chown -R ubuntu:ubuntu "$${APP_DIR}"

@@ -9,8 +9,8 @@ output "public_ip" {
 }
 
 output "app_url" {
-  value       = "http://${module.app.public_ip}"
-  description = "Open this once images are deployed."
+  value       = local.app_base_url
+  description = "Open this once images are deployed. https when app_domain is set, else the IP."
 }
 
 output "nip_io_url" {
