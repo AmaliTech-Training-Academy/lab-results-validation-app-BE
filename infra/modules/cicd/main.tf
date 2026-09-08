@@ -127,11 +127,11 @@ resource "aws_iam_role_policy" "recover" {
         Resource = "*"
       },
       {
-        # The box gets an instance profile, so recovery must be able to pass that role to EC2.
+        # Only the box's own role may be passed to EC2 or modified — recovery has no business
+        # reshaping the deploy role, the app's IAM user, or anything else in this root.
         Sid    = "InstanceProfile"
         Effect = "Allow"
         Action = [
-          "iam:GetRole",
           "iam:GetRolePolicy",
           "iam:GetInstanceProfile",
           "iam:ListRolePolicies",
@@ -145,8 +145,10 @@ resource "aws_iam_role_policy" "recover" {
         ]
       },
       {
-        # Terraform refreshes the SSM parameters and ECR/S3 resources in this root; reads are
-        # enough for anything it does not change during a recovery.
+        # `terraform apply` refreshes EVERY resource in the root before planning, not just the
+        # ones it will change — so it needs read access across the whole root even though a
+        # recovery only replaces the instance. Reads only; the mutating IAM grant above stays
+        # scoped to the box's role.
         Sid    = "RefreshRemainingState"
         Effect = "Allow"
         Action = [
@@ -162,6 +164,17 @@ resource "aws_iam_role_policy" "recover" {
           "s3:GetBucket*",
           "s3:GetEncryptionConfiguration",
           "s3:GetLifecycleConfiguration",
+          # The root also holds the two CI roles, the app's IAM user and its access key, plus
+          # the OIDC provider. Refresh reads all of them.
+          "iam:GetRole",
+          "iam:GetUser",
+          "iam:GetUserPolicy",
+          "iam:ListUserPolicies",
+          "iam:ListAttachedUserPolicies",
+          "iam:ListAccessKeys",
+          "iam:ListGroupsForUser",
+          "iam:ListRoleTags",
+          "iam:ListUserTags",
           "iam:ListOpenIDConnectProviders",
           "iam:GetOpenIDConnectProvider",
           "sts:GetCallerIdentity"

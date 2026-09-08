@@ -144,14 +144,19 @@ jobs:
           APP_URL: ${{ steps.tf.outputs.app_url }}
         run: |
           set -euo pipefail
-          # The backend needs a moment to boot after the containers start.
-          for _ in $(seq 1 20); do
-            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
+          # Two waits stack up on a rebuilt box: the backend booting (~25s) and, on an https
+          # URL, Caddy completing the ACME handshake for a fresh certificate. 30 x 15s = 7.5min
+          # covers both; a certificate that never arrives fails the run rather than passing
+          # silently on a box nobody can reach.
+          for _ in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$APP_URL" || echo 000)
             echo "GET $APP_URL -> $CODE"
             [ "$CODE" = "200" ] && exit 0
             sleep 15
           done
           echo "App did not return 200 at $APP_URL" >&2
+          echo "If this is an https URL on a new box, check Caddy's logs for an ACME failure:" >&2
+          echo "  docker compose logs caddy | tail -50" >&2
           exit 1
 
       - name: Summary
