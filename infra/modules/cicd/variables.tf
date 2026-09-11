@@ -44,20 +44,3 @@ variable "aws_region" {
   description = "Region of the deploy target, for scoping the SSM SendCommand resource ARN."
 }
 
-variable "create_recover_role" {
-  type        = bool
-  default     = false
-  description = "Create the spot-recovery role (runs terraform apply from CI). Dev only."
-}
-
-variable "tfstate_bucket" {
-  type        = string
-  default     = ""
-  description = "S3 bucket holding the Terraform state the recovery role may read/write."
-}
-
-variable "recover_repo" {
-  type        = string
-  default     = ""
-  description = "The single repo (name only) allowed to assume the recovery role."
-}

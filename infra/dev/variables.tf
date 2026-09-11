@@ -63,12 +63,6 @@ variable "app_domain" {
   EOT
 }
 
-variable "tfstate_bucket" {
-  type        = string
-  default     = "lab-results-validator-tfstate"
-  description = "Bucket holding this root's state (see versions.tf); scopes the recovery role."
-}
-
 variable "sharepoint_bucket_name" {
   type        = string
   default     = "lab-results-validator-bucket"
