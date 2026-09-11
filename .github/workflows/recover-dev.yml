@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Re-apply and redeploy even if the box looks healthy"
+        description: "Re-apply and redeploy even if the box looks healthy (plan guard still applies)"
         type: boolean
         default: false
 
@@ -96,13 +96,45 @@ jobs:
           terraform_version: 1.15.8
           terraform_wrapper: false
 
-      - name: Re-apply the dev root
+      # Recovery is only ever meant to rebuild the box. Anything else Terraform wants to
+      # destroy or replace means this branch disagrees with live infrastructure — someone
+      # applied locally without pushing, or state drifted — and applying that disagreement
+      # unattended is how a "recovery" run ends up deleting the encryption, versioning and
+      # public-access-block on the SharePoint data bucket. Plan first and refuse if the plan
+      # touches anything but the instance.
+      - name: Plan and refuse anything but an instance rebuild
         working-directory: infra/dev
         run: |
           set -euo pipefail
           terraform init
-          # Recreates the terminated Spot instance and re-associates the existing Elastic IP.
-          terraform apply -auto-approve
+          terraform plan -input=false -lock-timeout=5m -out=tfplan
+
+          # delete = destroy or the destroy half of a replacement.
+          UNEXPECTED=$(terraform show -json tfplan \
+            | jq -r '
+                .resource_changes[]
+                | select(.change.actions | index("delete"))
+                | select(.type != "aws_instance")
+                | .address
+              ')
+
+          if [ -n "$UNEXPECTED" ]; then
+            echo "::error::Plan would destroy or replace resources beyond the box — refusing to apply."
+            echo "$UNEXPECTED" >&2
+            echo "" >&2
+            echo "Recovery only rebuilds aws_instance. Reconcile develop with live state first:" >&2
+            echo "  cd infra/dev && terraform plan" >&2
+            exit 1
+          fi
+
+          echo "Plan touches only the instance — proceeding."
+
+      - name: Re-apply the dev root
+        working-directory: infra/dev
+        run: |
+          set -euo pipefail
+          # Applies the saved plan, so what was inspected above is exactly what runs.
+          terraform apply -input=false tfplan
 
       - name: Collect outputs
         id: tf

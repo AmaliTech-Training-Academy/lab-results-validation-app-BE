@@ -110,6 +110,10 @@ resource "aws_iam_role_policy" "recover" {
           "ec2:Describe*",
           "ec2:RunInstances",
           "ec2:TerminateInstances",
+          # Replacing a Spot instance also cancels its spot request; without this the destroy
+          # half of a replacement fails and the box is left terminated with nothing rebuilt.
+          "ec2:CancelSpotInstanceRequests",
+          "ec2:DescribeSpotInstanceRequests",
           "ec2:CreateTags",
           "ec2:AllocateAddress",
           "ec2:AssociateAddress",
@@ -127,16 +131,12 @@ resource "aws_iam_role_policy" "recover" {
         Resource = "*"
       },
       {
-        # Only the box's own role may be passed to EC2 or modified — recovery has no business
-        # reshaping the deploy role, the app's IAM user, or anything else in this root.
+        # PassRole is the one privileged capability here — attaching a role to an EC2 instance.
+        # Scoped to the box's own role so recovery cannot hand any other role to a machine it
+        # launches. The IAM *reads* Terraform needs live in RefreshRemainingState below.
         Sid    = "InstanceProfile"
         Effect = "Allow"
         Action = [
-          "iam:GetRolePolicy",
-          "iam:GetInstanceProfile",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:ListInstanceProfilesForRole",
           "iam:PassRole"
         ]
         Resource = [
@@ -165,16 +165,23 @@ resource "aws_iam_role_policy" "recover" {
           "s3:GetEncryptionConfiguration",
           "s3:GetLifecycleConfiguration",
           # The root also holds the two CI roles, the app's IAM user and its access key, plus
-          # the OIDC provider. Refresh reads all of them.
+          # the OIDC provider. Refreshing an aws_iam_role reads its inline AND attached
+          # policies, not just the role — so the List*/Get*Policy actions belong here too,
+          # alongside the scoped grant above (which covers only the box's own role).
           "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListRoleTags",
           "iam:GetUser",
           "iam:GetUserPolicy",
           "iam:ListUserPolicies",
           "iam:ListAttachedUserPolicies",
           "iam:ListAccessKeys",
           "iam:ListGroupsForUser",
-          "iam:ListRoleTags",
           "iam:ListUserTags",
+          "iam:GetInstanceProfile",
+          "iam:ListInstanceProfilesForRole",
           "iam:ListOpenIDConnectProviders",
           "iam:GetOpenIDConnectProvider",
           "sts:GetCallerIdentity"
