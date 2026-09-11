@@ -12,9 +12,25 @@ name: Recover Dev Box (spot)
 # workflow from AWS needs a GitHub App or PAT that this org won't issue. Worst-case downtime is
 # therefore one interval (plus GitHub's own scheduling lag, which can add several minutes).
 
+# DISABLED — the schedule is deliberately removed; this only runs if a human dispatches it.
+#
+# On 2026-09-11 three scheduled runs planned to destroy the SharePoint bucket's encryption,
+# versioning and public-access-block, and one left a freshly created box with nothing deployed
+# on it, taking the site down. Nothing was lost, but only because the role lacked the
+# permissions to finish.
+#
+# The cause is structural, not a one-off: this workflow applies whatever `develop` says, while
+# the box is routinely applied locally from a working tree that is ahead of the branch.
+# Terraform reads that disagreement as drift and "corrects" it unattended with -auto-approve.
+# A partial apply also dropped module.sharepoint_files.aws_s3_bucket.this out of state, which
+# then made every resource keyed on its id a forced replacement on the next run.
+#
+# Before re-enabling the schedule, all of these need to be true:
+#   1. The plan guard (PR #131) is merged, so a plan touching anything but the instance is
+#      refused rather than applied.
+#   2. infra/** is applied on merge, so develop and live state cannot drift apart by default.
+#   3. A real Spot reclaim has been recovered from with the guard in place.
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       force:
